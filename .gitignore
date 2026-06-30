@@ -1,0 +1,183 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# =========================
+# Environment variables / Secrets
+# 절대 GitHub에 올리면 안 되는 파일
+# =========================
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.crt
+*.json.key
+service-account*.json
+gcp-key*.json
+credentials.json
+token.json
+
+# OpenAI / HuggingFace / API keys
+openai_key.txt
+hf_token.txt
+secret*.txt
+secrets/
+keys/
+
+# =========================
+# GCP / SSH
+# =========================
+.ssh/
+*.pub
+google-cloud-sdk/
+.gcloud/
+
+# =========================
+# Model files
+# 대용량 모델 파일은 GitHub에 올리지 않기
+# 필요하면 HuggingFace Hub, Google Drive, GCS 사용
+# =========================
+models/
+checkpoints/
+weights/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+*.onnx
+*.tflite
+*.pkl
+*.joblib
+
+# HuggingFace cache
+.cache/
+huggingface/
+hf_cache/
+transformers_cache/
+diffusers_cache/
+
+# =========================
+# Data
+# =========================
+data/raw/
+data/interim/
+data/processed/
+datasets/
+
+# 단, 폴더 구조 유지용 .gitkeep은 허용
+!data/
+!data/raw/
+!data/interim/
+!data/processed/
+!data/**/.gitkeep
+
+# =========================
+# Generated outputs
+# =========================
+outputs/
+results/
+generated/
+generated_images/
+logs/
+runs/
+wandb/
+mlruns/
+
+!outputs/.gitkeep
+!logs/.gitkeep
+
+# =========================
+# Uploaded user files
+# =========================
+uploads/
+temp/
+tmp/
+
+# =========================
+# Streamlit
+# =========================
+.streamlit/secrets.toml
+
+# 단, config.toml은 공유하고 싶으면 허용 가능
+# .streamlit/config.toml
+
+# =========================
+# FastAPI / Server
+# =========================
+*.log
+uvicorn.log
+gunicorn.log
+
+# =========================
+# Frontend / Node
+# 혹시 React, Next.js 등을 붙일 경우 대비
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.next/
+dist/
+build/
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+
+# 개인 설정 일부만 공유하고 싶으면 나중에 예외 처리
+# !.vscode/settings.json
+
+# =========================
+# Docker
+# =========================
+*.pid
+docker-compose.override.yml
+
+# =========================
+# Reports / local docs
+# =========================
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# 발표자료나 보고서를 GitHub에 올릴 거면 아래는 주석 처리
+# *.pdf
+# *.pptx
