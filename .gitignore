@@ -2,8 +2,7 @@
 # Python
 # =========================
 __pycache__/
-*.py[cod]
-*.pyo
+*.py[cod]*.pyo
 *.pyd
 *.so
 
