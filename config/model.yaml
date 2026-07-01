@@ -1,0 +1,156 @@
+# ============================================================
+# AI model configuration
+# ============================================================
+# active_profile 값으로 openai / huggingface / hybrid 조합을 선택합니다.
+# API와 pipeline 코드는 유지하고 provider 연결만 설정으로 변경합니다.
+# openai       : all_openai
+# huggingface  : all_hf
+# hybrid       : hybrid (openai + huggingface 조합)
+# ============================================================
+
+active_profile: openai
+
+
+# ============================================================
+# Provider profiles
+# ============================================================
+# image_analysis_provider   : 업로드 이미지 분석
+# text_generation_provider  : 광고 문구 생성
+# image_prompt_provider     : 이미지 생성용 프롬프트 생성
+# image_generation_provider : 최종 광고 이미지 생성
+# ============================================================
+
+profiles:
+  all_openai:
+    image_analysis_provider: openai
+    text_generation_provider: openai
+    image_prompt_provider: openai
+    image_generation_provider: openai
+
+  all_hf:
+    image_analysis_provider: hf
+    text_generation_provider: hf
+    image_prompt_provider: hf
+    image_generation_provider: hf
+
+  hybrid:
+    image_analysis_provider: openai
+    text_generation_provider: openai
+    image_prompt_provider: openai
+    image_generation_provider: hf
+
+
+# ============================================================
+# Output image settings
+# ============================================================
+# 프론트에 최종 전달할 이미지 기준입니다.
+# 인스타그램 세로형 게시글 4:5 비율을 사용합니다.
+# ============================================================
+
+output_image:
+  width: 1080
+  height: 1350
+  mime_type: image/png
+  default_count: 1
+  max_count: 4
+
+
+# ============================================================
+# Runtime settings
+# ============================================================
+# auto 값은 실행 환경에 맞게 코드에서 자동 선택합니다.
+# device: auto | cuda | cpu | mps
+# dtype : auto | fp16 | bf16 | fp32
+# ============================================================
+
+runtime:
+  device: auto
+  dtype: auto
+
+
+# ============================================================
+# OpenAI settings
+# ============================================================
+# generation_width/height는 OpenAI 이미지 생성 요청에 사용할 크기입니다.
+# provider 내부에서 OpenAI API 형식에 맞게 변환합니다.
+# 최종 응답 이미지는 output_image 크기로 후처리합니다.
+# ============================================================
+
+openai:
+  text_generation:
+    model: gpt-5.4-mini
+
+  image_analysis:
+    model: gpt-5.4-mini
+
+  image_prompt:
+    model: gpt-5.4-mini
+
+  image_generation:
+    model: gpt-image-1-mini
+    generation_width: 1024
+    generation_height: 1536
+
+
+# ============================================================
+# HuggingFace settings
+# ============================================================
+# task_type     : 모델 작업 종류
+# backend_type  : 실행 방식. pytorch 또는 onnx
+# model_family  : 모델 계열. transformers 또는 diffusion
+# model_id      : HuggingFace 모델 ID 또는 로컬 모델 경로
+# quantization  : 양자화 방식. 기본값은 none
+# ============================================================
+
+hf:
+  text_generation:
+    task_type: text-generation
+    backend_type: pytorch
+    model_family: transformers
+    model_id: Qwen/Qwen3-4B-Instruct-2507
+    quantization: none
+
+  image_analysis:
+    task_type: image-to-text
+    backend_type: pytorch
+    model_family: transformers
+    model_id: google/gemma-3-4b-it
+    quantization: none
+
+  image_prompt:
+    task_type: text-generation
+    backend_type: pytorch
+    model_family: transformers
+    model_id: Qwen/Qwen3-4B-Instruct-2507
+    quantization: none
+
+  image_generation:
+    task_type: text-to-image
+    backend_type: pytorch
+    model_family: diffusion
+    model_id: stabilityai/stable-diffusion-xl-base-1.0
+    quantization: none
+
+    generation_width: 1024
+    generation_height: 1280
+
+    # diffusion 계열 이미지 생성 모델에서만 사용하는 옵션입니다.
+    diffusion_params:
+      num_inference_steps: 30
+      guidance_scale: 5.0
+
+    # API 요청에 image_count가 없을 때 참고하는 기본 생성 개수입니다.
+    num_images_per_prompt: 1
+
+
+# ============================================================
+# ONNX settings
+# ============================================================
+# hf.*.backend_type 값이 onnx인 경우 사용하는 공통 실행 설정입니다.
+# 예: hf.image_generation.backend_type: onnx
+# ============================================================
+
+onnx:
+  execution_providers:
+    - CUDAExecutionProvider
+    - CPUExecutionProvider
