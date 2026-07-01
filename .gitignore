@@ -2,7 +2,8 @@
 # Python
 # =========================
 __pycache__/
-*.py[cod]*.pyo
+*.py[cod]
+*.pyo
 *.pyd
 *.so
 
@@ -64,11 +65,18 @@ google-cloud-sdk/
 # =========================
 # Model files
 # 대용량 모델 파일은 GitHub에 올리지 않기
-# 필요하면 HuggingFace Hub, Google Drive, GCS 사용
 # =========================
-models/
-checkpoints/
-weights/
+models/**/checkpoints/
+models/**/*.pt
+models/**/*.pth
+models/**/*.bin
+models/**/*.safetensors
+models/**/*.ckpt
+weights/**/*.pt
+weights/**/*.pth
+weights/**/*.bin
+weights/**/*.safetensors
+
 *.pt
 *.pth
 *.bin
@@ -78,13 +86,6 @@ weights/
 *.tflite
 *.pkl
 *.joblib
-
-# HuggingFace cache
-.cache/
-huggingface/
-hf_cache/
-transformers_cache/
-diffusers_cache/
 
 # =========================
 # Data
