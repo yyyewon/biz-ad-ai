@@ -1,0 +1,7 @@
+# Include backend runtime dependencies
+-r requirements.in
+
+# Testing
+pytest
+httpx
+Pygments
