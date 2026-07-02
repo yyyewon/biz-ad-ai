@@ -7,6 +7,9 @@ from core.config import MOOD_OPTIONS, TONE_OPTIONS, MAX_UPLOAD_MB, ALLOWED_IMAGE
 from core.state import set_upload, set_style, is_upload_step_valid, next_step, prev_step
 from components.ui_kit import phone_preview
 
+# [1. 예원님 수정] 맨 위에 전처리 함수 가져오기 추가
+from backend.app.image_processor import remove_background_and_resize
+
 
 def render() -> None:
     left, right = st.columns(2, gap="medium")
@@ -31,7 +34,12 @@ def render() -> None:
                 if size_mb > MAX_UPLOAD_MB:
                     st.error(f"파일이 너무 커요 ({size_mb:.1f}MB). {MAX_UPLOAD_MB}MB 이하로 올려주세요.")
                 else:
-                    set_upload(image_bytes, uploaded_file.name)
+                    # [2. 예원님 수정] 기존 원본 바이너리를 누끼+리사이징된 바이너리로 교체하기
+                    with st.spinner("🧙 AI가 음식 이미지를 선명하게 추출하고 있습니다..."):
+                        processed_image_bytes = remove_background_and_resize(image_bytes)
+                    
+                    # 최종 가공된 이미지를 프로젝트 상태(State)에 저장합니다.
+                    set_upload(processed_image_bytes, uploaded_file.name)
 
             moods = st.pills(
                 "원하는 인스타 무드 (복수 선택 가능)",
