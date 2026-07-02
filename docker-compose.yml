@@ -1,0 +1,12 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: sosang-dure-frontend:latest
+    container_name: sosang-dure-frontend
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    env_file:
+      - ./frontend/.env
