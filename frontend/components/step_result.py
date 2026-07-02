@@ -6,7 +6,7 @@ import hashlib
 import streamlit as st
 
 from core.state import prev_step, reset_all
-from core.api_client import generate_ad_text, generate_ad_image
+from core.api_client import generate_ad
 from components.ui_kit import phone_preview, feed_grid, alert
 
 
@@ -31,16 +31,11 @@ def _run_generation() -> None:
     mock = st.session_state.mock_mode
 
     with st.spinner("AI가 광고 문구와 이미지를 만들고 있어요..."):
-        text_result = generate_ad_text(
+        result = generate_ad(
             store_name=b["store_name"],
             menu_name=b["menu_name"],
-            moods=u["moods"],
-            tone=u["tone"],
             purpose=b["purpose"],
             request_note=b["request_note"],
-            mock=mock,
-        )
-        image_result = generate_ad_image(
             image_bytes=u["image_bytes"],
             image_name=u["image_name"],
             moods=u["moods"],
@@ -48,17 +43,14 @@ def _run_generation() -> None:
             mock=mock,
         )
 
-    if not text_result["ok"]:
-        st.session_state.generation.update(status="error", error_message=text_result["error"])
-        return
-    if not image_result["ok"]:
-        st.session_state.generation.update(status="error", error_message=image_result["error"])
+    if not result["ok"]:
+        st.session_state.generation.update(status="error", error_message=result["error"])
         return
 
     st.session_state.generation.update(
         status="done",
-        caption=text_result["data"]["caption"],
-        images=image_result["data"]["images"],
+        caption=result["data"]["caption"],
+        images=result["data"]["images"],
         error_message="",
         signature=_input_signature(),
     )

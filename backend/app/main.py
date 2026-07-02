@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api.v1.router import api_router
+from app.api.v1.router import api_router
 
 
 # FastAPI 애플리케이션 인스턴스 생성

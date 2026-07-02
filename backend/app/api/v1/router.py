@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from backend.app.api.v1.endpoints import health
+from app.api.v1.endpoints import health
 
 
 # API v1에서 사용하는 전체 라우터입니다.
