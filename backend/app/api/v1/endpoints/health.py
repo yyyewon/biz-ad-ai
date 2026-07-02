@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter
 
-from backend.app.schemas.common import success_response
+from app.schemas.common import success_response
 
 
 # health endpoint 전용 라우터입니다.

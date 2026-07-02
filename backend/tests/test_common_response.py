@@ -1,4 +1,4 @@
-from backend.app.schemas.common import error_response, success_response
+from app.schemas.common import error_response, success_response
 
 
 def test_success_response():

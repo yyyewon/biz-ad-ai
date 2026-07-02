@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from loguru import logger
 
-from backend.app.schemas.common import error_response
+from app.schemas.common import error_response
 
 
 class AppException(Exception):

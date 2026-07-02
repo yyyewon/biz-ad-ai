@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from backend.app.core.exceptions import AppException, register_exception_handlers
+from app.core.exceptions import AppException, register_exception_handlers
 
 
 # 예외처리 테스트 전용 FastAPI 앱입니다.

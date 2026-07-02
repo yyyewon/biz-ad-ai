@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
+from app.main import app
 
 
 # FastAPI 앱을 테스트하기 위한 클라이언트입니다.

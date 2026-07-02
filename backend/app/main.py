@@ -5,9 +5,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from backend.app.api.v1.router import api_router
-from backend.app.core.exceptions import register_exception_handlers
-from backend.app.utils.logger import setup_logger
+from app.api.v1.router import api_router
+from app.core.exceptions import register_exception_handlers
+from app.utils.logger import setup_logger
 
 
 # 프로젝트 공통 logger 설정
