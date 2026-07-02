@@ -17,11 +17,13 @@ def test_root():
     - 서버 이름 반환 여부
     - 서버 실행 상태 반환 여부
     - Swagger 문서 경로 반환 여부
+    - 요청 추적용 X-Request-ID 헤더 포함 여부
     """
 
     response = client.get("/")
 
     assert response.status_code == 200
+    assert "X-Request-ID" in response.headers
 
     body = response.json()
     assert body["service"] == "biz-ad-ai-backend"
@@ -38,11 +40,14 @@ def test_health_check():
     - 공통 응답 형식 success/data/error 유지 여부
     - 서버 상태값이 ok인지 확인
     - timestamp가 응답에 포함되는지 확인
+    - timezone이 Asia/Seoul인지 확인
+    - 요청 추적용 X-Request-ID 헤더 포함 여부
     """
 
     response = client.get("/api/v1/health")
 
     assert response.status_code == 200
+    assert "X-Request-ID" in response.headers
 
     body = response.json()
     assert body["success"] is True
@@ -50,3 +55,4 @@ def test_health_check():
     assert body["data"]["status"] == "ok"
     assert body["data"]["service"] == "biz-ad-ai-backend"
     assert "timestamp" in body["data"]
+    assert body["data"]["timezone"] == "Asia/Seoul"
