@@ -6,13 +6,15 @@ import os
 # --------------------------------------------------------------
 # 백엔드 연결 정보
 # --------------------------------------------------------------
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8010").rstrip("/")
 TEXT_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/text"
 IMAGE_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/image"
-HEALTH_ENDPOINT = f"{API_BASE_URL}/health"
+GENERATE_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/generate"
+HEALTH_ENDPOINT = f"{API_BASE_URL}/api/v1/health"
 
 REQUEST_TIMEOUT_TEXT = 20      # 초
 REQUEST_TIMEOUT_IMAGE = 60     # 초
+REQUEST_TIMEOUT_GENERATE = 60  # 초
 
 # --------------------------------------------------------------
 # 목업(Mock) 모드
