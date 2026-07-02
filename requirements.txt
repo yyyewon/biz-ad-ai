@@ -1,0 +1,50 @@
+# =========================
+# Backend API
+# =========================
+# FastAPI 서버와 API 실행에 필요한 패키지
+fastapi
+uvicorn[standard]
+
+# 이미지 업로드 multipart/form-data 처리를 위한 패키지
+python-multipart
+
+
+# =========================
+# Config / Environment
+# =========================
+# .env 및 환경변수 로딩
+python-dotenv
+pydantic-settings
+
+# config/model.yaml 로딩
+PyYAML
+
+
+# =========================
+# Logging
+# =========================
+# 서버 요청, 에러, 추론 시간 로그 관리
+loguru
+
+
+# =========================
+# Image Processing
+# =========================
+# 이미지 bytes 변환, 크기 후처리, hash 계산 보조
+pillow
+
+
+# =========================
+# Testing
+# =========================
+# 단위 테스트 및 FastAPI TestClient 테스트
+pytest
+httpx
+
+
+# =========================
+# AI Providers
+# =========================
+# OpenAI API 연동
+# HuggingFace / ONNX / diffusion 관련 패키지는 모델 확정 후 별도 추가
+openai

@@ -181,3 +181,15 @@ docker-compose.override.yml
 # 발표자료나 보고서를 GitHub에 올릴 거면 아래는 주석 처리
 # *.pdf
 # *.pptx
+
+# =========================
+# Backend logs
+# =========================
+!backend/logs/
+backend/logs/*
+!backend/logs/.gitkeep
+
+# =========================
+# Environment template
+# =========================
+!.env.template
