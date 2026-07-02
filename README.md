@@ -28,58 +28,74 @@
 ### Directory Structure
 
     project-root/
-    ├── config/
-    │   └── model.yaml
+    │
+    ├── config/                                            # 프로젝트 전체 설정 폴더
+    │   └── model.yaml                                     # OpenAI / HF / Hybrid provider 조합 및 이미지 생성 설정 관리
     │
     ├── backend/
-    │   ├── logs/
+    │   ├── .gitkeep
+    │   │
+    │   ├── logs/                                          # FastAPI 서버 로그 저장 폴더. 실제 로그 파일은 Git 제외
     │   │   └── .gitkeep
     │   │
-    │   ├── app/
-    │   │   ├── main.py
-    │   │   ├── api/
-    │   │   │   └── v1/
-    │   │   │       ├── router.py
-    │   │   │       └── endpoints/
-    │   │   │           ├── health.py
-    │   │   │           ├── text_ad.py
-    │   │   │           ├── image_ad.py
-    │   │   │           └── generate_ad.py
+    │   ├── app/                                           # FastAPI 애플리케이션 코드 루트
+    │   │   ├── __init__.py
+    │   │   ├── main.py                                    # FastAPI 앱 시작점. CORS, router 연결, Swagger 설정
     │   │   │
-    │   │   ├── core/
-    │   │   │   ├── config.py
-    │   │   │   └── exceptions.py
+    │   │   ├── api/                                       # API 라우터 계층
+    │   │   │   ├── __init__.py
+    │   │   │   └── v1/                                    # API 버전 v1 관리
+    │   │   │       ├── __init__.py
+    │   │   │       ├── router.py                          # v1 endpoint들을 하나로 묶는 라우터
+    │   │   │       └── endpoints/                         # 실제 API endpoint 파일 모음
+    │   │   │           ├── __init__.py
+    │   │   │           ├── health.py                      # GET /api/v1/health. 서버 상태 확인 API
+    │   │   │           ├── text_ad.py                     # POST /api/v1/ad/text. 광고 문구 생성 단독 테스트 API
+    │   │   │           ├── image_ad.py                    # POST /api/v1/ad/image. 광고 이미지 생성 단독 테스트 API
+    │   │   │           └── generate_ad.py                 # POST /api/v1/ad/generate. 프론트에서 사용할 통합 생성 API
     │   │   │
-    │   │   ├── schemas/
-    │   │   │   ├── common.py
-    │   │   │   ├── text_ad.py
-    │   │   │   ├── image_ad.py
-    │   │   │   └── generate_ad.py
+    │   │   ├── core/                                      # 앱 전역 설정과 공통 처리 영역
+    │   │   │   ├── __init__.py
+    │   │   │   ├── config.py                              # .env와 config/model.yaml 로딩. active_profile, provider, 이미지 설정 관리
+    │   │   │   └── exceptions.py                          # 공통 예외 처리. 에러를 success/data/error 형식으로 변환
     │   │   │
-    │   │   ├── services/
-    │   │   │   ├── pipelines/
-    │   │   │   │   ├── text_pipeline.py
-    │   │   │   │   ├── image_pipeline.py
-    │   │   │   │   └── generate_pipeline.py
+    │   │   ├── schemas/                                   # API 요청/응답 데이터 구조 정의
+    │   │   │   ├── __init__.py
+    │   │   │   ├── common.py                              # 공통 응답 스키마. success, data, error 구조 정의
+    │   │   │   ├── text_ad.py                             # 광고 문구 생성 API 요청/응답 스키마
+    │   │   │   ├── image_ad.py                            # 광고 이미지 생성 API 요청/응답 스키마. base64 이미지 응답 포함
+    │   │   │   └── generate_ad.py                         # 통합 생성 API 요청/응답 스키마
+    │   │   │
+    │   │   ├── services/                                  # 실제 처리 로직 계층
+    │   │   │   ├── __init__.py
     │   │   │   │
-    │   │   │   └── providers/
-    │   │   │       ├── base.py
-    │   │   │       ├── factory.py
-    │   │   │       ├── openai_provider.py
-    │   │   │       └── hf_provider.py
+    │   │   │   ├── pipelines/                             # API 요청이 들어온 뒤 전체 처리 흐름 관리
+    │   │   │   │   ├── __init__.py
+    │   │   │   │   ├── text_pipeline.py                   # 광고 문구 생성 흐름. 팀원 A 기능 단독 연결 지점
+    │   │   │   │   ├── image_pipeline.py                  # 이미지 생성 흐름. 팀원 C 기능 단독 연결 지점
+    │   │   │   │   └── generate_pipeline.py               # 통합 생성 흐름. 문구 생성 + 이미지 생성 + base64 응답 조립
+    │   │   │   │
+    │   │   │   └── providers/                             # OpenAI/HF/Hybrid 교체를 위한 AI Provider 계층
+    │   │   │       ├── __init__.py
+    │   │   │       ├── base.py                            # OpenAI/HF가 공통으로 따라야 하는 인터페이스 정의
+    │   │   │       ├── factory.py                         # config/model.yaml 기준으로 기능별 provider 선택
+    │   │   │       ├── openai_provider.py                 # OpenAI 기반 이미지 분석, 문구 생성, 이미지 생성 구현
+    │   │   │       └── hf_provider.py                     # HuggingFace 기반 이미지 분석, 문구 생성, 이미지 생성 구현
     │   │   │
-    │   │   └── utils/
-    │   │       ├── image_utils.py
-    │   │       └── logger.py
+    │   │   └── utils/                                     # 공통 유틸리티 영역
+    │   │       ├── __init__.py
+    │   │       ├── image_utils.py                         # bytes ↔ PIL Image ↔ base64 변환, 최종 이미지 크기 후처리
+    │   │       └── logger.py                              # loguru 기반 로그 설정. 요청/에러/추론 시간 기록
     │   │
-    │   └── tests/
-    │       ├── test_health.py
-    │       ├── test_text_ad.py
-    │       ├── test_image_ad.py
-    │       └── test_generate_ad.py
+    │   └── tests/                                         # 백엔드 단위 테스트 폴더
+    │       ├── __init__.py
+    │       ├── test_health.py                             # health API 테스트
+    │       ├── test_text_ad.py                            # 광고 문구 생성 API 테스트
+    │       ├── test_image_ad.py                           # 광고 이미지 생성 API 테스트
+    │       └── test_generate_ad.py                        # 통합 생성 API 테스트
     │
-    └── docs/
-        └── api-spec.md
+    └── docs/                                              # 팀 공유 문서 폴더
+        └── api-spec.md                                    # 프론트/백엔드 공유용 API 명세서. 요청/응답, 에러 코드, base64 응답 방식 정리
 
 ### Layer Description
 
