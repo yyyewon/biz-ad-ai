@@ -1,3 +1,5 @@
+import os
+
 from time import perf_counter
 from uuid import uuid4
 
@@ -32,11 +34,16 @@ register_exception_handlers(app)
 
 
 # CORS 설정
-# 현재 개발 단계에서는 프론트엔드 Streamlit과 연동 테스트를 쉽게 하기 위해 전체 허용합니다.
-# 배포 단계에서 허용 도메인이 확정되면 allow_origins 값을 구체적인 URL로 제한하는 것이 좋습니다.
+_DEFAULT_ORIGINS = "http://localhost:8501"
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", _DEFAULT_ORIGINS).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
