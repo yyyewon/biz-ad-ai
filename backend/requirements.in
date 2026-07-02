@@ -48,3 +48,6 @@ httpx
 # OpenAI API 연동
 # HuggingFace / ONNX / diffusion 관련 패키지는 모델 확정 후 별도 추가
 openai
+
+# pytest traceback / terminal output formatting
+Pygments
