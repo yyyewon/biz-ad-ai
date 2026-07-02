@@ -193,3 +193,4 @@ backend/logs/*
 # Environment template
 # =========================
 !.env.template
+tmp_samples/
