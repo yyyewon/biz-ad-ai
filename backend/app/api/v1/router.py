@@ -1,3 +1,4 @@
+from app.api.v1.endpoints import image_preprocess
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import health
@@ -14,4 +15,12 @@ api_router.include_router(
     health.router,
     prefix="/health",
     tags=["Health"],
+)
+
+# Image Preprocess API 연결
+# 최종 경로: POST /api/v1/image/preprocess
+api_router.include_router(
+    image_preprocess.router,
+    prefix="/image",
+    tags=["Image Preprocess"],
 )

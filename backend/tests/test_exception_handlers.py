@@ -8,10 +8,10 @@ from app.core.exceptions import AppException, register_exception_handlers
 # 예외처리 테스트 전용 FastAPI 앱입니다.
 # 실제 운영 API에 실패 테스트용 endpoint를 추가하지 않기 위해,
 # 테스트 파일 안에서만 임시 앱을 생성합니다.
-test_app = FastAPI()
+exception_app = FastAPI()
 
 # 공통 예외 처리 핸들러를 테스트 앱에 등록합니다.
-register_exception_handlers(test_app)
+register_exception_handlers(exception_app)
 
 
 class SampleRequest(BaseModel):
@@ -26,7 +26,7 @@ class SampleRequest(BaseModel):
     count: int
 
 
-@test_app.get("/app-exception")
+@exception_app.get("/app-exception")
 async def raise_app_exception():
     """
     AppException 테스트용 endpoint입니다.
@@ -43,7 +43,7 @@ async def raise_app_exception():
     )
 
 
-@test_app.post("/validation-error")
+@exception_app.post("/validation-error")
 async def raise_validation_error(request: SampleRequest):
     """
     validation error 테스트용 endpoint입니다.
@@ -55,7 +55,7 @@ async def raise_validation_error(request: SampleRequest):
     return {"message": "ok", "request": request.model_dump()}
 
 
-@test_app.get("/unhandled-exception")
+@exception_app.get("/unhandled-exception")
 async def raise_unhandled_exception():
     """
     예상하지 못한 서버 오류 테스트용 endpoint입니다.
@@ -71,7 +71,7 @@ async def raise_unhandled_exception():
 # raise_server_exceptions=False 설정이 중요합니다.
 # 이 옵션이 없으면 테스트 중 서버 내부 예외가 응답으로 변환되기 전에
 # pytest 쪽으로 그대로 다시 raise될 수 있습니다.
-client = TestClient(test_app, raise_server_exceptions=False)
+client = TestClient(exception_app, raise_server_exceptions=False)
 
 
 def test_app_exception_handler():
