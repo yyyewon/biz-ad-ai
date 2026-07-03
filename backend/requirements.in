@@ -51,3 +51,12 @@ openai
 
 # pytest traceback / terminal output formatting
 Pygments
+
+# Image background removal
+rembg[cpu]
+
+# numba/pymatting compatibility for rembg
+numpy<2.5
+
+# TestClient dependency for Starlette/FastAPI tests
+httpx2
