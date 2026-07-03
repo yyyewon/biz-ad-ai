@@ -3,10 +3,26 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    image: sosang-dure-frontend:latest
-    container_name: sosang-dure-frontend
+    image: biz-ad-ai-frontend:latest
+    container_name: biz-ad-ai-frontend
     restart: unless-stopped
     ports:
       - "8501:8501"
+    environment:
+      - API_BASE_URL=http://backend:8010
+    depends_on:
+      - backend
     env_file:
       - ./frontend/.env
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: biz-ad-ai-backend:latest
+    container_name: biz-ad-ai-backend
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+    env_file:
+      - ./backend/.env

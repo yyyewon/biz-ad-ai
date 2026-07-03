@@ -1,0 +1,24 @@
+name: Deploy to GCP VM
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Execute Deployment via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.GCP_VM_HOST }}
+        username: ${{ secrets.GCP_VM_USERNAME }}
+        key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+        script: |
+          cd /opt/biz-ad-ai
+          
+          git pull origin main
+          
+          docker compose up -d --build
