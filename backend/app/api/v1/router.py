@@ -1,7 +1,7 @@
 from app.api.v1.endpoints import image_preprocess
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import health
+from app.api.v1.endpoints import health, generate_ad
 
 
 # API v1에서 사용하는 전체 라우터입니다.
@@ -23,4 +23,11 @@ api_router.include_router(
     image_preprocess.router,
     prefix="/image",
     tags=["Image Preprocess"],
+)
+# text ad API 연결
+# 최종 경로: POST /api/v1/ad/generate
+api_router.include_router(
+    generate_ad.router,
+    prefix="/ad/generate",
+    tags=["Generate Ad"],
 )

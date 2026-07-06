@@ -1,10 +1,18 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
+
+# rembg, onnxruntime 컴파일을 위한 필수 리눅스 빌드 도구 설치
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # 의존성 설치
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # 소스 전체 복사
 COPY . .
