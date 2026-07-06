@@ -15,6 +15,7 @@ from core.auth import (
     sync_usage,
     reset_quota_for_testing,
 )
+from core.config import DEV_GUEST_MODE_DEFAULT
 from components.layout import render_topbar, render_stepper, render_footer
 from components import step_business_info, step_upload, step_result, step_login
 
@@ -87,6 +88,11 @@ def _render_sidebar() -> None:
             "목업 모드 (백엔드 없이 테스트)",
             value=st.session_state.mock_mode,
         )
+        st.session_state.dev_guest_mode = st.toggle(
+            "로그인 우회 모드 (개발용)",
+            value=st.session_state.get("dev_guest_mode", DEV_GUEST_MODE_DEFAULT),
+            help="카카오 로그인 없이 Step 1/2/3 테스트를 진행합니다.",
+        )
 
         if not st.session_state.mock_mode:
             if st.button("서버 연결 상태 확인", width="stretch"):
@@ -117,7 +123,11 @@ def main() -> None:
     _inject_css()
     _render_sidebar()
 
-    authenticated = st.session_state.mock_mode or is_logged_in()
+    authenticated = (
+        st.session_state.mock_mode
+        or is_logged_in()
+        or st.session_state.get("dev_guest_mode", DEV_GUEST_MODE_DEFAULT)
+    )
 
     if not authenticated:
         step_login.render()

@@ -40,7 +40,6 @@ LAYOUT_POSTER_GUIDE_MAP: dict[str, str] = {
 POSTER_PROMPT_HARD_CONSTRAINTS: list[str] = [
     "반드시 1080x1350 비율의 세로 포스터 디자인으로 생성해줘.",
     "텍스트는 오직 한국어만 사용하고, 임의 영문 문구는 절대 넣지 마.",
-    "아래 텍스트 3개를 정확히 동일하게 표기해줘. 띄어쓰기/문장부호/숫자/통화기호를 변경하지 마.",
     "가독성이 낮은 배경 위에 텍스트를 두지 말고, 텍스트 영역은 대비를 충분히 확보해줘.",
     "잘린 텍스트, 깨진 글자, 오탈자, 반복 글자, 의미 없는 문자는 절대 넣지 마.",
     "로고, 워터마크, 브랜드명, 서명, 불필요한 장식 문구를 넣지 마.",
@@ -113,9 +112,9 @@ def _resolve_generation_mode(mode: GenerationMode | str | None) -> GenerationMod
 def _build_poster_prompt(payload: ImageAdRequest, mood: str, layout_type: str) -> str:
     mood_style = MOOD_INPAINT_STYLE_MAP.get(mood, MOOD_INPAINT_STYLE_MAP["cozy"])
     layout_guide = LAYOUT_POSTER_GUIDE_MAP.get(layout_type, LAYOUT_POSTER_GUIDE_MAP["classic"])
-    headline = payload.headline or "간편하고 든든한 한끼"
+    headline = (payload.headline or "").strip()
     menu_name = payload.menu_name or "오늘의 메뉴"
-    price_text = payload.price_text or "₩14,000"
+    price_text = (payload.price_text or "").strip()
     prompt_chunks = [
         "입력된 음식 사진을 기반으로 인스타그램용 세로 광고 포스터를 실사 스타일로 만들어줘.",
         f"포스터 무드: {mood_style}",
@@ -123,13 +122,26 @@ def _build_poster_prompt(payload: ImageAdRequest, mood: str, layout_type: str) -
         "음식과 접시의 형태/재질은 유지하고 배경, 조명, 구도는 포스터 디자인에 맞게 새롭게 구성해줘.",
         "세련된 브랜드 광고 느낌으로 전체 레이아웃을 새로 디자인해줘. 기존 템플릿처럼 보이지 않게 다양성을 확보해줘.",
         "텍스트를 포스터 안에 직접 넣어줘. 글자 오탈자 없이 정확히 표기해줘.",
-        f"표기 텍스트1(상단 카피): {headline}",
+    ]
+    if headline:
+        prompt_chunks.append(f"표기 텍스트1(상단 카피): {headline}")
+    else:
+        prompt_chunks.append("표기 텍스트1(상단 카피)은 가게/목적 맥락에 맞게 자연스럽게 작성해줘.")
+
+    prompt_chunks.extend(
+        [
         f"표기 텍스트2(메뉴명, 가장 크게): {menu_name}",
-        f"표기 텍스트3(가격): {price_text}",
         *POSTER_PROMPT_HARD_CONSTRAINTS,
         "텍스트는 가독성이 높아야 하고 음식을 과도하게 가리지 않게 배치해줘.",
         "로고/워터마크/불필요한 영문 문구는 넣지 마.",
-    ]
+        ]
+    )
+    if price_text:
+        prompt_chunks.append(f"표기 텍스트3(가격): {price_text}")
+        prompt_chunks.append("위에 지정한 텍스트는 띄어쓰기/문장부호/숫자/통화기호까지 정확히 동일하게 표기해줘.")
+    else:
+        prompt_chunks.append("가격 문구는 반드시 생략해줘.")
+
     if payload.promotion_goal:
         prompt_chunks.append(f"홍보 목적 맥락: {payload.promotion_goal}")
     if payload.tone:

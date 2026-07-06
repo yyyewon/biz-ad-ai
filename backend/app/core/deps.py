@@ -38,3 +38,14 @@ async def get_current_user(authorization: str | None = Header(default=None)) -> 
             status_code=401,
         )
     return user
+
+
+async def get_current_user_optional(authorization: str | None = Header(default=None)) -> dict | None:
+    """
+    개발/실험 환경에서 비로그인 요청을 허용하기 위한 optional 사용자 조회입니다.
+    - Authorization 헤더가 없으면 None 반환
+    - 헤더가 있으면 기존 로직으로 검증 후 사용자 반환
+    """
+    if not authorization:
+        return None
+    return await get_current_user(authorization=authorization)

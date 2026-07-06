@@ -22,13 +22,14 @@ DEV_RESET_QUOTA_ENDPOINT = f"{API_BASE_URL}/api/v1/auth/dev/reset-quota"
 
 REQUEST_TIMEOUT_TEXT = 60      # 초
 REQUEST_TIMEOUT_IMAGE = 120     # 초
-REQUEST_TIMEOUT_GENERATE = 120  # 초
+REQUEST_TIMEOUT_GENERATE = 600  # 초 (임시 상향)
 REQUEST_TIMEOUT_AUTH = 10      # 초
 
 # --------------------------------------------------------------
 # 목업(Mock) 모드
 # --------------------------------------------------------------
-MOCK_MODE_DEFAULT = os.getenv("RG_MOCK_MODE", "true").lower() == "true"
+MOCK_MODE_DEFAULT = os.getenv("RG_MOCK_MODE", "false").lower() == "true"
+DEV_GUEST_MODE_DEFAULT = os.getenv("RG_DEV_GUEST_MODE", "true").lower() == "true"
 
 # --------------------------------------------------------------
 # 선택 옵션

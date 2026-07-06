@@ -283,7 +283,7 @@ button[kind*="secondary"]:hover {
 
 .rg-phone-image {
   width: 100%;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 4 / 5;
   background: var(--rg-surface-alt);
   display: flex;
   align-items: center;
@@ -292,7 +292,7 @@ button[kind*="secondary"]:hover {
   font-size: 0.78rem;
   overflow: hidden;
 }
-.rg-phone-image img { width: 100%; height: 100%; object-fit: cover; }
+.rg-phone-image img { width: 100%; height: 100%; object-fit: contain; object-position: center; }
 
 .rg-phone-actions {
   display: flex;
@@ -321,7 +321,7 @@ button[kind*="secondary"]:hover {
   overflow: hidden;
 }
 .rg-grid-cell {
-  aspect-ratio: 1/1;
+  aspect-ratio: 4/5;
   background: var(--rg-surface-alt);
   display: flex;
   align-items: center;
@@ -330,7 +330,7 @@ button[kind*="secondary"]:hover {
   font-size: 0.65rem;
   overflow: hidden;
 }
-.rg-grid-cell img { width: 100%; height: 100%; object-fit: cover; }
+.rg-grid-cell img { width: 100%; height: 100%; object-fit: contain; object-position: center; }
 .rg-grid-cell.filled { background: var(--rg-surface-alt); }
 
 /* ---------- 무드 배지 ---------- */
