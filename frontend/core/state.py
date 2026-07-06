@@ -25,10 +25,12 @@ def init_state() -> None:
         "generation": {
             "status": "idle",       # idle | loading | done | error
             "caption": "",
-            "images": [],           # [{"id": str, "bytes": bytes}, ...]
+            "images": [],
             "error_message": "",
+            "error_code": None,     # 예: DAILY_LIMIT_EXCEEDED, GENERATION_BUSY 등
         },
         "mock_mode": MOCK_MODE_DEFAULT,
+        "auth": {"access_token": None, "user": None},
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -89,13 +91,15 @@ def set_generation_loading() -> None:
     st.session_state.generation.update({"status": "loading", "error_message": ""})
 
 
-def set_generation_error(message: str) -> None:
-    st.session_state.generation.update({"status": "error", "error_message": message})
+def set_generation_error(message: str, code: str | None = None) -> None:
+    st.session_state.generation.update(
+        {"status": "error", "error_message": message, "error_code": code}
+    )
 
 
 def set_generation_result(caption: str, images: list[dict]) -> None:
     st.session_state.generation.update(
-        {"status": "done", "caption": caption, "images": images, "error_message": ""}
+        {"status": "done", "caption": caption, "images": images, "error_message": "", "error_code": None}
     )
 
 

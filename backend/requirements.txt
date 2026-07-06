@@ -127,6 +127,8 @@ pygments==2.20.0
     # via
     #   -r backend/requirements.in
     #   pytest
+pyjwt==2.13.0
+    # via -r backend/requirements.in
 pymatting==1.1.15
     # via rembg
 pytest==9.1.1
