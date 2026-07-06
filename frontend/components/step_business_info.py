@@ -5,9 +5,13 @@ from __future__ import annotations
 import streamlit as st
 from core.config import PURPOSE_OPTIONS
 from core.state import set_business_info, next_step
+from core.auth import is_quota_exceeded, get_daily_usage
+from components.ui_kit import quota_exceeded_banner
 
 
 def render() -> None:
+    quota_exceeded = is_quota_exceeded()
+
     with st.container(border=True):
         st.markdown(
             '<span class="rg-eyebrow">STEP 1</span>'
@@ -15,6 +19,10 @@ def render() -> None:
             '<div class="rg-card-desc">가게/메뉴 이름과 홍보 목적을 알려주시면, 나머지는 AI가 도와드려요.</div>',
             unsafe_allow_html=True,
         )
+
+        if quota_exceeded:
+            usage = get_daily_usage() or {}
+            quota_exceeded_banner(limit=usage.get("limit"))
 
         business = st.session_state.business
         # 기존 코드를 지우고 아래 내용으로 교체합니다.
@@ -56,7 +64,12 @@ def render() -> None:
                 height=90,
                 max_chars=200,
             )
-            submitted = st.form_submit_button("다음 단계로 →", type="primary", width="stretch")
+            submitted = st.form_submit_button(
+                "다음 단계로 →",
+                type="primary",
+                width="stretch",
+                disabled=quota_exceeded,
+            )
 
     if submitted:
         if not store_name.strip() or not menu_name.strip() or purpose is None:

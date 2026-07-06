@@ -35,6 +35,20 @@ def check_backend_health() -> bool:
         return False
 
 
+def _extract_error(res: requests.Response, fallback: str) -> tuple[str, str | None]:
+    """
+    공통 에러 응답 형식에서 message와 code를 함께 추출
+    """
+    try:
+        body = res.json()
+        error = body.get("error") or {}
+        message = error.get("message") or fallback
+        code = error.get("code")
+        return message, code
+    except ValueError:
+        return fallback, None
+
+
 def generate_ad(
     store_name: str,
     menu_name: str,
@@ -44,6 +58,7 @@ def generate_ad(
     image_name: str,
     moods: list[str],
     tone: str,
+    access_token: str | None = None,
     mock: bool = False,
 ) -> dict:
     """
@@ -76,9 +91,15 @@ def generate_ad(
         "moods": ",".join(moods),
         "tone": tone,
     }
+    headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
+
     try:
         res = requests.post(
-            GENERATE_ENDPOINT, files=files, data=payload, timeout=REQUEST_TIMEOUT_GENERATE
+            GENERATE_ENDPOINT,
+            files=files,
+            data=payload,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT_GENERATE,
         )
         res.raise_for_status()
         body = res.json()
@@ -91,11 +112,13 @@ def generate_ad(
             },
         }
     except requests.exceptions.Timeout:
-        return {"ok": False, "error": "생성이 지연되고 있어요. 잠시 후 다시 시도해 주세요."}
+        return {"ok": False, "error": "생성이 지연되고 있어요. 잠시 후 다시 시도해 주세요.", "error_code": None}
     except requests.exceptions.ConnectionError:
-        return {"ok": False, "error": "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요."}
+        return {"ok": False, "error": "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요.", "error_code": None}
     except requests.exceptions.HTTPError:
-        return {"ok": False, "error": f"생성에 실패했어요. (서버 응답 코드: {res.status_code})"}
+        fallback = f"생성에 실패했어요. (서버 응답 코드: {res.status_code})"
+        message, code = _extract_error(res, fallback)
+        return {"ok": False, "error": message, "error_code": code}
     except requests.exceptions.RequestException:
         return {"ok": False, "error": "알 수 없는 오류로 생성하지 못했어요."}
 

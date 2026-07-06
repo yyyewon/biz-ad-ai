@@ -9,6 +9,8 @@ from components.ui_kit import phone_preview
 
 
 def render() -> None:
+    quota_exceeded = is_quota_exceeded()
+
     left, right = st.columns(2, gap="medium")
 
     with left:
@@ -19,6 +21,10 @@ def render() -> None:
                 '<div class="rg-card-desc">배경은 AI가 새 배경으로 자연스럽게 바꿔드려요. 원본 음식은 그대로 유지됩니다.</div>',
                 unsafe_allow_html=True,
             )
+
+            if quota_exceeded:
+                usage = get_daily_usage() or {}
+                quota_exceeded_banner(limit=usage.get("limit"))
 
             uploaded_file = st.file_uploader(
                 "음식 사진 업로드",
@@ -63,7 +69,12 @@ def render() -> None:
                     prev_step()
                     st.rerun()
             with nav_right:
-                if st.button("다음 단계로 →", type="primary", width="stretch"):
+                if st.button(
+                    "다음 단계로 →",
+                    type="primary",
+                    width="stretch",
+                    disabled=quota_exceeded,
+                ):
                     if not is_upload_step_valid():
                         st.warning("사진 업로드, 무드, 톤을 모두 선택해 주세요.")
                     else:

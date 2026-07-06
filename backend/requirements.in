@@ -60,3 +60,9 @@ numpy<2.5
 
 # TestClient dependency for Starlette/FastAPI tests
 httpx2
+
+# =========================
+# Auth / Social Login
+# =========================
+# 자체 세션 토큰(JWT) 발급/검증
+PyJWT
