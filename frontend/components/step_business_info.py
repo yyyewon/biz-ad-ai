@@ -17,19 +17,29 @@ def render() -> None:
         )
 
         business = st.session_state.business
+        # 기존 코드를 지우고 아래 내용으로 교체합니다.
         with st.form("business_info_form", border=False):
-            store_name = st.text_input(
-                "가게 이름",
-                value=business["store_name"],
-                placeholder="예) 온기식당",
-                max_chars=30,
-            )
-            menu_name = st.text_input(
-                "대표 메뉴 이름",
-                value=business["menu_name"],
-                placeholder="예) 트러플 크림 파스타",
-                max_chars=30,
-            )
+            # 💡 개선사항 1: 가게 이름과 대표 메뉴 이름을 가로로 나란히 배치하여 균형감 제공
+            col1, col2 = st.columns(2, gap="small")
+            with col1:
+                store_name = st.text_input(
+                    "가게 이름",
+                    value=business["store_name"],
+                    placeholder="예) 온기식당",  # 더 구체적인 예시로 변경
+                    max_chars=30,
+                    help="영수증이나 간판에 적힌 상호명을 적어주세요." # 가이드 추가
+                )
+            with col2:
+                menu_name = st.text_input(
+                    "대표 메뉴 이름",
+                    value=business["menu_name"],
+                    placeholder="예) 트러플 크림 파스타",  # 소상공인 친화적 예시로 변경
+                    max_chars=30,
+                    help="이번에 홍보하고 싶으신 핵심 메뉴를 적어주세요." # 가이드 추가
+                )
+            
+            # 홍보 목적 선택 구역
+            st.markdown('<div style="margin-top: 0.5rem;"></div>', unsafe_allow_html=True) # 미세 여백 조절
             purpose = st.pills(
                 "홍보 목적",
                 options=PURPOSE_OPTIONS,
@@ -37,6 +47,8 @@ def render() -> None:
                 default=business["purpose"],
                 key="business_purpose_pills",
             )
+            
+            # 요청사항 입력 구역
             request_note = st.text_area(
                 "요청사항 (선택)",
                 value=business["request_note"],
