@@ -7,8 +7,16 @@ import streamlit as st
 
 from core.state import init_state
 from core.api_client import check_backend_health
+from core.auth import (
+    init_auth_state,
+    consume_login_token_from_query,
+    is_logged_in,
+    logout,
+    sync_usage,
+    reset_quota_for_testing,
+)
 from components.layout import render_topbar, render_stepper, render_footer
-from components import step_business_info, step_upload, step_result
+from components import step_business_info, step_upload, step_result, step_login
 
 st.set_page_config(
     page_title="소상공인 두레 | AI 광고 콘텐츠 생성",
@@ -30,8 +38,48 @@ def _inject_css() -> None:
     st.markdown(f"<style>{_load_css(_CSS_PATH.stat().st_mtime)}</style>", unsafe_allow_html=True)
 
 
+def _render_login_section() -> None:
+    st.markdown("### 👤 로그인")
+
+    if is_logged_in():
+        user = st.session_state.auth.get("user") or {}
+        nickname = user.get("nickname") or "사용자"
+        usage = user.get("daily_usage") or {}
+        used = usage.get("used", 0)
+        limit = usage.get("limit", 3)
+
+        st.success(f"{nickname}님 환영해요 👋")
+        st.caption(f"오늘 생성 {used}/{limit}회 사용")
+        if st.button("로그아웃", width="stretch"):
+            logout()
+            st.rerun()
+    else:
+        st.caption("메인 화면에서 카카오 로그인 후 이용할 수 있어요.")
+        if st.session_state.mock_mode:
+            st.caption("지금은 목업 모드라 로그인 없이 체험 중이에요.")
+
+
+def _render_dev_tools() -> None:
+    if st.session_state.mock_mode or not is_logged_in():
+        return
+
+    st.divider()
+    st.markdown("### 🧪 테스트 도구")
+    st.caption("백엔드 DEV_TOOLS_ENABLED=true 일 때만 동작해요. (배포 환경에서는 비활성화 권장)")
+    if st.button("오늘 생성 횟수 초기화", width="stretch"):
+        ok, message = reset_quota_for_testing()
+        if ok:
+            st.success(message)
+        else:
+            st.error(message)
+
+
 def _render_sidebar() -> None:
     with st.sidebar:
+        _render_login_section()
+        _render_dev_tools()
+        st.divider()
+
         st.markdown("### ⚙️ 개발 / 데모 설정")
         st.caption("백엔드(A·C·D 담당)가 준비되기 전까지는 목업 모드로 프론트 작업을 이어갈 수 있어요.")
 
@@ -51,7 +99,11 @@ def _render_sidebar() -> None:
 
         st.divider()
         st.caption("Step {}/3 진행 중".format(st.session_state.step))
-        if st.button("처음부터 다시 시작", width="stretch"):
+        if st.button(
+            "처음부터 다시 시작",
+            width="stretch",
+            disabled=(st.session_state.step == 1),
+        ):
             from core.state import reset_all
             reset_all()
             st.rerun()
@@ -59,10 +111,21 @@ def _render_sidebar() -> None:
 
 def main() -> None:
     init_state()
+    init_auth_state()
+    consume_login_token_from_query()  # ?login_token=... 이 있으면 처리 후 rerun
+
     _inject_css()
+    _render_sidebar()
+
+    authenticated = st.session_state.mock_mode or is_logged_in()
+
+    if not authenticated:
+        step_login.render()
+        return
+
+    sync_usage()
 
     render_topbar(mock_mode=st.session_state.mock_mode)
-    _render_sidebar()
     render_stepper(current_step=st.session_state.step)
 
     step = st.session_state.step

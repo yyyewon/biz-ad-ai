@@ -10,6 +10,17 @@ def alert(message: str, kind: str = "error") -> None:
     st.markdown(f'<div class="rg-alert {kind}">{message}</div>', unsafe_allow_html=True)
 
 
+def quota_exceeded_banner(limit: int | None = None) -> None:
+    """
+    하루 생성 가능 횟수를 모두 사용했을 때 공통으로 보여주는 안내 배너
+    """
+    limit_text = f"{limit}회" if limit else "설정된 횟수"
+    alert(
+        f"⚠️ 하루 생성 가능 {limit_text}를 모두 사용했어요. 내일 다시 시도해 주세요.",
+        kind="error",
+    )
+
+
 def badge_row(items: list[str]) -> None:
     if not items:
         return

@@ -7,7 +7,9 @@ import streamlit as st
 
 from core.state import prev_step, reset_all
 from core.api_client import generate_ad
-from components.ui_kit import phone_preview, feed_grid, alert
+from core.auth import is_logged_in, refresh_me, is_quota_exceeded, get_daily_usage
+from core.config import KAKAO_LOGIN_ENDPOINT
+from components.ui_kit import phone_preview, feed_grid, alert, quota_exceeded_banner
 
 
 def _input_signature() -> tuple:
@@ -25,10 +27,32 @@ def _input_signature() -> tuple:
     )
 
 
+def _render_login_required() -> None:
+    with st.container(border=True):
+        st.markdown('<div class="rg-card-title">🔐 로그인이 필요해요</div>', unsafe_allow_html=True)
+        st.caption("소셜 로그인 후 하루 3회까지 광고 콘텐츠를 생성할 수 있어요.")
+        st.link_button("카카오로 로그인", KAKAO_LOGIN_ENDPOINT, width="stretch")
+
+    if st.button("← 이전 단계로 돌아가기", type="secondary"):
+        prev_step()
+        st.rerun()
+
+
+def _render_quota_exceeded() -> None:
+    with st.container(border=True):
+        usage = get_daily_usage() or {}
+        quota_exceeded_banner(limit=usage.get("limit"))
+        st.caption("오늘 사용한 횟수는 내일 자정(KST) 이후 초기화돼요.")
+        if st.button("처음부터 다시 만들기", type="primary", width="stretch"):
+            reset_all()
+            st.rerun()
+
+
 def _run_generation() -> None:
     b = st.session_state.business
     u = st.session_state.upload
     mock = st.session_state.mock_mode
+    access_token = st.session_state.auth.get("access_token")
 
     with st.spinner("AI가 광고 문구와 이미지를 만들고 있어요..."):
         result = generate_ad(
@@ -40,11 +64,18 @@ def _run_generation() -> None:
             image_name=u["image_name"],
             moods=u["moods"],
             tone=u["tone"],
+            access_token=access_token,
             mock=mock,
         )
 
     if not result["ok"]:
-        st.session_state.generation.update(status="error", error_message=result["error"])
+        st.session_state.generation.update(
+            status="error",
+            error_message=result["error"],
+            error_code=result.get("error_code"),
+        )
+        if not mock and result.get("error_code") == "DAILY_LIMIT_EXCEEDED":
+            refresh_me()
         return
 
     st.session_state.generation.update(
@@ -52,8 +83,12 @@ def _run_generation() -> None:
         caption=result["data"]["caption"],
         images=result["data"]["images"],
         error_message="",
+        error_code=None,
         signature=_input_signature(),
     )
+
+    if not mock:
+        refresh_me()
 
 
 def render() -> None:
@@ -65,21 +100,37 @@ def render() -> None:
             unsafe_allow_html=True,
         )
 
+    if not st.session_state.mock_mode and not is_logged_in():
+        _render_login_required()
+        return
+
     gen = st.session_state.generation
     current_sig = _input_signature()
 
-    if gen["status"] == "idle" or gen.get("signature") != current_sig:
+    needs_new_generation = gen["status"] == "idle" or gen.get("signature") != current_sig
+
+    if needs_new_generation:
+        if is_quota_exceeded():
+            _render_quota_exceeded()
+            return
         _run_generation()
         gen = st.session_state.generation
 
     if gen["status"] == "error":
         alert(f"⚠️ {gen['error_message']}", kind="error")
-        if st.button("다시 시도하기", type="primary"):
-            st.session_state.generation["status"] = "idle"
-            st.rerun()
-        if st.button("← 이전 단계로 돌아가기", type="secondary"):
-            prev_step()
-            st.rerun()
+
+        if gen.get("error_code") == "DAILY_LIMIT_EXCEEDED":
+            st.caption("오늘 사용한 횟수는 내일 자정(KST) 이후 초기화돼요.")
+            if st.button("처음부터 다시 만들기", type="primary", width="stretch"):
+                reset_all()
+                st.rerun()
+        else:
+            if st.button("다시 시도하기", type="primary"):
+                st.session_state.generation["status"] = "idle"
+                st.rerun()
+            if st.button("← 이전 단계로 돌아가기", type="secondary"):
+                prev_step()
+                st.rerun()
         return
 
     if gen["status"] != "done":

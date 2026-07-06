@@ -7,14 +7,23 @@ import os
 # 백엔드 연결 정보
 # --------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8010").rstrip("/")
+API_BROWSER_BASE_URL = os.getenv("API_BROWSER_BASE_URL", API_BASE_URL).rstrip("/")
 TEXT_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/text"
 IMAGE_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/image"
 GENERATE_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/generate"
 HEALTH_ENDPOINT = f"{API_BASE_URL}/api/v1/health"
 
-REQUEST_TIMEOUT_TEXT = 20      # 초
-REQUEST_TIMEOUT_IMAGE = 60     # 초
-REQUEST_TIMEOUT_GENERATE = 60  # 초
+# --------------------------------------------------------------
+# 소셜 로그인 / 사용자 정보
+# --------------------------------------------------------------
+KAKAO_LOGIN_ENDPOINT = f"{API_BROWSER_BASE_URL}/api/v1/auth/kakao/login"
+ME_ENDPOINT = f"{API_BASE_URL}/api/v1/auth/me"
+DEV_RESET_QUOTA_ENDPOINT = f"{API_BASE_URL}/api/v1/auth/dev/reset-quota"
+
+REQUEST_TIMEOUT_TEXT = 60      # 초
+REQUEST_TIMEOUT_IMAGE = 120     # 초
+REQUEST_TIMEOUT_GENERATE = 120  # 초
+REQUEST_TIMEOUT_AUTH = 10      # 초
 
 # --------------------------------------------------------------
 # 목업(Mock) 모드

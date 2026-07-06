@@ -9,12 +9,16 @@ from loguru import logger
 
 from app.api.v1.router import api_router
 from app.core.exceptions import register_exception_handlers
+from app.core.database import init_db
 from app.utils.logger import setup_logger
 
 
 # 프로젝트 공통 logger 설정
 # 서버 시작 시 터미널 출력과 backend/logs/app.log 파일 로그를 함께 설정합니다.
 setup_logger()
+
+# 소셜 로그인 / 일일 생성 횟수 제한용 SQLite 스키마 초기화
+init_db()
 
 
 # FastAPI 애플리케이션 인스턴스 생성
