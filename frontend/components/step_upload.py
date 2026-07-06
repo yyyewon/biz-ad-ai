@@ -6,7 +6,6 @@ import streamlit as st
 from core.config import MOOD_OPTIONS, TONE_OPTIONS, MAX_UPLOAD_MB, ALLOWED_IMAGE_TYPES
 from core.state import set_upload, set_style, is_upload_step_valid, next_step, prev_step
 from components.ui_kit import phone_preview
-from core.api_client import test_preprocess_image  # 💡 공통 단위 테스트 함수 활용
 
 
 def render() -> None:
@@ -40,25 +39,10 @@ def render() -> None:
                 if size_mb > MAX_UPLOAD_MB:
                     st.error(f"파일이 너무 커요 ({size_mb:.1f}MB). {MAX_UPLOAD_MB}MB 이하로 올려주세요.")
                 else:
-                    # 파일 이름이 세션 상태에 저장된 것과 다를 때만 API 요청 수행 (중복 호출 방지)
+                    # 💡 개선: 프론트단에서 백엔드 테스트용 API 호출을 완전히 제거하고, 업로드된 원본을 세션에 바로 안전하게 세팅합니다.
                     if st.session_state.upload.get("filename") != uploaded_file.name:
-                        with st.spinner("🧙 [단위 테스트] 백엔드 내부 전처리 로직 검증 중..."):
-                            try:
-                                # core/api_client.py에 정의된 공통 모듈 호출
-                                processed_bytes = test_preprocess_image(
-                                    image_bytes=image_bytes,
-                                    filename=uploaded_file.name,
-                                    mime_type=uploaded_file.type
-                                )
-                                
-                                if processed_bytes:
-                                    # 전처리 완료된 이미지 데이터를 세션 상태에 세팅 후 화면 갱신
-                                    set_upload(processed_bytes, uploaded_file.name)
-                                    st.rerun()
-                                    
-                            except Exception as e:
-                                # api_client 내부에서 던져진 직관적인 에러 메시지를 화면에 출력
-                                st.error(f"❌ 단위 테스트 실패: {str(e)}")
+                        set_upload(image_bytes, uploaded_file.name)
+                        st.rerun()
             # ----------------------------------------------------------------------------------
 
             moods = st.pills(
