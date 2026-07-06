@@ -2,11 +2,11 @@
 API 클라이언트 모듈
 """
 from __future__ import annotations
-import os
+
 import time
 import base64
 import requests
-from typing import Optional
+
 
 from core.config import (
     TEXT_ENDPOINT,
@@ -120,32 +120,4 @@ def generate_ad(
         message, code = _extract_error(res, fallback)
         return {"ok": False, "error": message, "error_code": code}
     except requests.exceptions.RequestException:
-        return {"ok": False, "error": "알 수 없는 오류로 생성하지 못했어요."}
-
-
-BACKEND_BASE_URL = os.getenv("BACKEND_API_URL", "http://localhost:8010")
-
-def test_preprocess_image(image_bytes: bytes, filename: str, mime_type: str) -> Optional[bytes]:
-    """
-    [단위 테스트용] 백엔드 내부 전처리(누끼) 로직의 정상 작동 여부를 검증하기 위한 함수
-    """
-    url = f"{BACKEND_BASE_URL}/api/v1/image/preprocess"
-    files = {"file": (filename, image_bytes, mime_type)}
-    
-    try:
-        response = requests.post(url, files=files, timeout=30)
-        
-        if response.status_code == 200:
-            res_json = response.json()
-            image_base64 = res_json.get("data", {}).get("image_base64")
-            
-            if image_base64:
-                # 단위 테스트 성공: 디코딩된 바이너리 리턴
-                return base64.b64decode(image_base64)
-            raise ValueError("응답 데이터에 'image_base64'가 없습니다.")
-        else:
-            raise RuntimeError(f"서버 응답 에러 (Status: {response.status_code})")
-            
-    except Exception as e:
-        # 에러 발생 시 화면단으로 에러를 던집니다.
-        raise e
+        return {"ok": False, "error": "알 수 없는 오류로 생성하지 못했어요.", "error_code": None}
