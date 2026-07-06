@@ -1,41 +1,34 @@
 from fastapi import APIRouter
+from importlib import import_module
 
-from app.api.v1.endpoints import auth, generate_ad, health, image_preprocess
-
-
-# API v1에서 사용하는 전체 라우터입니다.
-# 각 endpoint 파일에서 정의한 router를 이곳에서 하나로 묶습니다.
 api_router = APIRouter()
 
 
-# Health Check API 연결
-# 최종 경로: GET /api/v1/health
-api_router.include_router(
-    health.router,
-    prefix="/health",
-    tags=["Health"],
-)
+def _include_router_if_available(
+    module_path: str,
+    *,
+    prefix: str = "",
+    tags: list[str] | None = None,
+) -> None:
+    try:
+        module = import_module(module_path)
+    except Exception:
+        return
+    router = getattr(module, "router", None)
+    if router is not None:
+        api_router.include_router(router, prefix=prefix, tags=tags)
 
-# Image Preprocess API 연결
-# 최종 경로: POST /api/v1/image/preprocess
-api_router.include_router(
-    image_preprocess.router,
+
+_include_router_if_available("app.api.v1.endpoints.health", prefix="/health", tags=["Health"])
+_include_router_if_available(
+    "app.api.v1.endpoints.image_preprocess",
     prefix="/image",
     tags=["Image Preprocess"],
 )
-
-# Auth (소셜 로그인) API 연결
-# 최종 경로: /api/v1/auth/kakao/login, /api/v1/auth/kakao/callback, /api/v1/auth/me
-api_router.include_router(
-    auth.router,
-    prefix="/auth",
-    tags=["Auth"],
-)
-
-# 통합 광고 생성 API 연결
-# 최종 경로: POST /api/v1/ad/generate
-api_router.include_router(
-    generate_ad.router,
+_include_router_if_available("app.api.v1.endpoints.auth", prefix="/auth", tags=["Auth"])
+_include_router_if_available(
+    "app.api.v1.endpoints.generate_ad",
     prefix="/ad/generate",
     tags=["Generate Ad"],
 )
+_include_router_if_available("app.api.v1.endpoints.image_ad")
