@@ -4,8 +4,8 @@ Step 2: 사진 업로드 & 무드/톤 선택
 from __future__ import annotations
 import streamlit as st
 from core.config import MOOD_OPTIONS, TONE_OPTIONS, MAX_UPLOAD_MB, ALLOWED_IMAGE_TYPES
+from core.auth import get_daily_usage, is_quota_exceeded
 from core.state import set_upload, set_style, is_upload_step_valid, next_step, prev_step
-from core.auth import is_quota_exceeded, get_daily_usage
 from components.ui_kit import phone_preview, quota_exceeded_banner
 
 
@@ -39,7 +39,11 @@ def render() -> None:
                 if size_mb > MAX_UPLOAD_MB:
                     st.error(f"파일이 너무 커요 ({size_mb:.1f}MB). {MAX_UPLOAD_MB}MB 이하로 올려주세요.")
                 else:
-                    set_upload(image_bytes, uploaded_file.name)
+                    # 💡 개선: 프론트단에서 백엔드 테스트용 API 호출을 완전히 제거하고, 업로드된 원본을 세션에 바로 안전하게 세팅합니다.
+                    if st.session_state.upload.get("image_name") != uploaded_file.name:
+                        set_upload(image_bytes, uploaded_file.name)
+                        st.rerun()
+            # ----------------------------------------------------------------------------------
 
             moods = st.pills(
                 "원하는 인스타 무드 (복수 선택 가능)",

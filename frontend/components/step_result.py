@@ -100,7 +100,8 @@ def render() -> None:
             unsafe_allow_html=True,
         )
 
-    if not st.session_state.mock_mode and not is_logged_in():
+    guest_mode = st.session_state.get("dev_guest_mode", False)
+    if not st.session_state.mock_mode and not guest_mode and not is_logged_in():
         _render_login_required()
         return
 

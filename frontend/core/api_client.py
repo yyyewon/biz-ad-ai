@@ -112,7 +112,14 @@ def generate_ad(
             },
         }
     except requests.exceptions.Timeout:
-        return {"ok": False, "error": "생성이 지연되고 있어요. 잠시 후 다시 시도해 주세요.", "error_code": None}
+        return {
+            "ok": False,
+            "error": (
+                "생성이 지연되고 있어요. 잠시 후 다시 시도해 주세요. "
+                f"(endpoint={GENERATE_ENDPOINT}, timeout={REQUEST_TIMEOUT_GENERATE}s)"
+            ),
+            "error_code": None,
+        }
     except requests.exceptions.ConnectionError:
         return {"ok": False, "error": "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요.", "error_code": None}
     except requests.exceptions.HTTPError:

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Form, File, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from app.core.concurrency import generation_limiter
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user_optional
 from app.core.quota import check_and_increment_daily_usage_async
 from app.services.pipelines.generate_pipeline import run_generate_pipeline
 
@@ -18,7 +18,7 @@ async def generate_ad_endpoint(
     moods: str = Form("", description="분위기 (콤마 구분)"),
     tone: str = Form("", description="톤앤매너"),
     image: UploadFile = File(None, description="참고용 이미지"),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict | None = Depends(get_current_user_optional),
 ):
     """
     통합 광고 콘텐츠 생성 API (텍스트 + 이미지 전처리 통합 버전)
@@ -30,8 +30,9 @@ async def generate_ad_endpoint(
     if image and image.filename:
         image_bytes = await image.read()
 
-    # 하루 생성 횟수 확인 및 증가
-    await check_and_increment_daily_usage_async(current_user["id"])
+    # 로그인된 사용자만 하루 생성 횟수 제한을 적용합니다.
+    if current_user:
+        await check_and_increment_daily_usage_async(current_user["id"])
 
     # 동시 생성 요청 수 제한
     async with generation_limiter.slot():
