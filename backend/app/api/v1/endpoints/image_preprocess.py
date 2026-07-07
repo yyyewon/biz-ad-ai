@@ -18,11 +18,11 @@ def run_remove_background_and_resize(image_bytes: bytes) -> bytes:
     """
     이미지 배경 제거 및 리사이즈 함수.
 
-    실제 처리는 app.image_processor.remove_background_and_resize가 담당한다.
+    실제 처리는 remove_background_and_resize가 담당한다.
     """
 
     try:
-        from backend.app.utils.image_processor import remove_background_and_resize
+        from app.utils.image_processor import remove_background_and_resize
 
     except SystemExit as exc:
         raise AppException(
