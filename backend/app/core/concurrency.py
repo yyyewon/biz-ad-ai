@@ -4,12 +4,12 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from contextlib import asynccontextmanager
 from time import perf_counter
 
 from loguru import logger
 
+from app.core.config import get_settings
 from app.core.exceptions import AppException
 
 
@@ -69,7 +69,8 @@ class GenerationConcurrencyLimiter:
             self._semaphore.release()
 
 
+settings = get_settings()
 generation_limiter = GenerationConcurrencyLimiter(
-    max_concurrent=int(os.getenv("GENERATION_MAX_CONCURRENT", "2")),
-    max_queue_wait_seconds=float(os.getenv("GENERATION_QUEUE_TIMEOUT_SECONDS", "15")),
+    max_concurrent=settings.generation_max_concurrent,
+    max_queue_wait_seconds=settings.generation_queue_timeout_seconds,
 )

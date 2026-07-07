@@ -3,17 +3,17 @@
 """
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from starlette.concurrency import run_in_threadpool
 
+from app.core.config import get_settings
 from app.core.database import get_connection
 from app.core.exceptions import AppException
 
 KST = ZoneInfo("Asia/Seoul")
-DAILY_LIMIT = int(os.getenv("DAILY_GENERATION_LIMIT", "3"))
+DAILY_LIMIT = get_settings().daily_generation_limit
 
 
 def _today_str() -> str:

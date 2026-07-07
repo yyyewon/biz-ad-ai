@@ -1,4 +1,3 @@
-import os
 from time import perf_counter
 from uuid import uuid4
 
@@ -42,10 +41,9 @@ app = FastAPI(
 if register_exception_handlers:
     register_exception_handlers(app)
 
-_DEFAULT_ORIGINS = "http://localhost:8501"
 ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv("CORS_ALLOWED_ORIGINS", _DEFAULT_ORIGINS).split(",")
+    for origin in settings.cors_allowed_origins.split(",")
     if origin.strip()
 ]
 

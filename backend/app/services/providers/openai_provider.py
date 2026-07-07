@@ -1,10 +1,11 @@
-import os
 from openai import OpenAI
+
+from app.core.config import get_settings
 
 
 class OpenAIProvider:
     def __init__(self):
-        self.api_key = os.getenv("OPENAI_API_KEY")
+        self.api_key = get_settings().openai_api_key
         self.client = OpenAI(api_key=self.api_key) if self.api_key else None
 
     def generate_text(
@@ -17,7 +18,7 @@ class OpenAIProvider:
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=get_settings().openai_text_model,
                 messages=[
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": prompt},
