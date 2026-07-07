@@ -1,25 +1,52 @@
-from pathlib import Path
-from typing import Protocol
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
 
 
-class ImageGenerationProvider(Protocol):
+class TextGenerationProvider(ABC):
+    """
+    텍스트 생성 provider 공통 interface.
+    """
+
+    @abstractmethod
+    def generate_text(
+        self,
+        *,
+        prompt: str,
+        system_instruction: str | None = None,
+    ) -> str:
+        """
+        광고 문구 텍스트를 생성한다.
+        """
+
+
+class ImageGenerationProvider(ABC):
+    """
+    이미지 생성 provider 공통 interface.
+
+    서버에 이미지 파일을 저장하지 않기 위해 provider는 생성 결과를 bytes로 반환한다.
+    """
+
+    @abstractmethod
     def generate(
         self,
         *,
-        input_image_path: Path,
+        input_image_bytes: bytes,
         prompt: str,
         num_images: int,
-        output_dir: Path,
-        mask_image_path: Path | None = None,
-    ) -> list[Path]:
-        """광고 이미지를 생성하고 저장된 파일 경로 목록을 반환합니다."""
+        mask_image_bytes: bytes | None = None,
+    ) -> list[bytes]:
+        """
+        입력 이미지 bytes를 기반으로 광고 이미지 bytes 목록을 생성한다.
+        """
 
+    @abstractmethod
     def generate_backgrounds(
         self,
         *,
         prompt: str,
         num_images: int,
-        output_dir: Path,
-        file_prefix: str = "background",
-    ) -> list[Path]:
-        """배경 이미지만 생성하고 저장된 파일 경로 목록을 반환합니다."""
+    ) -> list[bytes]:
+        """
+        배경 이미지 bytes 목록을 생성한다.
+        """

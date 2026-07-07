@@ -1,0 +1,522 @@
+# ============================================================
+# Biz Ad AI model configuration
+# ============================================================
+#
+# 설정 파일 위치:
+# - local: backend/config/model.yaml
+# - docker backend container: /app/config/model.yaml
+#
+# 현재 파이프라인:
+# 1. image_preprocess: 이미지 배경 제거 / 리사이징
+# 2. text_generation: 광고 문구 생성
+# 3. image_generation: 광고 이미지 생성
+# ============================================================
+
+version: 1
+
+# 사용할 provider 조합을 선택
+#
+# options:
+# - all_openai
+#   → 텍스트 생성: OpenAI
+#   → 이미지 생성: OpenAI
+#
+# - all_hf
+#   → 텍스트 생성: HuggingFace
+#   → 이미지 생성: HuggingFace
+#
+# - hybrid_openai_text_hf_image
+#   → 텍스트 생성: OpenAI
+#   → 이미지 생성: HuggingFace
+#
+# - hybrid_hf_text_openai_image
+#   → 텍스트 생성: HuggingFace
+#   → 이미지 생성: OpenAI
+active_profile: all_openai
+
+# provider 조합 정의.
+#
+# provider options:
+# - openai
+# - hf
+#
+# 현재 프로젝트 기준 역할:
+# - text_generation_provider: 광고 문구 생성 provider
+# - image_generation_provider: 광고 이미지 생성 provider
+profiles:
+  all_openai:
+    text_generation_provider: openai
+    image_generation_provider: openai
+
+  all_hf:
+    text_generation_provider: hf
+    image_generation_provider: hf
+
+  hybrid_openai_text_hf_image:
+    text_generation_provider: openai
+    image_generation_provider: hf
+
+  hybrid_hf_text_openai_image:
+    text_generation_provider: hf
+    image_generation_provider: openai
+
+# ============================================================
+# Runtime settings
+# ============================================================
+
+runtime:
+  # 모델 실행 장치.
+  #
+  # options:
+  # - auto: 사용 가능한 장치를 자동 선택
+  # - cuda: NVIDIA GPU 사용
+  # - cpu: CPU 사용
+  # - mps: Apple Silicon GPU 사용
+  device: auto
+
+  # 모델 연산 정밀도.
+  #
+  # options:
+  # - auto: 장치에 맞게 자동 선택
+  # - fp16: GPU 메모리 절약, 추론 속도 개선 가능
+  # - bf16: 지원 GPU에서 안정적인 mixed precision
+  # - fp32: 기본 32-bit float, CPU/안정성 우선
+  dtype: auto
+
+  # 재현성 제어용 seed.
+  #
+  # options:
+  # - null: seed 고정 안 함
+  # - 정수값: 예) 42
+  seed: null
+
+# ============================================================
+# Output image settings
+# ============================================================
+
+output_image:
+  # 최종 광고 이미지 가로 크기.
+  #
+  # common options:
+  # - 1080: Instagram 4:5 또는 정사각형 제작 기준
+  width: 1080
+
+  # 최종 광고 이미지 세로 크기.
+  #
+  # common options:
+  # - 1080: 정사각형
+  # - 1350: Instagram 4:5 세로형
+  height: 1350
+
+  # 최종 응답 이미지 MIME 타입.
+  #
+  # options:
+  # - image/png
+  # - image/jpeg
+  mime_type: image/png
+
+  # 기본 생성 이미지 개수.
+  #
+  # options:
+  # - 1~max_count 사이 정수
+  default_count: 3
+
+  # 최대 생성 이미지 개수.
+  #
+  # options:
+  # - 1 이상 정수
+  max_count: 4
+
+# ============================================================
+# Image preprocess settings
+# ============================================================
+
+image_preprocess:
+  # 이미지 배경 제거 provider.
+  #
+  # current option:
+  # - rembg
+  provider: rembg
+
+  # 배경 제거 후 리사이징 크기.
+  #
+  # common options:
+  # - 512
+  # - 768
+  # - 1024
+  target_width: 512
+  target_height: 512
+
+  # 전처리 결과 이미지 포맷.
+  #
+  # options:
+  # - png: 투명 배경 유지에 적합
+  # - jpeg: 용량은 작지만 투명 배경 불가
+  output_format: png
+
+# ============================================================
+# Logging settings
+# ============================================================
+
+logging:
+  performance:
+    # 성능 분석용 JSONL 로그 저장 여부.
+    #
+    # options:
+    # - true: logs/performance.jsonl 기록
+    # - false: 기록 안 함
+    enabled: true
+
+    # backend 기준 성능 로그 저장 경로.
+    #
+    # local:
+    # - backend/logs/performance.jsonl
+    #
+    # docker container:
+    # - /app/logs/performance.jsonl
+    path: logs/performance.jsonl
+
+    # 모델 설정, 이미지 크기, step 수 등 부가 정보를 로그에 포함할지 여부.
+    #
+    # options:
+    # - true
+    # - false
+    include_extra: true
+
+# ============================================================
+# OpenAI settings
+# ============================================================
+
+openai:
+  # OpenAI API Key를 읽을 환경변수 이름.
+  #
+  # .env example:
+  # OPENAI_API_KEY=...
+  api_key_env: OPENAI_API_KEY
+
+  text_generation:
+    # OpenAI 광고 문구 생성 기본 모델.
+    #
+    # options:
+    # - gpt-4o-mini
+    # - gpt-5-mini
+    # - gpt-5.4-mini
+    # - gpt-5.4
+    #
+    # 참고:
+    # - gpt-4o-mini는 저비용/호환성 우선 모델 후보로 둔다.
+    # - gpt-5 계열은 api_type: responses API 분기를 사용한다.
+    default_model: gpt-5.4-mini
+
+    models:
+      gpt-4o-mini:
+        # OpenAI 호출 방식.
+        #
+        # options:
+        # - chat_completions
+        # - responses
+        api_type: chat_completions
+
+        # 생성 다양성.
+        #
+        # range:
+        # - 0.0: 보수적, 일관적
+        # - 0.7: 일반적인 창의성
+        # - 1.0 이상: 더 다양하지만 불안정할 수 있음
+        temperature: 0.7
+
+        # chat_completions API의 최대 출력 토큰.
+        max_tokens: 800
+
+      gpt-5-mini:
+        # gpt-5 계열은 responses API 기준 설정.
+        api_type: responses
+
+        # 추론 강도.
+        #
+        # common options:
+        # - minimal
+        # - low
+        # - medium
+        # - high
+        reasoning_effort: low
+
+        # 응답 상세도.
+        #
+        # options:
+        # - low
+        # - medium
+        # - high
+        verbosity: medium
+
+        # responses API의 최대 출력 토큰.
+        max_output_tokens: 800
+
+      gpt-5.4-mini:
+        api_type: responses
+        reasoning_effort: medium
+        verbosity: high
+        max_output_tokens: 800
+
+      gpt-5.4:
+        api_type: responses
+        reasoning_effort: low
+        verbosity: medium
+        max_output_tokens: 800
+
+  image_generation:
+    # OpenAI 광고 이미지 생성 기본 모델.
+    #
+    # options:
+    # - gpt-image-1-mini
+    # - gpt-image-1
+    # - gpt-image-2
+    default_model: gpt-image-1-mini
+
+    models:
+      gpt-image-1-mini:
+        # 이미지 생성 API 타입.
+        #
+        # current option:
+        # - images
+        api_type: images
+
+        # OpenAI 이미지 생성 크기.
+        #
+        # common options:
+        # - 1024x1024
+        # - 1024x1536
+        # - 1536x1024
+        size: 1024x1536
+
+        # 이미지 품질.
+        #
+        # common options:
+        # - low
+        # - medium
+        # - high
+        quality: medium
+
+        # 출력 포맷.
+        #
+        # options:
+        # - png
+        # - jpeg
+        output_format: png
+
+# ============================================================
+# HuggingFace settings
+# ============================================================
+
+hf:
+  # HuggingFace token을 읽을 환경변수 이름.
+  #
+  # .env example:
+  # HF_TOKEN=...
+  #
+  # public model만 쓸 경우 없어도 동작할 수 있지만,
+  # gated/private model 사용 시 필요하다.
+  token_env: HF_TOKEN
+
+  text_generation:
+    # HuggingFace 광고 문구 생성 기본 모델.
+    #
+    # options:
+    # - qwen3_4b
+    # - kanana_8b
+    default_model: qwen3_4b
+
+    models:
+      qwen3_4b:
+        # HuggingFace model id.
+        model_id: Qwen/Qwen3-4B-Instruct-2507
+
+        # 작업 유형.
+        #
+        # current option:
+        # - text-generation
+        task_type: text-generation
+
+        # 실행 백엔드.
+        #
+        # options:
+        # - pytorch
+        backend_type: pytorch
+
+        # 모델 계열.
+        #
+        # options:
+        # - transformers
+        model_family: transformers
+
+        # 개별 모델 장치 설정.
+        #
+        # options:
+        # - auto
+        # - cuda
+        # - cpu
+        # - mps
+        device: auto
+
+        # 개별 모델 dtype 설정.
+        #
+        # options:
+        # - auto
+        # - fp16
+        # - bf16
+        # - fp32
+        dtype: auto
+
+        # 양자화 설정.
+        #
+        # current options:
+        # - none
+        # - int8
+        # - int4
+        quantization: none
+
+        # 최대 생성 토큰 수.
+        max_new_tokens: 800
+
+        # 생성 다양성.
+        temperature: 0.7
+
+        # nucleus sampling 확률.
+        #
+        # range:
+        # - 0.0~1.0
+        top_p: 0.9
+
+        # sampling 사용 여부.
+        #
+        # options:
+        # - true
+        # - false
+        do_sample: true
+
+      kanana_8b:
+        model_id: kakaocorp/kanana-1.5-8b-instruct-2505
+        task_type: text-generation
+        backend_type: pytorch
+        model_family: transformers
+        device: auto
+        dtype: auto
+        quantization: none
+        max_new_tokens: 800
+        temperature: 0.7
+        top_p: 0.9
+        do_sample: true
+
+  image_generation:
+    # HuggingFace 광고 이미지 생성 기본 모델.
+    #
+    # options:
+    # - sdxl_lightning
+    # - sdxl_base
+    default_model: sdxl_lightning
+
+    models:
+      sdxl_lightning:
+        # HuggingFace model id.
+        model_id: ByteDance/SDXL-Lightning
+
+        # 작업 유형.
+        #
+        # current option:
+        # - text-to-image
+        task_type: text-to-image
+
+        # 실행 백엔드.
+        #
+        # options:
+        # - pytorch
+        backend_type: pytorch
+
+        # 모델 계열.
+        #
+        # options:
+        # - diffusion
+        model_family: diffusion
+
+        # diffusers pipeline class.
+        #
+        # options:
+        # - StableDiffusionXLPipeline
+        pipeline_class: StableDiffusionXLPipeline
+
+        # 개별 모델 장치 설정.
+        #
+        # options:
+        # - auto
+        # - cuda
+        # - cpu
+        # - mps
+        device: auto
+
+        # 개별 모델 dtype 설정.
+        #
+        # options:
+        # - auto
+        # - fp16
+        # - bf16
+        # - fp32
+        dtype: auto
+
+        # 양자화 설정.
+        #
+        # current options:
+        # - none
+        quantization: none
+
+        # 생성 이미지 크기.
+        width: 1024
+        height: 1280
+
+        # diffusion 추론 step 수.
+        #
+        # note:
+        # - Lightning 계열은 낮은 step을 사용
+        # - 일반 SDXL은 더 높은 step을 사용
+        num_inference_steps: 4
+
+        # prompt 반영 강도.
+        #
+        # common range:
+        # - 1.0: Lightning 계열에서 자주 사용
+        # - 5.0~7.5: 일반 diffusion 모델에서 자주 사용
+        guidance_scale: 1.0
+
+        # prompt당 생성 이미지 개수.
+        num_images_per_prompt: 1
+
+      sdxl_base:
+        model_id: stabilityai/stable-diffusion-xl-base-1.0
+        task_type: text-to-image
+        backend_type: pytorch
+        model_family: diffusion
+        pipeline_class: StableDiffusionXLPipeline
+        device: auto
+        dtype: auto
+        quantization: none
+        width: 1024
+        height: 1280
+        num_inference_steps: 30
+        guidance_scale: 5.0
+        num_images_per_prompt: 1
+
+# ============================================================
+# ONNX settings
+# ============================================================
+
+onnx:
+  # ONNX Runtime execution providers.
+  #
+  # options:
+  # - CUDAExecutionProvider: NVIDIA GPU 사용
+  # - CPUExecutionProvider: CPU 사용
+  #
+  # 보통 CUDAExecutionProvider를 먼저 시도하고,
+  # 실패 시 CPUExecutionProvider로 fallback한다.
+  execution_providers:
+    - CUDAExecutionProvider
+    - CPUExecutionProvider
