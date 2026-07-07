@@ -52,7 +52,7 @@ markupsafe==3.0.3
     # via jinja2
 narwhals==2.23.0
     # via altair
-numpy==2.5.0
+numpy==2.4.6
     # via
     #   pandas
     #   pydeck

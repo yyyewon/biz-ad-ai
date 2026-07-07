@@ -1,11 +1,13 @@
-import os
 from openai import OpenAI
+
+from app.core.config import get_settings
 
 def run_text_pipeline(store_name: str, menu_name: str, purpose: str, request_note: str, moods: list, tone: str) -> str:
     """
     OpenAI API를 사용하여 광고 문구를 생성하는 텍스트 파이프라인
     """
-    api_key = os.getenv("OPENAI_API_KEY")
+    settings = get_settings()
+    api_key = settings.openai_api_key
     if not api_key:
         return f"[{store_name}] {menu_name} 대박 할인! (API 키가 설정되지 않아 임시 문구가 출력되었습니다.)"
 
@@ -27,7 +29,7 @@ def run_text_pipeline(store_name: str, menu_name: str, purpose: str, request_not
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.openai_text_model,
             messages=[
                 {"role": "system", "content": "너는 소상공인을 위한 친절하고 유능한 광고 카피라이터야."},
                 {"role": "user", "content": prompt}
