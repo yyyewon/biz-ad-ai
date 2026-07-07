@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     output_dir: Path = Field(default=Path("outputs"))
     openai_api_key: str = Field(default="")
     openai_image_model: str = Field(default="gpt-image-1-mini")
-    openai_image_size: str = Field(default="1024x1536")
+    openai_image_size: str = Field(default="1080x1350")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
