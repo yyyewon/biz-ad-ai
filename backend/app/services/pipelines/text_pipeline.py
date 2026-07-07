@@ -25,6 +25,7 @@ def run_text_pipeline(store_name: str, menu_name: str, purpose: str, request_not
     - 추가 요청사항: {request_note}
     
     문구 중간중간 적절한 이모지를 섞어주고, 맨 마지막 줄에는 관련 해시태그를 5개 이상 달아주세요.
+    마크다운 문법은 사용하지 말아주세요.
     """
 
     try:

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="")
     openai_image_model: str = Field(default="gpt-image-1-mini")
     openai_image_size: str = Field(default="1024x1536")
-    openai_text_model: str = Field(default="gpt-4o-mini")
+    openai_text_model: str = Field(default="gpt-5-mini")
 
     jwt_secret_key: str = Field(default="CHANGE_ME_DEV_ONLY_SECRET")
     jwt_expires_seconds: int = Field(default=60 * 60 * 24 * 7)
