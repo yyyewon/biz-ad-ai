@@ -31,7 +31,7 @@ def render() -> None:
                 "광고 레이아웃 유형",
                 options=POSTER_OPTIONS,
                 selection_mode="single",
-                default=st.session_state.upload.get("layout_type", "단일 메뉴형"),
+                default=st.session_state.upload.get("poster_type", "단일 메뉴형"),
                 key="upload_poster_style",
                 help=f"음식 집중형은 문구가 나타나지 않아요"
             )
