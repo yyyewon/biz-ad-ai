@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM nvidia/cuda:12.4.0-runtime-ubuntu22.04
 
 # rembg, onnxruntime 컴파일을 위한 필수 리눅스 빌드 도구 설치
 RUN apt-get update && apt-get install -y --no-install-recommends \

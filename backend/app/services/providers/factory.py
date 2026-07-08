@@ -14,6 +14,7 @@ from app.core.exceptions import AppException
 from app.core.model_config import get_model_settings, get_provider_name
 from app.services.providers.openai_image_provider import OpenAIImageProvider
 from app.services.providers.openai_text_provider import OpenAITextProvider
+from app.services.providers.hf_image_provider import HFImageProvider
 
 
 def get_text_provider() -> OpenAITextProvider:
@@ -35,13 +36,7 @@ def get_text_provider() -> OpenAITextProvider:
         )
 
     if provider_name == "hf":
-        raise AppException(
-            errors.HF_PROVIDER_NOT_AVAILABLE,
-            detail={
-                "role": "text_generation",
-                "message": "HF Text Provider는 Step 10에서 구현 예정입니다.",
-            },
-        )
+        return HFImageProvider()
 
     raise AppException(
         errors.PROVIDER_NOT_SUPPORTED,
