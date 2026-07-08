@@ -206,3 +206,4 @@ tmp_samples/
 # docker-compose-dev
 # =========================
 docker-compose.dev.proxy.yml
+backend/logs-dev/
