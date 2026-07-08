@@ -48,11 +48,11 @@ def _render_quota_exceeded() -> None:
             st.rerun()
 
 
+
 def _run_generation() -> None:
     b = st.session_state.business
     u = st.session_state.upload
     mock = st.session_state.mock_mode
-    access_token = st.session_state.auth.get("access_token")
 
     with st.spinner("AI가 광고 문구와 이미지를 만들고 있어요..."):
         result = generate_ad(
@@ -64,7 +64,7 @@ def _run_generation() -> None:
             image_name=u["image_name"],
             moods=u["moods"],
             tone=u["tone"],
-            access_token=access_token,
+            cookies=st.context.cookies,
             mock=mock,
         )
 
@@ -75,7 +75,7 @@ def _run_generation() -> None:
             error_code=result.get("error_code"),
         )
         if not mock and result.get("error_code") == "DAILY_LIMIT_EXCEEDED":
-            refresh_me()
+            refresh_me(st.context.cookies) 
         return
 
     st.session_state.generation.update(
@@ -88,7 +88,19 @@ def _run_generation() -> None:
     )
 
     if not mock:
-        refresh_me()
+        refresh_me(st.context.cookies)  
+
+    st.session_state.generation.update(
+        status="done",
+        caption=result["data"]["caption"],
+        images=result["data"]["images"],
+        error_message="",
+        error_code=None,
+        signature=_input_signature(),
+    )
+
+    if not mock:
+        refresh_me(st.context.cookies)
 
 
 def render() -> None:
