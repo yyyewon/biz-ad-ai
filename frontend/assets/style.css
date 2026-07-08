@@ -489,7 +489,8 @@ button[kind*="secondary"]:hover {
 .rg-login-kakao-btn:link,
 .rg-login-kakao-btn:visited,
 .rg-login-kakao-btn:hover,
-.rg-login-kakao-btn:active {
+.rg-login-kakao-btn:active,
+.rg-login-kakao-btn:focus {
   display: block;
   width: 100%;
   text-align: center;
@@ -498,7 +499,7 @@ button[kind*="secondary"]:hover {
   font-weight: 700 !important;
   font-size: 0.95rem;
   padding: 0.75rem 1rem;
-  border-radius: 999px;
+  border-radius: 999px !important;
   text-decoration: none !important;
   margin-bottom: 0.9rem;
   transition: background 0.15s ease;
