@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from loguru import logger
-from starlette.concurrency import run_in_threadpool
 
 from app.core import error_constants as errors
 from app.core.concurrency import generation_limiter
@@ -72,8 +71,7 @@ async def generate_ad_endpoint(
 
         # 동시 생성 요청 수 제한
         async with generation_limiter.slot():
-            result = await run_in_threadpool(
-                run_generate_pipeline,
+            result = await run_generate_pipeline(
                 store_name=store_name,
                 menu_name=menu_name,
                 purpose=purpose or "홍보",
