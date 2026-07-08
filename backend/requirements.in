@@ -46,7 +46,7 @@ openai
 Pygments
 
 # Image background removal
-rembg[cpu]
+rembg[gpu]
 
 # numba/pymatting compatibility for rembg
 numpy<2.5
