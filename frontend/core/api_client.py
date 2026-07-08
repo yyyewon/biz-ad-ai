@@ -132,7 +132,18 @@ def generate_ad(
         }
 
     except requests.exceptions.RequestException as exc:
-        fallback, code = "생성에 실패했습니다.", None
+        # 💡 기본값: 서버 응답 없이 아예 네트워크가 끊겼거나 타임아웃인 경우
+        fallback = "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요."
+        code = "NETWORK_DISCONNECTED"
+        
         if hasattr(exc, 'response') and exc.response is not None:
-            fallback, code = _extract_error(exc.response, f"오류 발생: {exc.response.status_code}")
+            status_code = exc.response.status_code
+            # 💡 502, 503, 504처럼 백엔드가 완전히 죽어서 에러 바디를 못 내려줄 때의 방어 로직 추가
+            if status_code in [502, 503, 504]:
+                fallback = f"서버가 응답하지 않습니다. 잠시 후 다시 시도해 주세요. (오류 코드: {status_code})"
+                code = f"SERVER_{status_code}"
+            else:
+                # 정상적으로 백엔드가 살아있고 커스텀 에러 응답을 줄 때
+                fallback, code = _extract_error(exc.response, f"오류 발생: {status_code}")
+                
         return {"ok": False, "error": fallback, "error_code": code}
