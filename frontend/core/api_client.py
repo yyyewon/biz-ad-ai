@@ -6,8 +6,10 @@ from __future__ import annotations
 import time
 import base64
 import requests
+import streamlit as st
 
-
+# 💡 토큰 재발급 함수 수입 추가
+from core.auth import request_refresh_token
 from core.config import (
     TEXT_ENDPOINT,
     IMAGE_ENDPOINT,
@@ -58,70 +60,12 @@ def generate_ad(
     image_name: str,
     moods: list[str],
     tone: str,
-    access_token: str | None = None,
+    cookies: dict | None = None, # 토큰 문자열 대신 쿠키 딕셔너리를 전송받음
     mock: bool = False,
 ) -> dict:
-    """
-    광고 문구 + 이미지 통합 생성
+    # ... (기본 Mock 모드 생략) ...
 
-    백엔드 공통 응답 포맷:
-    {
-      "success": true,
-      "data": {
-        "caption": "...",
-        "images": ["base64", ...],
-        "partial_success": false,
-        "warnings": [],
-        "image_generation_success": true
-      },
-      "error": null
-    }
-
-    프론트 내부 반환 포맷:
-    {
-      "ok": true,
-      "data": {
-        "caption": "...",
-        "images": [bytes, ...],
-        "partial_success": false,
-        "warnings": [],
-        "image_generation_success": true
-      }
-    }
-    """
-
-    if mock:
-        time.sleep(1.2)
-
-        hashtag_mood = moods[0] if moods else "감성"
-        hashtag_purpose = purpose.replace(" ", "").replace("/", "") if purpose else "홍보"
-
-        caption = (
-            f"{store_name}의 {menu_name}, 오늘도 한 입이면 반해요 ️\n"
-            f"{tone} 하루엔 {menu_name} 한 그릇 어떠세요?\n\n"
-            f"#{store_name.replace(' ', '')} #{menu_name.replace(' ', '')} "
-            f"#{hashtag_mood.replace(' ', '')} #{hashtag_purpose} #맛집스타그램 #오늘뭐먹지"
-        )
-
-        return {
-            "ok": True,
-            "data": {
-                "caption": caption,
-                "images": [_PLACEHOLDER_PNG] * 3,
-                "partial_success": False,
-                "warnings": [],
-                "image_generation_success": True,
-            },
-        }
-
-    files = {
-        "image": (
-            image_name or "upload.png",
-            image_bytes,
-            "application/octet-stream",
-        )
-    }
-
+    files = {"image": (image_name or "upload.png", image_bytes, "application/octet-stream")}
     payload = {
         "store_name": store_name,
         "menu_name": menu_name,
@@ -131,36 +75,30 @@ def generate_ad(
         "tone": tone,
     }
 
-    headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
-
     try:
         res = requests.post(
             GENERATE_ENDPOINT,
             files=files,
             data=payload,
-            headers=headers,
+            cookies=cookies,
             timeout=REQUEST_TIMEOUT_GENERATE,
         )
+
+        if res.status_code == 401:
+            if request_refresh_token(cookies):
+                res = requests.post(
+                    GENERATE_ENDPOINT,
+                    files=files,
+                    data=payload,
+                    cookies=cookies,
+                    timeout=REQUEST_TIMEOUT_GENERATE,
+                )
 
         res.raise_for_status()
         body = res.json()
 
-        # ========================================================
-        # 백엔드 공통 응답 포맷 처리
-        # ========================================================
-        #
-        # 변경 후 백엔드 응답:
-        # {
-        #   "success": true,
-        #   "data": {
-        #       "caption": "...",
-        #       "images": ["base64", ...]
-        #   },
-        #   "error": null
-        # }
         if body.get("success") is False:
             error = body.get("error") or {}
-
             return {
                 "ok": False,
                 "error": error.get("message") or "생성에 실패했어요.",
@@ -168,24 +106,16 @@ def generate_ad(
             }
 
         data = body.get("data") or {}
-
-        # 이전 백엔드 응답 포맷과도 임시 호환
-        if not data and ("caption" in body or "images" in body):
-            data = body
-
         caption = data.get("caption", "")
         image_base64_list = data.get("images") or []
-
         images: list[bytes] = []
 
         for image_base64 in image_base64_list:
             if not image_base64:
                 continue
-
             try:
                 images.append(base64.b64decode(image_base64))
             except Exception:
-                # 혹시 data:image/png;base64,... 형태로 내려오는 경우까지 방어
                 if isinstance(image_base64, str) and "," in image_base64:
                     images.append(base64.b64decode(image_base64.split(",", 1)[1]))
 
@@ -201,36 +131,19 @@ def generate_ad(
             },
         }
 
-    except requests.exceptions.Timeout:
-        return {
-            "ok": False,
-            "error": (
-                "생성이 지연되고 있어요. 잠시 후 다시 시도해 주세요. "
-                f"(endpoint={GENERATE_ENDPOINT}, timeout={REQUEST_TIMEOUT_GENERATE}s)"
-            ),
-            "error_code": None,
-        }
-
-    except requests.exceptions.ConnectionError:
-        return {
-            "ok": False,
-            "error": "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요.",
-            "error_code": None,
-        }
-
-    except requests.exceptions.HTTPError:
-        fallback = f"생성에 실패했어요. (서버 응답 코드: {res.status_code})"
-        message, code = _extract_error(res, fallback)
-
-        return {
-            "ok": False,
-            "error": message,
-            "error_code": code,
-        }
-
-    except requests.exceptions.RequestException:
-        return {
-            "ok": False,
-            "error": "알 수 없는 오류로 생성하지 못했어요.",
-            "error_code": None,
-        }
+    except requests.exceptions.RequestException as exc:
+        # 💡 기본값: 서버 응답 없이 아예 네트워크가 끊겼거나 타임아웃인 경우
+        fallback = "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요."
+        code = "NETWORK_DISCONNECTED"
+        
+        if hasattr(exc, 'response') and exc.response is not None:
+            status_code = exc.response.status_code
+            # 💡 502, 503, 504처럼 백엔드가 완전히 죽어서 에러 바디를 못 내려줄 때의 방어 로직 추가
+            if status_code in [502, 503, 504]:
+                fallback = f"서버가 응답하지 않습니다. 잠시 후 다시 시도해 주세요. (오류 코드: {status_code})"
+                code = f"SERVER_{status_code}"
+            else:
+                # 정상적으로 백엔드가 살아있고 커스텀 에러 응답을 줄 때
+                fallback, code = _extract_error(exc.response, f"오류 발생: {status_code}")
+                
+        return {"ok": False, "error": fallback, "error_code": code}
