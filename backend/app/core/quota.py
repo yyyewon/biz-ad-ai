@@ -20,9 +20,23 @@ def _today_str() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d")
 
 
-def check_and_increment_daily_usage(user_id: int) -> int:
+def ensure_daily_quota_available(user_id: int) -> None:
     """
-    오늘 생성 횟수를 확인하고, 한도 내이면 카운트 1 증가
+    오늘 생성 한도를 초과했는지 확인한다. 카운트는 증가시키지 않는다.
+    """
+    usage = get_daily_usage(user_id)
+    if usage["used"] >= DAILY_LIMIT:
+        raise AppException(
+            code="DAILY_LIMIT_EXCEEDED",
+            message=f"하루 생성 가능 횟수({DAILY_LIMIT}회)를 모두 사용했어요. 내일 다시 시도해 주세요.",
+            status_code=429,
+            detail={"daily_limit": DAILY_LIMIT, "used": usage["used"]},
+        )
+
+
+def increment_daily_usage(user_id: int) -> int:
+    """
+    오늘 생성 횟수를 1 증가시킨다. 한도를 초과하면 예외를 발생시킨다.
     """
     today = _today_str()
     conn = get_connection()
@@ -59,6 +73,14 @@ def check_and_increment_daily_usage(user_id: int) -> int:
         conn.close()
 
 
+def check_and_increment_daily_usage(user_id: int) -> int:
+    """
+    오늘 생성 횟수를 확인하고, 한도 내이면 카운트 1 증가
+    """
+    ensure_daily_quota_available(user_id)
+    return increment_daily_usage(user_id)
+
+
 def get_daily_usage(user_id: int) -> dict:
     today = _today_str()
     conn = get_connection()
@@ -91,6 +113,14 @@ def reset_daily_usage(user_id: int) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+async def ensure_daily_quota_available_async(user_id: int) -> None:
+    return await run_in_threadpool(ensure_daily_quota_available, user_id)
+
+
+async def increment_daily_usage_async(user_id: int) -> int:
+    return await run_in_threadpool(increment_daily_usage, user_id)
 
 
 async def check_and_increment_daily_usage_async(user_id: int) -> int:
