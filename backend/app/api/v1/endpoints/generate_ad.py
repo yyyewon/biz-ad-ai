@@ -2,18 +2,22 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from loguru import logger
-from starlette.concurrency import run_in_threadpool
 
 from app.core import error_constants as errors
 from app.core.concurrency import generation_limiter
 from app.core.deps import get_current_user_optional
 from app.core.exceptions import AppException
-from app.core.quota import check_and_increment_daily_usage_async
+from app.core.quota import ensure_daily_quota_available_async, increment_daily_usage_async
 from app.schemas.common import APIResponse, success_response
 from app.services.pipelines.generate_pipeline import run_generate_pipeline
 
 
 router = APIRouter()
+
+
+def _should_count_daily_usage(result: dict) -> bool:
+    """이미지 생성이 실제로 성공한 경우에만 일일 사용량을 차감한다."""
+    return result.get("image_generation_success") is True
 
 
 @router.post("", response_model=APIResponse)
@@ -58,9 +62,9 @@ async def generate_ad_endpoint(
         if image and image.filename:
             image_bytes = await image.read()
 
-        # 로그인된 사용자만 하루 생성 횟수 제한 적용
+        # 로그인된 사용자: 한도 확인만 먼저 (실패 시에는 차감하지 않음)
         if current_user:
-            await check_and_increment_daily_usage_async(current_user["id"])
+            await ensure_daily_quota_available_async(current_user["id"])
 
         logger.info(
             "generate_ad_endpoint_started | store_name={} | menu_name={} | has_image={} | mood_count={}",
@@ -72,8 +76,7 @@ async def generate_ad_endpoint(
 
         # 동시 생성 요청 수 제한
         async with generation_limiter.slot():
-            result = await run_in_threadpool(
-                run_generate_pipeline,
+            result = await run_generate_pipeline(
                 store_name=store_name,
                 menu_name=menu_name,
                 purpose=purpose or "홍보",
@@ -82,6 +85,9 @@ async def generate_ad_endpoint(
                 tone=tone,
                 image_bytes=image_bytes,
             )
+
+        if current_user and _should_count_daily_usage(result):
+            await increment_daily_usage_async(current_user["id"])
 
         logger.info(
             "generate_ad_endpoint_completed | store_name={} | menu_name={} | partial_success={}",

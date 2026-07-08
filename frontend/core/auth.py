@@ -6,7 +6,7 @@ from __future__ import annotations
 import requests
 import streamlit as st
 
-from core.config import ME_ENDPOINT, DEV_RESET_QUOTA_ENDPOINT, REQUEST_TIMEOUT_AUTH
+from core.config import ME_ENDPOINT, DEV_RESET_QUOTA_ENDPOINT, REQUEST_TIMEOUT_AUTH, DEV_GUEST_MODE_DEFAULT
 
 
 def init_auth_state() -> None:
@@ -16,6 +16,13 @@ def init_auth_state() -> None:
 
 def is_logged_in() -> bool:
     return bool(st.session_state.auth.get("access_token"))
+
+
+def is_dev_guest_mode() -> bool:
+    """로그인 우회 모드. 실제 로그인 상태면 항상 False."""
+    if is_logged_in():
+        return False
+    return bool(st.session_state.get("dev_guest_mode", DEV_GUEST_MODE_DEFAULT))
 
 
 def fetch_me(access_token: str) -> dict | None:
@@ -51,6 +58,8 @@ def consume_login_token_from_query() -> None:
         st.session_state.auth = {"access_token": None, "user": None}
     else:
         st.session_state.auth = {"access_token": token, "user": user}
+        # 로그인 성공 시 우회 모드는 자동 해제
+        st.session_state.dev_guest_mode = False
 
     st.query_params.clear()
     st.rerun()

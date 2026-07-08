@@ -1,3 +1,5 @@
+import asyncio
+
 from PIL import Image
 
 from app.schemas.image_ad import ImageAdResponse
@@ -24,10 +26,13 @@ def test_generate_pipeline_does_not_pass_output_path_arguments(monkeypatch):
 
     captured_kwargs = {}
 
+    async def fake_run_text_pipeline(**kwargs):
+        return "생성된 광고 문구"
+
     monkeypatch.setattr(
         generate_pipeline,
         "run_text_pipeline",
-        lambda **kwargs: "생성된 광고 문구",
+        fake_run_text_pipeline,
     )
 
     monkeypatch.setattr(
@@ -36,7 +41,7 @@ def test_generate_pipeline_does_not_pass_output_path_arguments(monkeypatch):
         lambda image_bytes: processed_bytes,
     )
 
-    def fake_generate_image_ads(**kwargs):
+    async def fake_generate_image_ads(**kwargs):
         captured_kwargs.update(kwargs)
 
         payload = kwargs["payload"]
@@ -65,14 +70,16 @@ def test_generate_pipeline_does_not_pass_output_path_arguments(monkeypatch):
         fake_generate_image_ads,
     )
 
-    result = run_generate_pipeline(
-        store_name="만월",
-        menu_name="데몬헌터스 케이크",
-        purpose="신메뉴 홍보",
-        request_note="",
-        moods=["cozy"],
-        tone="감성적인",
-        image_bytes=source_bytes,
+    result = asyncio.run(
+        run_generate_pipeline(
+            store_name="만월",
+            menu_name="데몬헌터스 케이크",
+            purpose="신메뉴 홍보",
+            request_note="",
+            moods=["cozy"],
+            tone="감성적인",
+            image_bytes=source_bytes,
+        )
     )
 
     assert result["caption"] == "생성된 광고 문구"
@@ -99,10 +106,13 @@ def test_generate_pipeline_fallback_does_not_create_file_path_response(monkeypat
     source_bytes = _sample_png_bytes("white")
     processed_bytes = _sample_png_bytes("blue")
 
+    async def fake_run_text_pipeline(**kwargs):
+        return "생성된 광고 문구"
+
     monkeypatch.setattr(
         generate_pipeline,
         "run_text_pipeline",
-        lambda **kwargs: "생성된 광고 문구",
+        fake_run_text_pipeline,
     )
 
     monkeypatch.setattr(
@@ -111,7 +121,7 @@ def test_generate_pipeline_fallback_does_not_create_file_path_response(monkeypat
         lambda image_bytes: processed_bytes,
     )
 
-    def fake_generate_image_ads(**kwargs):
+    async def fake_generate_image_ads(**kwargs):
         raise RuntimeError("image generation failed")
 
     monkeypatch.setattr(
@@ -120,14 +130,16 @@ def test_generate_pipeline_fallback_does_not_create_file_path_response(monkeypat
         fake_generate_image_ads,
     )
 
-    result = run_generate_pipeline(
-        store_name="만월",
-        menu_name="데몬헌터스 케이크",
-        purpose="신메뉴 홍보",
-        request_note="",
-        moods=["cozy"],
-        tone="감성적인",
-        image_bytes=source_bytes,
+    result = asyncio.run(
+        run_generate_pipeline(
+            store_name="만월",
+            menu_name="데몬헌터스 케이크",
+            purpose="신메뉴 홍보",
+            request_note="",
+            moods=["cozy"],
+            tone="감성적인",
+            image_bytes=source_bytes,
+        )
     )
 
     assert result["caption"] == "생성된 광고 문구"

@@ -1,3 +1,5 @@
+import asyncio
+
 from PIL import Image
 
 from app.schemas.image_ad import ImageAdRequest
@@ -13,7 +15,7 @@ class FakeImageProvider:
     def __init__(self):
         self.calls = []
 
-    def generate(
+    async def generate(
         self,
         *,
         input_image_bytes: bytes,
@@ -51,9 +53,11 @@ def test_generate_image_ads_returns_base64_without_file_path(monkeypatch):
         generation_mode="direct_poster",
     )
 
-    result = generate_image_ads(
-        payload=payload,
-        source_image_bytes=_sample_source_bytes(),
+    result = asyncio.run(
+        generate_image_ads(
+            payload=payload,
+            source_image_bytes=_sample_source_bytes(),
+        )
     )
 
     assert result.request_id.startswith("img-")
@@ -83,9 +87,11 @@ def test_generate_image_ads_two_stage_uses_food_then_poster(monkeypatch):
         generation_mode="two_stage",
     )
 
-    result = generate_image_ads(
-        payload=payload,
-        source_image_bytes=_sample_source_bytes(),
+    result = asyncio.run(
+        generate_image_ads(
+            payload=payload,
+            source_image_bytes=_sample_source_bytes(),
+        )
     )
 
     assert result.generation_mode == "two_stage"
