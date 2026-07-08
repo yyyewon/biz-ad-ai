@@ -39,11 +39,7 @@ def render() -> None:
                 if size_mb > MAX_UPLOAD_MB:
                     st.error(f"파일이 너무 커요 ({size_mb:.1f}MB). {MAX_UPLOAD_MB}MB 이하로 올려주세요.")
                 else:
-                    # 💡 개선: 프론트단에서 백엔드 테스트용 API 호출을 완전히 제거하고, 업로드된 원본을 세션에 바로 안전하게 세팅합니다.
-                    if st.session_state.upload.get("image_name") != uploaded_file.name:
-                        set_upload(image_bytes, uploaded_file.name)
-                        st.rerun()
-            # ----------------------------------------------------------------------------------
+                    set_upload(image_bytes, uploaded_file.name)
 
             moods = st.pills(
                 "원하는 인스타 무드 (복수 선택 가능)",

@@ -1,0 +1,49 @@
+# =========================
+# Git
+# =========================
+.git
+.gitignore
+
+# =========================
+# Environment / Secrets
+# =========================
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# =========================
+# Python
+# =========================
+venv/
+.venv/
+env/
+ENV/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# =========================
+# Docs / Repo metadata
+# =========================
+README.md
+docs/
+*.md
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# =========================
+# 로컬 개발 산출물
+# =========================
+*.log
+tmp_samples/
