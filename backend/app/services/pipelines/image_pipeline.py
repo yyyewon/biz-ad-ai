@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from typing import Optional
@@ -188,7 +189,7 @@ def _build_poster_prompt(payload: ImageAdRequest, mood: str, layout_type: str) -
     return ", ".join(prompt_chunks)
 
 
-def _generate_poster_with_retries(
+async def _generate_poster_with_retries(
     *,
     provider,
     source_image_bytes: bytes,
@@ -201,7 +202,7 @@ def _generate_poster_with_retries(
         retry_prompt = f"{base_prompt}, {suffix}" if suffix else base_prompt
 
         try:
-            image_bytes_list = provider.generate(
+            image_bytes_list = await provider.generate(
                 input_image_bytes=source_image_bytes,
                 mask_image_bytes=mask_image_bytes,
                 prompt=retry_prompt,
@@ -228,7 +229,7 @@ def _generate_poster_with_retries(
     )
 
 
-def generate_image_ads(
+async def generate_image_ads(
     payload: ImageAdRequest,
     source_image_bytes: bytes,
     seed: Optional[int] = None,
@@ -241,6 +242,7 @@ def generate_image_ads(
     - 전처리 source/mask/poster 이미지를 서버 디스크에 저장하지 않는다.
     - provider는 list[bytes]를 반환한다.
     - API 응답용 이미지는 base64 문자열로 변환한다.
+    - 포스터 생성은 num_images 개수만큼 asyncio.gather로 병렬 실행한다.
     """
 
     started = time.perf_counter()
@@ -277,16 +279,11 @@ def generate_image_ads(
         food_stage_started = time.perf_counter()
 
         if generation_mode == "two_stage":
-            for idx in range(payload.num_images):
+            async def _generate_food_image(idx: int) -> tuple[int, str, bytes]:
                 current_mood = _resolve_mood_for_index(payload, idx)
-                applied_moods.append(current_mood)
-
                 current_prompt = _build_inpaint_prompt(payload, current_mood)
 
-                if not prompt_used:
-                    prompt_used = current_prompt
-
-                iter_images = provider.generate(
+                iter_images = await provider.generate(
                     input_image_bytes=prepared_source_bytes,
                     mask_image_bytes=mask_bytes,
                     prompt=current_prompt,
@@ -303,21 +300,36 @@ def generate_image_ads(
                         },
                     )
 
-                generated_image_bytes.append(iter_images[0])
-                generated_image_base64.append(encode_image_bytes_to_base64(iter_images[0]))
+                return idx, current_mood, iter_images[0]
+
+            food_results = await asyncio.gather(
+                *[
+                    _generate_food_image(idx)
+                    for idx in range(payload.num_images)
+                ]
+            )
+
+            for idx, current_mood, image_bytes in sorted(food_results, key=lambda item: item[0]):
+                applied_moods.append(current_mood)
+                generated_image_bytes.append(image_bytes)
+                generated_image_base64.append(encode_image_bytes_to_base64(image_bytes))
+
+                if not prompt_used:
+                    prompt_used = _build_inpaint_prompt(payload, current_mood)
 
         else:
-            for idx in range(payload.num_images):
-                applied_moods.append(_resolve_mood_for_index(payload, idx))
+            applied_moods = [
+                _resolve_mood_for_index(payload, idx)
+                for idx in range(payload.num_images)
+            ]
 
         stage_latencies_ms["food_generation_ms"] = int(
             (time.perf_counter() - food_stage_started) * 1000
         )
 
         poster_stage_started = time.perf_counter()
-        poster_image_bytes: list[bytes] = []
 
-        for idx in range(payload.num_images):
+        async def _generate_poster_image(idx: int) -> tuple[int, bytes, str]:
             source_for_poster = (
                 generated_image_bytes[idx]
                 if generation_mode == "two_stage"
@@ -339,10 +351,7 @@ def generate_image_ads(
                 layout_type=resolved_layout,
             )
 
-            if not prompt_used:
-                prompt_used = poster_prompt
-
-            poster_outputs = _generate_poster_with_retries(
+            poster_outputs = await _generate_poster_with_retries(
                 provider=provider,
                 source_image_bytes=source_for_poster,
                 base_prompt=poster_prompt,
@@ -359,7 +368,21 @@ def generate_image_ads(
                     },
                 )
 
-            poster_image_bytes.append(poster_outputs[0])
+            return idx, poster_outputs[0], poster_prompt
+
+        poster_results = await asyncio.gather(
+            *[
+                _generate_poster_image(idx)
+                for idx in range(payload.num_images)
+            ]
+        )
+
+        poster_image_bytes: list[bytes] = []
+        for idx, poster_bytes, poster_prompt in sorted(poster_results, key=lambda item: item[0]):
+            poster_image_bytes.append(poster_bytes)
+
+            if not prompt_used:
+                prompt_used = poster_prompt
 
         stage_latencies_ms["poster_generation_ms"] = int(
             (time.perf_counter() - poster_stage_started) * 1000

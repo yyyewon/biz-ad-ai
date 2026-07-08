@@ -14,25 +14,23 @@ class DummyLimiter:
         return DummyLimiterSlot()
 
 
-async def fake_run_in_threadpool(func, *args, **kwargs):
-    return func(*args, **kwargs)
-
-
 def test_generate_ad_endpoint_wraps_pipeline_result_with_success_response(monkeypatch):
     async def run_test():
         monkeypatch.setattr(generate_ad, "generation_limiter", DummyLimiter())
-        monkeypatch.setattr(generate_ad, "run_in_threadpool", fake_run_in_threadpool)
 
-        monkeypatch.setattr(
-            generate_ad,
-            "run_generate_pipeline",
-            lambda **kwargs: {
+        async def fake_run_generate_pipeline(**kwargs):
+            return {
                 "caption": "테스트 광고 문구",
                 "images": [],
                 "partial_success": False,
                 "warnings": [],
                 "image_generation_success": None,
-            },
+            }
+
+        monkeypatch.setattr(
+            generate_ad,
+            "run_generate_pipeline",
+            fake_run_generate_pipeline,
         )
 
         response = await generate_ad.generate_ad_endpoint(

@@ -1,4 +1,5 @@
 from pathlib import Path
+import asyncio
 
 import pytest
 
@@ -184,7 +185,7 @@ def test_get_hf_image_provider_with_token_succeeds(monkeypatch, tmp_path):
 
 def test_text_pipeline_uses_text_provider(monkeypatch):
     class FakeTextProvider:
-        def generate_text(self, prompt: str, system_instruction: str) -> str:
+        async def generate_text(self, prompt: str, system_instruction: str) -> str:
             assert "테스트가게" in prompt
             assert "김밥" in prompt
             assert "광고 카피라이터" in system_instruction
@@ -196,7 +197,8 @@ def test_text_pipeline_uses_text_provider(monkeypatch):
         lambda: FakeTextProvider(),
     )
 
-    result = text_pipeline.run_text_pipeline(
+    result = asyncio.run(
+        text_pipeline.run_text_pipeline(
         store_name="테스트가게",
         menu_name="김밥",
         purpose="신메뉴 홍보",
