@@ -6,8 +6,10 @@ from __future__ import annotations
 import time
 import base64
 import requests
+import streamlit as st
 
-
+# 💡 토큰 재발급 함수 수입 추가
+from core.auth import request_refresh_token
 from core.config import (
     TEXT_ENDPOINT,
     IMAGE_ENDPOINT,
@@ -61,35 +63,6 @@ def generate_ad(
     access_token: str | None = None,
     mock: bool = False,
 ) -> dict:
-    """
-    광고 문구 + 이미지 통합 생성
-
-    백엔드 공통 응답 포맷:
-    {
-      "success": true,
-      "data": {
-        "caption": "...",
-        "images": ["base64", ...],
-        "partial_success": false,
-        "warnings": [],
-        "image_generation_success": true
-      },
-      "error": null
-    }
-
-    프론트 내부 반환 포맷:
-    {
-      "ok": true,
-      "data": {
-        "caption": "...",
-        "images": [bytes, ...],
-        "partial_success": false,
-        "warnings": [],
-        "image_generation_success": true
-      }
-    }
-    """
-
     if mock:
         time.sleep(1.2)
 
@@ -142,25 +115,27 @@ def generate_ad(
             timeout=REQUEST_TIMEOUT_GENERATE,
         )
 
+        # 💡 만약 토큰이 만료되어 401 에러가 났다면 인터셉트하여 리트라이합니다.
+        if res.status_code == 401:
+            if request_refresh_token():  # 백엔드에 갱신 요청 성공 시
+                # 싱싱한 새 Access Token을 다시 세션에서 가져와 헤더를 교체합니다.
+                new_token = st.session_state.auth.get("access_token")
+                headers["Authorization"] = f"Bearer {new_token}"
+                
+                # 동일한 요청을 다시 한번 전송합니다 (재시도)
+                res = requests.post(
+                    GENERATE_ENDPOINT,
+                    files=files,
+                    data=payload,
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT_GENERATE,
+                )
+
         res.raise_for_status()
         body = res.json()
 
-        # ========================================================
-        # 백엔드 공통 응답 포맷 처리
-        # ========================================================
-        #
-        # 변경 후 백엔드 응답:
-        # {
-        #   "success": true,
-        #   "data": {
-        #       "caption": "...",
-        #       "images": ["base64", ...]
-        #   },
-        #   "error": null
-        # }
         if body.get("success") is False:
             error = body.get("error") or {}
-
             return {
                 "ok": False,
                 "error": error.get("message") or "생성에 실패했어요.",
@@ -169,23 +144,19 @@ def generate_ad(
 
         data = body.get("data") or {}
 
-        # 이전 백엔드 응답 포맷과도 임시 호환
         if not data and ("caption" in body or "images" in body):
             data = body
 
         caption = data.get("caption", "")
         image_base64_list = data.get("images") or []
-
         images: list[bytes] = []
 
         for image_base64 in image_base64_list:
             if not image_base64:
                 continue
-
             try:
                 images.append(base64.b64decode(image_base64))
             except Exception:
-                # 혹시 data:image/png;base64,... 형태로 내려오는 경우까지 방어
                 if isinstance(image_base64, str) and "," in image_base64:
                     images.append(base64.b64decode(image_base64.split(",", 1)[1]))
 
@@ -221,7 +192,6 @@ def generate_ad(
     except requests.exceptions.HTTPError:
         fallback = f"생성에 실패했어요. (서버 응답 코드: {res.status_code})"
         message, code = _extract_error(res, fallback)
-
         return {
             "ok": False,
             "error": message,

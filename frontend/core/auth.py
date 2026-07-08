@@ -11,7 +11,7 @@ from core.config import ME_ENDPOINT, DEV_RESET_QUOTA_ENDPOINT, REQUEST_TIMEOUT_A
 
 def init_auth_state() -> None:
     if "auth" not in st.session_state:
-        st.session_state.auth = {"access_token": None, "user": None}
+        st.session_state.auth = {"access_token": None, "refresh_token": None, "user": None}
 
 
 def is_logged_in() -> bool:
@@ -38,19 +38,27 @@ def fetch_me(access_token: str) -> dict | None:
 
 def consume_login_token_from_query() -> None:
     """
-    세션에 토큰 저장 후 주소창에서 제거
+    세션에 Access & Refresh 토큰 저장 후 주소창에서 제거
     """
     init_auth_state()
 
-    token = st.query_params.get("login_token")
-    if not token:
+    # 💡 백엔드에서 리다이렉트해 준 두 토큰을 모두 낚아챕니다.
+    access_token = st.query_params.get("login_token")
+    refresh_token = st.query_params.get("refresh_token")
+    
+    if not access_token:
         return
 
-    user = fetch_me(token)
+    user = fetch_me(access_token)
     if user is None:
-        st.session_state.auth = {"access_token": None, "user": None}
+        st.session_state.auth = {"access_token": None, "refresh_token": None, "user": None}
     else:
-        st.session_state.auth = {"access_token": token, "user": user}
+        # 💡 세션에 Refresh Token도 안전하게 박아둡니다.
+        st.session_state.auth = {
+            "access_token": access_token, 
+            "refresh_token": refresh_token, 
+            "user": user
+        }
 
     st.query_params.clear()
     st.rerun()
@@ -69,8 +77,7 @@ def refresh_me() -> None:
 
 
 def logout() -> None:
-    st.session_state.auth = {"access_token": None, "user": None}
-
+    st.session_state.auth = {"access_token": None, "refresh_token": None, "user": None}
 
 
 def get_daily_usage() -> dict | None:
@@ -130,3 +137,32 @@ def reset_quota_for_testing() -> tuple[bool, str]:
     except ValueError:
         message = "초기화에 실패했어요."
     return False, message
+
+
+def request_refresh_token() -> bool:
+    """
+    💡 401 발생 시 백엔드에 토큰 갱신을 요청하는 구원 함수
+    """
+    refresh_token = st.session_state.auth.get("refresh_token")
+    if not refresh_token:
+        return False
+
+    try:
+        # ME_ENDPOINT(/api/v1/auth/me) 주소를 기반으로 /api/v1/auth/refresh 주소를 동적으로 유추합니다.
+        refresh_endpoint = ME_ENDPOINT.replace("/me", "/refresh")
+        res = requests.post(
+            refresh_endpoint,
+            json={"refresh_token": refresh_token},
+            timeout=REQUEST_TIMEOUT_AUTH
+        )
+        if res.status_code == 200:
+            res_data = res.json().get("data", {})
+            st.session_state.auth["access_token"] = res_data.get("access_token")
+            st.session_state.auth["refresh_token"] = res_data.get("refresh_token")
+            return True
+    except Exception:
+        pass
+        
+    # Refresh 토큰마저 만료되었으면 세션을 파괴하고 아웃시킵니다.
+    logout()
+    return False
