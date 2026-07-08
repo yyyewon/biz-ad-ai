@@ -6,8 +6,15 @@ import streamlit as st
 from core.state import STEP_LABELS, TOTAL_STEPS
 
 
-def render_topbar(mock_mode: bool) -> None:
-    status = "🧪 목업 모드" if mock_mode else "🟢 서버 연결"
+def render_topbar(mock_mode: bool, *, guest_mode: bool = False, logged_in: bool = False) -> None:
+    if mock_mode:
+        status = "🧪 목업 모드"
+    elif logged_in:
+        status = "👤 로그인됨"
+    elif guest_mode:
+        status = "🔓 우회 모드"
+    else:
+        status = "🟢 서버 연결"
     html = (
         '<div class="rg-topbar">'
         '<div>'

@@ -22,7 +22,7 @@ def test_image_ad_endpoint_returns_common_success_response(monkeypatch):
 
     calls = {}
 
-    def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
+    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
         calls["payload"] = payload
         calls["source_image_bytes_len"] = len(source_image_bytes)
 

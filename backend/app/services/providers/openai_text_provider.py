@@ -18,7 +18,7 @@ import os
 from typing import Any
 
 from loguru import logger
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from app.core import error_constants as errors
 from app.core.config import get_settings
@@ -58,7 +58,7 @@ class OpenAITextProvider:
                 },
             )
 
-        self.client = OpenAI(api_key=self.api_key)
+        self.client = AsyncOpenAI(api_key=self.api_key)
 
     @staticmethod
     def _resolve_api_key() -> str:
@@ -75,7 +75,7 @@ class OpenAITextProvider:
 
         return os.getenv(api_key_env) or get_settings().openai_api_key
 
-    def generate_text(
+    async def generate_text(
         self,
         prompt: str,
         system_instruction: str = "너는 친절하고 유능한 카피라이터야.",
@@ -94,13 +94,13 @@ class OpenAITextProvider:
 
         try:
             if api_type == "chat_completions":
-                result = self._generate_with_chat_completions(
+                result = await self._generate_with_chat_completions(
                     prompt=prompt,
                     system_instruction=system_instruction,
                 )
 
             elif api_type == "responses":
-                result = self._generate_with_responses(
+                result = await self._generate_with_responses(
                     prompt=prompt,
                     system_instruction=system_instruction,
                 )
@@ -158,7 +158,7 @@ class OpenAITextProvider:
 
         return result
 
-    def _generate_with_chat_completions(
+    async def _generate_with_chat_completions(
         self,
         *,
         prompt: str,
@@ -168,7 +168,7 @@ class OpenAITextProvider:
         Chat Completions API 방식 호출.
         """
 
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system_instruction},
@@ -182,7 +182,7 @@ class OpenAITextProvider:
 
         return (content or "").strip()
 
-    def _generate_with_responses(
+    async def _generate_with_responses(
         self,
         *,
         prompt: str,
@@ -214,7 +214,7 @@ class OpenAITextProvider:
         if verbosity:
             kwargs["text"] = {"verbosity": str(verbosity)}
 
-        response = self.client.responses.create(**kwargs)
+        response = await self.client.responses.create(**kwargs)
 
         return self._extract_responses_text(response)
 

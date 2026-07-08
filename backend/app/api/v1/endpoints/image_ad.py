@@ -61,7 +61,7 @@ async def create_image_ad(payload: ImageAdRequest):
                 },
             )
 
-        result = generate_image_ads(
+        result = await generate_image_ads(
             payload=payload,
             source_image_bytes=source_image_bytes,
         )

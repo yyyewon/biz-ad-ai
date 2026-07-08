@@ -9,7 +9,7 @@ class TextGenerationProvider(ABC):
     """
 
     @abstractmethod
-    def generate_text(
+    async def generate_text(
         self,
         *,
         prompt: str,
@@ -28,7 +28,7 @@ class ImageGenerationProvider(ABC):
     """
 
     @abstractmethod
-    def generate(
+    async def generate(
         self,
         *,
         input_image_bytes: bytes,
@@ -41,7 +41,7 @@ class ImageGenerationProvider(ABC):
         """
 
     @abstractmethod
-    def generate_backgrounds(
+    async def generate_backgrounds(
         self,
         *,
         prompt: str,

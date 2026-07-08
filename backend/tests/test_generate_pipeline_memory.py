@@ -1,3 +1,5 @@
+import asyncio
+
 from PIL import Image
 
 from app.schemas.image_ad import ImageAdResponse
@@ -16,20 +18,25 @@ def _sample_png_bytes(color: str = "white") -> bytes:
 
 
 def test_run_generate_pipeline_without_image(monkeypatch):
+    async def fake_run_text_pipeline(**kwargs):
+        return "생성된 광고 문구"
+
     monkeypatch.setattr(
         generate_pipeline,
         "run_text_pipeline",
-        lambda **kwargs: "생성된 광고 문구",
+        fake_run_text_pipeline,
     )
 
-    result = run_generate_pipeline(
-        store_name="만월",
-        menu_name="데몬헌터스 케이크",
-        purpose="신메뉴 홍보",
-        request_note="",
-        moods=["cozy"],
-        tone="감성적인",
-        image_bytes=None,
+    result = asyncio.run(
+        run_generate_pipeline(
+            store_name="만월",
+            menu_name="데몬헌터스 케이크",
+            purpose="신메뉴 홍보",
+            request_note="",
+            moods=["cozy"],
+            tone="감성적인",
+            image_bytes=None,
+        )
     )
 
     assert result["caption"] == "생성된 광고 문구"
@@ -47,17 +54,14 @@ def test_run_generate_pipeline_with_image_uses_memory_bytes(monkeypatch):
 
     calls = {}
 
-    monkeypatch.setattr(
-        generate_pipeline,
-        "run_text_pipeline",
-        lambda **kwargs: "생성된 광고 문구",
-    )
+    async def fake_run_text_pipeline(**kwargs):
+        return "생성된 광고 문구"
 
     def fake_preprocess(image_bytes: bytes) -> bytes:
         calls["preprocess_input"] = image_bytes
         return processed_bytes
 
-    def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
+    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
         calls["image_payload"] = payload
         calls["source_image_bytes"] = source_image_bytes
 
@@ -81,6 +85,11 @@ def test_run_generate_pipeline_with_image_uses_memory_bytes(monkeypatch):
 
     monkeypatch.setattr(
         generate_pipeline,
+        "run_text_pipeline",
+        fake_run_text_pipeline,
+    )
+    monkeypatch.setattr(
+        generate_pipeline,
         "run_remove_background_and_resize",
         fake_preprocess,
     )
@@ -90,14 +99,16 @@ def test_run_generate_pipeline_with_image_uses_memory_bytes(monkeypatch):
         fake_generate_image_ads,
     )
 
-    result = run_generate_pipeline(
-        store_name="만월",
-        menu_name="데몬헌터스 케이크",
-        purpose="신메뉴 홍보",
-        request_note="캐릭터 컨셉",
-        moods=["cozy"],
-        tone="감성적인",
-        image_bytes=source_bytes,
+    result = asyncio.run(
+        run_generate_pipeline(
+            store_name="만월",
+            menu_name="데몬헌터스 케이크",
+            purpose="신메뉴 홍보",
+            request_note="캐릭터 컨셉",
+            moods=["cozy"],
+            tone="감성적인",
+            image_bytes=source_bytes,
+        )
     )
 
     assert calls["preprocess_input"] == source_bytes
@@ -127,34 +138,38 @@ def test_run_generate_pipeline_image_failure_returns_fallback(monkeypatch):
     source_bytes = _sample_png_bytes("white")
     processed_bytes = _sample_png_bytes("blue")
 
+    async def fake_run_text_pipeline(**kwargs):
+        return "생성된 광고 문구"
+
+    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
+        raise RuntimeError("image generation failed")
+
     monkeypatch.setattr(
         generate_pipeline,
         "run_text_pipeline",
-        lambda **kwargs: "생성된 광고 문구",
+        fake_run_text_pipeline,
     )
     monkeypatch.setattr(
         generate_pipeline,
         "run_remove_background_and_resize",
         lambda image_bytes: processed_bytes,
     )
-
-    def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
-        raise RuntimeError("image generation failed")
-
     monkeypatch.setattr(
         generate_pipeline,
         "generate_image_ads",
         fake_generate_image_ads,
     )
 
-    result = run_generate_pipeline(
-        store_name="만월",
-        menu_name="데몬헌터스 케이크",
-        purpose="신메뉴 홍보",
-        request_note="",
-        moods=["cozy"],
-        tone="감성적인",
-        image_bytes=source_bytes,
+    result = asyncio.run(
+        run_generate_pipeline(
+            store_name="만월",
+            menu_name="데몬헌터스 케이크",
+            purpose="신메뉴 홍보",
+            request_note="",
+            moods=["cozy"],
+            tone="감성적인",
+            image_bytes=source_bytes,
+        )
     )
 
     assert result["caption"] == "생성된 광고 문구"
