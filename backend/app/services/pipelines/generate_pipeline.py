@@ -1,16 +1,27 @@
-import base64
+from __future__ import annotations
+
+import time
 import uuid
-from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
-from app.core.config import get_settings
+from app.api.v1.endpoints.image_preprocess import run_remove_background_and_resize
+from app.core import error_constants as errors
+from app.core.exceptions import AppException
+from app.core.model_config import (
+    get_active_profile_name,
+    get_image_preprocess_settings,
+    get_model_settings,
+)
 from app.schemas.image_ad import ImageAdRequest
 from app.services.pipelines.image_pipeline import generate_image_ads
 from app.services.pipelines.text_pipeline import run_text_pipeline
-from app.api.v1.endpoints.image_preprocess import run_remove_background_and_resize
+from app.utils.image_bytes import encode_image_bytes_to_base64
+from app.utils.performance_logger import measure_stage, record_performance_metric
 
 
+# 프론트에서 넘어오는 추가 무드명을 이미지 생성 파이프라인에서 쓰는 내부 무드명으로 변환한다.
 EXTRA_MOOD_ALIAS_MAP: dict[str, str] = {
     "우드톤 내추럴": "cozy",
     "밤분위기 무드": "luxury",
@@ -19,109 +30,502 @@ EXTRA_MOOD_ALIAS_MAP: dict[str, str] = {
 
 
 def _normalize_image_moods(moods: list[str]) -> tuple[str, list[str] | None]:
-    normalized: list[str] = []
-    for mood in moods:
-        normalized.append(EXTRA_MOOD_ALIAS_MAP.get(mood, mood))
+    """
+    텍스트/프론트 기준 mood 값을 이미지 생성 파이프라인 기준 mood 값으로 변환한다.
+
+    반환:
+    - 첫 번째 mood: ImageAdRequest.mood
+    - 전체 mood list: ImageAdRequest.mood_list
+    """
+
+    normalized = [EXTRA_MOOD_ALIAS_MAP.get(mood, mood) for mood in moods]
+
     if not normalized:
         return "cozy", None
+
     return normalized[0], normalized
 
 
-def _encode_file_to_base64(path: str | Path) -> str:
-    data = Path(path).read_bytes()
-    return base64.b64encode(data).decode("utf-8")
+def _safe_active_profile_name() -> str:
+    """
+    active_profile 이름을 안전하게 반환한다.
+
+    성능 로그 기록 중 config 문제가 생기더라도,
+    실제 파이프라인 흐름이 깨지지 않도록 unknown으로 처리한다.
+    """
+
+    try:
+        return get_active_profile_name()
+    except Exception:
+        return "unknown"
+
+
+def _safe_model_info(role: str) -> dict[str, str]:
+    """
+    role별 provider/model 정보를 안전하게 반환한다.
+
+    role options:
+    - text_generation
+    - image_generation
+    """
+
+    try:
+        model_info = get_model_settings(role)
+        return {
+            "provider": str(model_info.get("provider", "unknown")),
+            "model": str(model_info.get("model_name", "unknown")),
+        }
+    except Exception:
+        return {
+            "provider": "unknown",
+            "model": "unknown",
+        }
+
+
+def _safe_image_preprocess_info() -> dict[str, str]:
+    """
+    image_preprocess provider 정보를 안전하게 반환한다.
+    """
+
+    try:
+        settings = get_image_preprocess_settings()
+        provider = str(settings.get("provider", "rembg"))
+        return {
+            "provider": provider,
+            "model": provider,
+        }
+    except Exception:
+        return {
+            "provider": "rembg",
+            "model": "rembg",
+        }
+
+
+def _build_image_payload(
+    *,
+    store_name: str,
+    menu_name: str,
+    purpose: str,
+    request_note: str,
+    moods: list[str],
+    tone: str,
+) -> ImageAdRequest:
+    """
+    통합 파이프라인 입력값을 이미지 생성 파이프라인의 ImageAdRequest로 변환한다.
+
+    메모리 기반 처리 기준:
+    - 이미지 경로를 payload에 넣지 않는다.
+    - 실제 이미지 bytes는 generate_image_ads(source_image_bytes=...)로 직접 전달한다.
+    - generation_mode는 direct_poster를 기본값으로 사용한다.
+    - 광고 이미지는 기본 3장 생성한다.
+    """
+
+    normalized_mood, normalized_mood_list = _normalize_image_moods(moods or [])
+
+    return ImageAdRequest(
+        store_name=store_name,
+        menu_name=menu_name,
+        promotion_goal=purpose,
+        tone=tone,
+        extra_notes=request_note,
+        mood=normalized_mood,
+        mood_list=normalized_mood_list,
+        num_images=3,
+        generation_mode="direct_poster",
+    )
+
+
+def _build_image_generation_response(image_result) -> dict[str, Any]:
+    """
+    이미지 생성 파이프라인 결과 중 프론트/로그에서 확인할 핵심 정보만 정리한다.
+
+    주의:
+    - base64 이미지는 최상위 data.images에만 둔다.
+    - image_generation 안에는 큰 이미지 데이터를 중복으로 넣지 않는다.
+    """
+
+    return {
+        "request_id": image_result.request_id,
+        "generation_mode": image_result.generation_mode,
+        "latency_ms": image_result.latency_ms,
+        "stage_latencies_ms": image_result.stage_latencies_ms,
+        "num_images": image_result.num_images,
+        "poster_image_count": len(image_result.poster_images or []),
+        "applied_moods": image_result.applied_moods,
+    }
+
+
+def _record_image_pipeline_stage_metrics(
+    *,
+    pipeline_request_id: str,
+    profile_name: str,
+    image_model_info: dict[str, str],
+    stage_latencies_ms: dict[str, int],
+    image_request_id: str,
+) -> None:
+    """
+    image_pipeline 내부에서 계산된 stage_latencies_ms를 performance.jsonl에 기록한다.
+
+    image_pipeline.py가 이미 계산하는 값을 재사용해서
+    PPT/보고서용 분석 로그로 남긴다.
+    """
+
+    stage_key_map = {
+        "food_generation_ms": "food_generation",
+        "poster_generation_ms": "poster_generation",
+        "total_ms": "image_pipeline_total",
+    }
+
+    for latency_key, stage_name in stage_key_map.items():
+        elapsed_ms = stage_latencies_ms.get(latency_key)
+
+        if elapsed_ms is None:
+            continue
+
+        record_performance_metric(
+            pipeline="ad_generate",
+            stage=stage_name,
+            request_id=pipeline_request_id,
+            profile=profile_name,
+            provider=image_model_info["provider"],
+            model=image_model_info["model"],
+            elapsed_ms=float(elapsed_ms),
+            success=True,
+            extra={
+                "image_request_id": image_request_id,
+                "latency_key": latency_key,
+            },
+        )
+
+
+def _record_total_pipeline_metric(
+    *,
+    pipeline_request_id: str,
+    profile_name: str,
+    total_started: float,
+    success: bool,
+    partial_success: bool = False,
+    error_code: str | None = None,
+    error_type: str | None = None,
+) -> None:
+    """
+    통합 파이프라인 전체 소요 시간을 performance.jsonl에 기록한다.
+    """
+
+    elapsed_ms = (time.perf_counter() - total_started) * 1000
+
+    record_performance_metric(
+        pipeline="ad_generate",
+        stage="total_pipeline",
+        request_id=pipeline_request_id,
+        profile=profile_name,
+        provider="mixed",
+        model="mixed",
+        elapsed_ms=elapsed_ms,
+        success=success,
+        error_code=error_code,
+        error_type=error_type,
+        extra={
+            "partial_success": partial_success,
+        },
+    )
 
 
 def run_generate_pipeline(
-    store_name: str, 
-    menu_name: str, 
-    purpose: str, 
-    request_note: str, 
-    moods: list, 
+    store_name: str,
+    menu_name: str,
+    purpose: str,
+    request_note: str,
+    moods: list,
     tone: str,
-    image_bytes: bytes = None
-):
-    
+    image_bytes: bytes | None = None,
+) -> dict[str, Any]:
     """
-    텍스트 파이프라인과 이미지 전처리를 총괄하는 마스터 파이프라인
+    통합 광고 생성 파이프라인.
+
+    전체 흐름:
+    1. 광고 문구 생성
+    2. 이미지가 있으면 배경 제거 및 리사이즈
+    3. 전처리된 이미지 bytes를 image_pipeline에 직접 전달
+    4. 광고 이미지 생성
+    5. 생성 이미지 base64를 응답에 포함
+    6. 텍스트 + 이미지 결과를 통합 응답으로 반환
+    7. 단계별/전체 소요 시간을 performance.jsonl에 기록
+
+    이미지 생성 실패 시:
+    - 광고 문구는 유지한다.
+    - fallback 이미지를 반환한다.
+    - partial_success=true로 표시한다.
+    - warnings에 실패 원인을 남긴다.
+    - image_generation_success=false로 표시한다.
     """
-    # 텍스트 카피라이팅 문구 생성
-    caption = run_text_pipeline(
-        store_name=store_name,
-        menu_name=menu_name,
-        purpose=purpose,
-        request_note=request_note,
-        moods=moods,
-        tone=tone
+
+    pipeline_request_id = f"gen-{uuid.uuid4().hex[:8]}"
+    total_started = time.perf_counter()
+    profile_name = _safe_active_profile_name()
+
+    logger.info(
+        "generate_pipeline_started | request_id={} | profile={} | store_name={} | menu_name={} | has_image={}",
+        pipeline_request_id,
+        profile_name,
+        store_name,
+        menu_name,
+        bool(image_bytes),
     )
-    
-    images: list[str] = []
-    image_generation: dict = {}
-    image_generation_error: str | None = None
-    
-    # 이미지 배경 제거 로직
-    if image_bytes:
-        processed_bytes: bytes | None = None
-        try:
-            # 팀원의 누끼 + 리사이징 함수 호출
-            processed_bytes = run_remove_background_and_resize(image_bytes)
-            
-            if processed_bytes:
-                settings = get_settings()
-                request_id = f"gen-{uuid.uuid4().hex[:8]}"
-                request_dir = settings.output_dir / "_generate" / request_id
-                request_dir.mkdir(parents=True, exist_ok=True)
 
-                source_path = request_dir / "source_rgba.png"
-                source_path.write_bytes(processed_bytes)
+    try:
+        # ========================================================
+        # 1. 광고 문구 생성
+        # ========================================================
+        text_model_info = _safe_model_info("text_generation")
 
-                normalized_mood, normalized_mood_list = _normalize_image_moods(moods or [])
-                image_payload = ImageAdRequest(
-                    input_image_path=str(source_path.as_posix()),
+        with measure_stage(
+            pipeline="ad_generate",
+            stage="text_generation",
+            request_id=pipeline_request_id,
+            profile=profile_name,
+            provider=text_model_info["provider"],
+            model=text_model_info["model"],
+            extra={
+                "store_name": store_name,
+                "menu_name": menu_name,
+                "has_image": bool(image_bytes),
+            },
+        ):
+            caption = run_text_pipeline(
+                store_name=store_name,
+                menu_name=menu_name,
+                purpose=purpose,
+                request_note=request_note,
+                moods=moods,
+                tone=tone,
+            )
+
+        # ========================================================
+        # 2. 응답 기본값 초기화
+        # ========================================================
+        images: list[str] = []
+        image_generation: dict[str, Any] = {}
+        warnings: list[dict[str, Any]] = []
+        partial_success = False
+        image_generation_success: bool | None = None
+
+        # ========================================================
+        # 3. 이미지가 있는 경우 이미지 생성 파이프라인 실행
+        # ========================================================
+        if image_bytes:
+            processed_bytes: bytes | None = None
+
+            try:
+                # ====================================================
+                # 3-1. 이미지 배경 제거 및 리사이즈
+                # ====================================================
+                preprocess_info = _safe_image_preprocess_info()
+
+                with measure_stage(
+                    pipeline="ad_generate",
+                    stage="image_preprocess",
+                    request_id=pipeline_request_id,
+                    profile=profile_name,
+                    provider=preprocess_info["provider"],
+                    model=preprocess_info["model"],
+                    extra={
+                        "input_bytes": len(image_bytes),
+                    },
+                ):
+                    processed_bytes = run_remove_background_and_resize(image_bytes)
+
+                if not processed_bytes:
+                    raise AppException(
+                        errors.IMAGE_GENERATION_EMPTY_RESULT,
+                        detail={
+                            "stage": "image_preprocess",
+                            "request_id": pipeline_request_id,
+                        },
+                    )
+
+                # ====================================================
+                # 3-2. 이미지 생성용 payload 생성
+                # ====================================================
+                image_payload = _build_image_payload(
                     store_name=store_name,
                     menu_name=menu_name,
-                    promotion_goal=purpose,
+                    purpose=purpose,
+                    request_note=request_note,
+                    moods=moods or [],
                     tone=tone,
-                    extra_notes=request_note,
-                    mood=normalized_mood,
-                    mood_list=normalized_mood_list,
-                    num_images=3,
-                    generation_mode="direct_poster",
                 )
-                image_result = generate_image_ads(
-                    payload=image_payload,
-                    output_root=settings.output_dir,
-                    public_prefix="/outputs",
-                )
-                images = [
-                    _encode_file_to_base64(item.image_path)
-                    for item in image_result.poster_images
-                ]
-                # UI 3분할 피드 그리드를 안정적으로 채우기 위해 최소 3장을 보장합니다.
-                if images:
-                    while len(images) < 3:
-                        images.append(images[-1])
-                image_generation = {
-                    "request_id": image_result.request_id,
-                    "generation_mode": image_result.generation_mode,
-                    "latency_ms": image_result.latency_ms,
-                    "stage_latencies_ms": image_result.stage_latencies_ms,
-                    "poster_images": [item.model_dump() for item in image_result.poster_images],
-                }
-        except Exception:
-            # 생성 실패 시에도 UI가 비어 보이지 않도록 사용 가능한 입력 이미지를 3장으로 채워 전달합니다.
-            logger.exception("image_generation_failed_in_generate_pipeline")
-            fallback_bytes = processed_bytes or image_bytes
-            fallback_b64 = base64.b64encode(fallback_bytes).decode("utf-8")
-            images = [fallback_b64, fallback_b64, fallback_b64]
-            image_generation_error = "포스터 생성 실패로 fallback 이미지를 반환했습니다."
 
-    response = {
-        "caption": caption,
-        "images": images  # 전처리된 이미지가 담겨서 나감
-    }
-    if image_generation:
-        response["image_generation"] = image_generation
-    if image_generation_error:
-        response["image_generation_error"] = image_generation_error
-    return response
+                # ====================================================
+                # 3-3. 광고 이미지 생성
+                # ====================================================
+                image_model_info = _safe_model_info("image_generation")
+
+                with measure_stage(
+                    pipeline="ad_generate",
+                    stage="image_generation",
+                    request_id=pipeline_request_id,
+                    profile=profile_name,
+                    provider=image_model_info["provider"],
+                    model=image_model_info["model"],
+                    extra={
+                        "num_images": image_payload.num_images,
+                        "generation_mode": image_payload.generation_mode,
+                    },
+                ):
+                    image_result = generate_image_ads(
+                        payload=image_payload,
+                        source_image_bytes=processed_bytes,
+                    )
+
+                # image_pipeline 내부 stage latency도 분석용 로그로 저장한다.
+                _record_image_pipeline_stage_metrics(
+                    pipeline_request_id=pipeline_request_id,
+                    profile_name=profile_name,
+                    image_model_info=image_model_info,
+                    stage_latencies_ms=image_result.stage_latencies_ms or {},
+                    image_request_id=image_result.request_id,
+                )
+
+                # ====================================================
+                # 3-4. 생성된 포스터 이미지 base64 응답 구성
+                # ====================================================
+                images = list(image_result.images or [])
+
+                # 방어 로직:
+                # image_result.images가 비어 있고 bytes만 있는 경우 base64로 변환한다.
+                if not images and image_result.image_bytes_list:
+                    images = [
+                        encode_image_bytes_to_base64(image_data)
+                        for image_data in image_result.image_bytes_list
+                    ]
+
+                if not images:
+                    raise AppException(
+                        errors.IMAGE_GENERATION_EMPTY_RESULT,
+                        detail={
+                            "stage": "poster_generation",
+                            "request_id": pipeline_request_id,
+                        },
+                    )
+
+                # 프론트가 3장 기준으로 동작하는 경우를 고려해 부족하면 마지막 이미지를 복제한다.
+                while len(images) < 3:
+                    images.append(images[-1])
+
+                image_generation = _build_image_generation_response(image_result)
+                image_generation_success = True
+
+            except Exception as exc:
+                # ====================================================
+                # 3-5. 이미지 생성 실패 처리
+                # ====================================================
+                logger.exception(
+                    "image_generation_failed_in_generate_pipeline | request_id={} | error={}",
+                    pipeline_request_id,
+                    str(exc),
+                )
+
+                fallback_bytes = processed_bytes or image_bytes
+                fallback_b64 = encode_image_bytes_to_base64(fallback_bytes)
+                images = [fallback_b64, fallback_b64, fallback_b64]
+
+                partial_success = True
+                image_generation_success = False
+
+                error_code = exc.code if isinstance(exc, AppException) else "UNHANDLED_EXCEPTION"
+
+                warnings.append(
+                    {
+                        "code": error_code,
+                        "message": "포스터 생성 실패로 fallback 이미지를 반환했습니다.",
+                        "detail": {
+                            "request_id": pipeline_request_id,
+                            "error_type": exc.__class__.__name__,
+                            "error": str(exc),
+                        },
+                    }
+                )
+
+        # ========================================================
+        # 4. 통합 응답 생성
+        # ========================================================
+        response: dict[str, Any] = {
+            "caption": caption,
+            "images": images,
+            "partial_success": partial_success,
+            "warnings": warnings,
+            "image_generation_success": image_generation_success,
+        }
+
+        if image_generation:
+            response["image_generation"] = image_generation
+
+        if warnings:
+            response["image_generation_error"] = warnings[0]["message"]
+
+        # ========================================================
+        # 5. 통합 파이프라인 전체 소요 시간 기록
+        # ========================================================
+        total_success = not partial_success
+        total_error_code = warnings[0]["code"] if warnings else None
+        total_error_type = warnings[0]["detail"]["error_type"] if warnings else None
+
+        _record_total_pipeline_metric(
+            pipeline_request_id=pipeline_request_id,
+            profile_name=profile_name,
+            total_started=total_started,
+            success=total_success,
+            partial_success=partial_success,
+            error_code=total_error_code,
+            error_type=total_error_type,
+        )
+
+        logger.info(
+            "generate_pipeline_completed | request_id={} | partial_success={} | image_generation_success={}",
+            pipeline_request_id,
+            partial_success,
+            image_generation_success,
+        )
+
+        return response
+
+    except AppException as exc:
+        _record_total_pipeline_metric(
+            pipeline_request_id=pipeline_request_id,
+            profile_name=profile_name,
+            total_started=total_started,
+            success=False,
+            partial_success=False,
+            error_code=exc.code,
+            error_type=exc.__class__.__name__,
+        )
+        raise
+
+    except Exception as exc:
+        logger.exception(
+            "generate_pipeline_failed | request_id={} | error={}",
+            pipeline_request_id,
+            str(exc),
+        )
+
+        _record_total_pipeline_metric(
+            pipeline_request_id=pipeline_request_id,
+            profile_name=profile_name,
+            total_started=total_started,
+            success=False,
+            partial_success=False,
+            error_code="UNHANDLED_EXCEPTION",
+            error_type=exc.__class__.__name__,
+        )
+
+        error_spec = getattr(errors, "GENERATE_PIPELINE_IMAGE_FAILED", errors.IMAGE_PIPELINE_FAILED)
+
+        raise AppException(
+            error_spec,
+            detail={
+                "request_id": pipeline_request_id,
+                "error_type": exc.__class__.__name__,
+                "error": str(exc),
+            },
+        ) from exc

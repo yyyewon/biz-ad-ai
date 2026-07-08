@@ -1,0 +1,52 @@
+# =========================
+# Git
+# =========================
+.git
+.gitignore
+
+# =========================
+# Environment / Secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Python
+# =========================
+venv/
+.venv/
+env/
+ENV/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# =========================
+# 로컬 런타임 데이터
+# =========================
+logs/
+data/
+outputs/
+*.db
+*.sqlite3
+*.log
+
+# =========================
+# Docs / Repo metadata
+# =========================
+README.md
+docs/
+*.md
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

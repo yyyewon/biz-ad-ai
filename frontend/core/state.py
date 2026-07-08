@@ -19,8 +19,9 @@ def init_state() -> None:
         "upload": {
             "image_bytes": None,
             "image_name": None,
-            "moods": [],
+            "food": None,
             "tone": None,
+            "poster_type": None,
         },
         "generation": {
             "status": "idle",       # idle | loading | done | error
@@ -79,9 +80,7 @@ def set_style(moods: list[str], tone: str | None) -> None:
     st.session_state.upload["tone"] = tone
 
 
-def is_upload_step_valid() -> bool:
-    u = st.session_state.upload
-    return u["image_bytes"] is not None and len(u["moods"]) > 0 and u["tone"] is not None
+ 
 
 
 # ---------------------------------------------------------------

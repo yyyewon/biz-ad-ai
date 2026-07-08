@@ -3,7 +3,7 @@ Step 2: 사진 업로드 & 무드/톤 선택
 """
 from __future__ import annotations
 import streamlit as st
-from core.config import MOOD_OPTIONS, TONE_OPTIONS, MAX_UPLOAD_MB, ALLOWED_IMAGE_TYPES
+from core.config import POSTER_OPTIONS, FOOD_OPTIONS, TONE_OPTIONS, MAX_UPLOAD_MB, ALLOWED_IMAGE_TYPES
 from core.auth import get_daily_usage, is_quota_exceeded
 from core.state import set_upload, set_style, is_upload_step_valid, next_step, prev_step
 from components.ui_kit import phone_preview, quota_exceeded_banner
@@ -18,14 +18,24 @@ def render() -> None:
         with st.container(border=True):
             st.markdown(
                 '<span class="rg-eyebrow">STEP 2</span>'
-                '<div class="rg-card-title">음식 사진과 원하는 무드를 알려주세요</div>'
-                '<div class="rg-card-desc">배경은 AI가 새 배경으로 자연스럽게 바꿔드려요. 원본 음식은 그대로 유지됩니다.</div>',
+                '<div class="rg-card-title">음식 사진과 원하는 광고 형식, 음식 유형을 알려주세요.</div>'
+                '<div class="rg-card-desc">배경은 AI가 새 배경으로 자연스럽게 바꿔드려요.</div>',
                 unsafe_allow_html=True,
             )
 
             if quota_exceeded:
                 usage = get_daily_usage() or {}
                 quota_exceeded_banner(limit=usage.get("limit"))
+
+            layout_type = st.segmented_control(
+                "광고 레이아웃 유형",
+                options=POSTER_OPTIONS,
+                selection_mode="single",
+                default=st.session_state.upload.get("layout_type", "단일 메뉴형"),
+                key="upload_poster_style",
+                help=f"음식 집중형은 문구가 나타나지 않아요"
+            )
+
 
             uploaded_file = st.file_uploader(
                 "음식 사진 업로드",
@@ -39,18 +49,14 @@ def render() -> None:
                 if size_mb > MAX_UPLOAD_MB:
                     st.error(f"파일이 너무 커요 ({size_mb:.1f}MB). {MAX_UPLOAD_MB}MB 이하로 올려주세요.")
                 else:
-                    # 💡 개선: 프론트단에서 백엔드 테스트용 API 호출을 완전히 제거하고, 업로드된 원본을 세션에 바로 안전하게 세팅합니다.
-                    if st.session_state.upload.get("image_name") != uploaded_file.name:
-                        set_upload(image_bytes, uploaded_file.name)
-                        st.rerun()
-            # ----------------------------------------------------------------------------------
+                    set_upload(image_bytes, uploaded_file.name)
 
-            moods = st.pills(
-                "원하는 인스타 무드 (복수 선택 가능)",
-                options=MOOD_OPTIONS,
-                selection_mode="multi",
-                default=st.session_state.upload["moods"],
-                key="upload_moods_pills",
+            food = st.pills(
+                "음식 형태",
+                options=FOOD_OPTIONS,
+                selection_mode="single",
+                default=st.session_state.upload["food"],
+                key="upload_food_type",
             )
 
             tone = st.segmented_control(
@@ -61,7 +67,7 @@ def render() -> None:
                 key="upload_tone_select",
             )
 
-            set_style(moods or [], tone)
+            set_style(food, tone)
 
             nav_left, nav_right = st.columns(2)
             with nav_left:
