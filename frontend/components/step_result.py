@@ -7,7 +7,7 @@ import streamlit as st
 
 from core.state import prev_step, reset_all
 from core.api_client import generate_ad
-from core.auth import is_logged_in, refresh_me, is_quota_exceeded, get_daily_usage
+from core.auth import is_logged_in, refresh_me, is_quota_exceeded, get_daily_usage, is_dev_guest_mode
 from core.config import KAKAO_LOGIN_ENDPOINT
 from components.ui_kit import phone_preview, feed_grid, alert, quota_exceeded_banner
 
@@ -100,7 +100,7 @@ def render() -> None:
             unsafe_allow_html=True,
         )
 
-    guest_mode = st.session_state.get("dev_guest_mode", False)
+    guest_mode = is_dev_guest_mode()
     if not st.session_state.mock_mode and not guest_mode and not is_logged_in():
         _render_login_required()
         return
