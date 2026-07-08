@@ -1,38 +1,73 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
 from loguru import logger
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.schemas.common import error_response
+
+
+@dataclass(frozen=True)
+class ErrorSpec:
+    """
+    AppException에서 사용할 공통 에러 명세입니다.
+
+    사용 예:
+        from app.core import error_constants as errors
+
+        raise AppException(
+            errors.MODEL_CONFIG_NOT_FOUND,
+            detail={"path": "backend/config/model.yaml"},
+        )
+    """
+
+    code: str
+    message: str
+    status_code: int = 500
 
 
 class AppException(Exception):
     """
     프로젝트 내부에서 의도적으로 발생시키는 공통 예외 클래스입니다.
 
-    사용 예:
+    기존 방식:
         raise AppException(
             code="TEXT_GENERATION_FAILED",
             message="광고 문구 생성에 실패했습니다.",
             status_code=500,
         )
+
+    권장 방식:
+        raise AppException(
+            errors.MODEL_CONFIG_NOT_FOUND,
+            detail={"path": "backend/config/model.yaml"},
+        )
     """
 
     def __init__(
         self,
-        code: str,
-        message: str,
-        status_code: int = 400,
+        code: str | ErrorSpec,
+        message: str | None = None,
+        status_code: int | None = None,
         detail: Any | None = None,
     ) -> None:
-        self.code = code
-        self.message = message
-        self.status_code = status_code
-        self.detail = detail
-        super().__init__(message)
+        if isinstance(code, ErrorSpec):
+            self.code = code.code
+            self.message = message or code.message
+            self.status_code = status_code or code.status_code
+            self.detail = detail
+        else:
+            self.code = code
+            self.message = message or code
+            self.status_code = status_code or 400
+            self.detail = detail
+
+        super().__init__(self.message)
 
 
 async def app_exception_handler(
@@ -41,7 +76,6 @@ async def app_exception_handler(
 ) -> JSONResponse:
     """
     AppException 전용 예외 처리 함수입니다.
-
     개발자가 의도적으로 발생시킨 예외를 공통 응답 형식으로 변환합니다.
     """
 
@@ -126,9 +160,7 @@ async def general_exception_handler(
 ) -> JSONResponse:
     """
     예상하지 못한 서버 내부 오류 처리 함수입니다.
-
-    실제 에러 내용은 서버 로그에 남기고,
-    클라이언트에는 일반화된 메시지만 반환합니다.
+    실제 에러 내용은 서버 로그에 남기고, 클라이언트에는 일반화된 메시지만 반환합니다.
     """
 
     logger.exception(
@@ -150,7 +182,6 @@ async def general_exception_handler(
 def register_exception_handlers(app: FastAPI) -> None:
     """
     FastAPI 앱에 공통 예외 처리 함수를 등록합니다.
-
     main.py에서 앱 생성 후 한 번 호출합니다.
     """
 

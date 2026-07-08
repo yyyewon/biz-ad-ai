@@ -63,26 +63,65 @@ def generate_ad(
 ) -> dict:
     """
     광고 문구 + 이미지 통합 생성
+
+    백엔드 공통 응답 포맷:
+    {
+      "success": true,
+      "data": {
+        "caption": "...",
+        "images": ["base64", ...],
+        "partial_success": false,
+        "warnings": [],
+        "image_generation_success": true
+      },
+      "error": null
+    }
+
+    프론트 내부 반환 포맷:
+    {
+      "ok": true,
+      "data": {
+        "caption": "...",
+        "images": [bytes, ...],
+        "partial_success": false,
+        "warnings": [],
+        "image_generation_success": true
+      }
+    }
     """
+
     if mock:
         time.sleep(1.2)
+
         hashtag_mood = moods[0] if moods else "감성"
         hashtag_purpose = purpose.replace(" ", "").replace("/", "") if purpose else "홍보"
+
         caption = (
-            f"{store_name}의 {menu_name}, 오늘도 한 입이면 반해요 🍽️\n"
+            f"{store_name}의 {menu_name}, 오늘도 한 입이면 반해요 ️\n"
             f"{tone} 하루엔 {menu_name} 한 그릇 어떠세요?\n\n"
             f"#{store_name.replace(' ', '')} #{menu_name.replace(' ', '')} "
             f"#{hashtag_mood.replace(' ', '')} #{hashtag_purpose} #맛집스타그램 #오늘뭐먹지"
         )
+
         return {
             "ok": True,
             "data": {
                 "caption": caption,
                 "images": [_PLACEHOLDER_PNG] * 3,
+                "partial_success": False,
+                "warnings": [],
+                "image_generation_success": True,
             },
         }
 
-    files = {"image": (image_name or "upload.png", image_bytes, "application/octet-stream")}
+    files = {
+        "image": (
+            image_name or "upload.png",
+            image_bytes,
+            "application/octet-stream",
+        )
+    }
+
     payload = {
         "store_name": store_name,
         "menu_name": menu_name,
@@ -91,6 +130,7 @@ def generate_ad(
         "moods": ",".join(moods),
         "tone": tone,
     }
+
     headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
 
     try:
@@ -101,16 +141,66 @@ def generate_ad(
             headers=headers,
             timeout=REQUEST_TIMEOUT_GENERATE,
         )
+
         res.raise_for_status()
         body = res.json()
-        images = [base64.b64decode(b64) for b64 in body.get("images", [])]
+
+        # ========================================================
+        # 백엔드 공통 응답 포맷 처리
+        # ========================================================
+        #
+        # 변경 후 백엔드 응답:
+        # {
+        #   "success": true,
+        #   "data": {
+        #       "caption": "...",
+        #       "images": ["base64", ...]
+        #   },
+        #   "error": null
+        # }
+        if body.get("success") is False:
+            error = body.get("error") or {}
+
+            return {
+                "ok": False,
+                "error": error.get("message") or "생성에 실패했어요.",
+                "error_code": error.get("code"),
+            }
+
+        data = body.get("data") or {}
+
+        # 이전 백엔드 응답 포맷과도 임시 호환
+        if not data and ("caption" in body or "images" in body):
+            data = body
+
+        caption = data.get("caption", "")
+        image_base64_list = data.get("images") or []
+
+        images: list[bytes] = []
+
+        for image_base64 in image_base64_list:
+            if not image_base64:
+                continue
+
+            try:
+                images.append(base64.b64decode(image_base64))
+            except Exception:
+                # 혹시 data:image/png;base64,... 형태로 내려오는 경우까지 방어
+                if isinstance(image_base64, str) and "," in image_base64:
+                    images.append(base64.b64decode(image_base64.split(",", 1)[1]))
+
         return {
             "ok": True,
             "data": {
-                "caption": body.get("caption", ""),
+                "caption": caption,
                 "images": images,
+                "partial_success": data.get("partial_success", False),
+                "warnings": data.get("warnings", []),
+                "image_generation_success": data.get("image_generation_success"),
+                "image_generation": data.get("image_generation"),
             },
         }
+
     except requests.exceptions.Timeout:
         return {
             "ok": False,
@@ -120,11 +210,27 @@ def generate_ad(
             ),
             "error_code": None,
         }
+
     except requests.exceptions.ConnectionError:
-        return {"ok": False, "error": "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요.", "error_code": None}
+        return {
+            "ok": False,
+            "error": "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요.",
+            "error_code": None,
+        }
+
     except requests.exceptions.HTTPError:
         fallback = f"생성에 실패했어요. (서버 응답 코드: {res.status_code})"
         message, code = _extract_error(res, fallback)
-        return {"ok": False, "error": message, "error_code": code}
+
+        return {
+            "ok": False,
+            "error": message,
+            "error_code": code,
+        }
+
     except requests.exceptions.RequestException:
-        return {"ok": False, "error": "알 수 없는 오류로 생성하지 못했어요.", "error_code": None}
+        return {
+            "ok": False,
+            "error": "알 수 없는 오류로 생성하지 못했어요.",
+            "error_code": None,
+        }

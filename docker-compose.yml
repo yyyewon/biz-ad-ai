@@ -29,6 +29,7 @@ services:
       - ./backend/.env
     volumes:
       - backend_data:/app/data
+      - ./backend/logs:/app/logs
 
 volumes:
   backend_data:

@@ -3,7 +3,6 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from app.api.v1.router import api_router
@@ -25,8 +24,10 @@ except Exception:
     setup_logger = None
 
 settings = get_settings()
+
 if setup_logger:
     setup_logger()
+
 if init_db:
     init_db()
 
@@ -75,8 +76,8 @@ async def request_logging_middleware(request: Request, call_next):
     response.headers["X-Request-ID"] = request_id
     return response
 
+
 app.include_router(api_router, prefix=settings.api_v1_prefix)
-app.mount("/outputs", StaticFiles(directory=settings.output_dir), name="outputs")
 
 
 @app.get("/health")

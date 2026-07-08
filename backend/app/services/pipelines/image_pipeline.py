@@ -1,13 +1,21 @@
+from __future__ import annotations
+
 import time
 import uuid
-from pathlib import Path
 from typing import Optional
-import shutil
 
+from loguru import logger
 from PIL import Image
 
-from app.schemas.image_ad import GenerationMode, GeneratedImageItem, ImageAdRequest, ImageAdResponse
+from app.core import error_constants as errors
+from app.core.exceptions import AppException
+from app.schemas.image_ad import GenerationMode, ImageAdRequest, ImageAdResponse
 from app.services.providers.factory import get_image_provider
+from app.utils.image_bytes import (
+    encode_image_bytes_to_base64,
+    image_bytes_to_pil,
+    pil_image_to_png_bytes,
+)
 
 
 MOOD_INPAINT_STYLE_MAP: dict[str, str] = {
@@ -54,6 +62,7 @@ POSTER_RETRY_SUFFIXES: list[str] = [
 
 def _build_inpaint_prompt(payload: ImageAdRequest, mood: str) -> str:
     base_style = MOOD_INPAINT_STYLE_MAP.get(mood, MOOD_INPAINT_STYLE_MAP["cozy"])
+
     prompt_chunks = [
         "투명한 배경 영역만 자연스럽게 채워서 광고용 음식 이미지를 만들어줘.",
         base_style,
@@ -64,35 +73,48 @@ def _build_inpaint_prompt(payload: ImageAdRequest, mood: str) -> str:
         "이미지 안에 글자, 영문 단어, 메뉴명, 로고, 워터마크를 절대 넣지 마.",
         "추가 음식, 중복 접시, 잘린 접시를 만들지 마.",
     ]
+
     if payload.promotion_goal:
         prompt_chunks.append(f"홍보 목적 맥락: {payload.promotion_goal}")
+
     if payload.tone:
         prompt_chunks.append(f"전반적인 무드 톤: {payload.tone}")
+
     if payload.extra_notes:
         prompt_chunks.append(f"추가 요청사항: {payload.extra_notes}")
+
     if payload.prompt:
         prompt_chunks.append(f"사용자 직접 프롬프트: {payload.prompt}")
+
     return ", ".join(prompt_chunks)
 
 
-def _build_inpaint_mask(source_rgba: Image.Image, mask_path: Path) -> None:
+def _build_inpaint_mask_bytes(source_rgba: Image.Image) -> bytes:
     """
-    이미지 편집용 RGBA 마스크를 생성합니다.
-    - 주제(음식/접시) 영역: 불투명 알파(보존)
-    - 배경 영역: 투명 알파(인페인팅 대상)
+    이미지 편집용 RGBA 마스크를 PNG bytes로 생성한다.
+
+    - 주제 영역: 불투명 알파
+    - 배경 영역: 투명 알파
+
+    서버 디스크에 mask 파일을 저장하지 않는다.
     """
+
     alpha = source_rgba.split()[-1]
     mask = Image.new("RGBA", source_rgba.size, (0, 0, 0, 255))
     mask.putalpha(alpha)
-    mask.save(mask_path, format="PNG")
+    return pil_image_to_png_bytes(mask)
 
 
 def _resolve_layout_type(layout_type: Optional[str], index: int) -> str:
     if layout_type:
-        normalized = LAYOUT_ALIAS_MAP.get(layout_type.strip(), LAYOUT_ALIAS_MAP.get(layout_type.replace(" ", "")))
+        normalized = LAYOUT_ALIAS_MAP.get(
+            layout_type.strip(),
+            LAYOUT_ALIAS_MAP.get(layout_type.replace(" ", "")),
+        )
+
         if normalized and normalized != "auto":
             return normalized
-    # Auto-rotate layouts for multi-image diversity.
+
     ordered = ["classic", "focus", "left"]
     return ordered[index % len(ordered)]
 
@@ -100,21 +122,28 @@ def _resolve_layout_type(layout_type: Optional[str], index: int) -> str:
 def _resolve_mood_for_index(payload: ImageAdRequest, index: int) -> str:
     if payload.mood_list:
         return payload.mood_list[index % len(payload.mood_list)]
+
     return payload.mood
 
 
 def _resolve_generation_mode(mode: GenerationMode | str | None) -> GenerationMode:
     if mode == "two_stage":
         return "two_stage"
+
     return "direct_poster"
 
 
 def _build_poster_prompt(payload: ImageAdRequest, mood: str, layout_type: str) -> str:
     mood_style = MOOD_INPAINT_STYLE_MAP.get(mood, MOOD_INPAINT_STYLE_MAP["cozy"])
-    layout_guide = LAYOUT_POSTER_GUIDE_MAP.get(layout_type, LAYOUT_POSTER_GUIDE_MAP["classic"])
+    layout_guide = LAYOUT_POSTER_GUIDE_MAP.get(
+        layout_type,
+        LAYOUT_POSTER_GUIDE_MAP["classic"],
+    )
+
     headline = (payload.headline or "").strip()
     menu_name = payload.menu_name or "오늘의 메뉴"
     price_text = (payload.price_text or "").strip()
+
     prompt_chunks = [
         "입력된 음식 사진을 기반으로 인스타그램용 세로 광고 포스터를 실사 스타일로 만들어줘.",
         f"포스터 무드: {mood_style}",
@@ -123,6 +152,7 @@ def _build_poster_prompt(payload: ImageAdRequest, mood: str, layout_type: str) -
         "세련된 브랜드 광고 느낌으로 전체 레이아웃을 새로 디자인해줘. 기존 템플릿처럼 보이지 않게 다양성을 확보해줘.",
         "텍스트를 포스터 안에 직접 넣어줘. 글자 오탈자 없이 정확히 표기해줘.",
     ]
+
     if headline:
         prompt_chunks.append(f"표기 텍스트1(상단 카피): {headline}")
     else:
@@ -130,12 +160,13 @@ def _build_poster_prompt(payload: ImageAdRequest, mood: str, layout_type: str) -
 
     prompt_chunks.extend(
         [
-        f"표기 텍스트2(메뉴명, 가장 크게): {menu_name}",
-        *POSTER_PROMPT_HARD_CONSTRAINTS,
-        "텍스트는 가독성이 높아야 하고 음식을 과도하게 가리지 않게 배치해줘.",
-        "로고/워터마크/불필요한 영문 문구는 넣지 마.",
+            f"표기 텍스트2(메뉴명, 가장 크게): {menu_name}",
+            *POSTER_PROMPT_HARD_CONSTRAINTS,
+            "텍스트는 가독성이 높아야 하고 음식을 과도하게 가리지 않게 배치해줘.",
+            "로고/워터마크/불필요한 영문 문구는 넣지 마.",
         ]
     )
+
     if price_text:
         prompt_chunks.append(f"표기 텍스트3(가격): {price_text}")
         prompt_chunks.append("위에 지정한 텍스트는 띄어쓰기/문장부호/숫자/통화기호까지 정확히 동일하게 표기해줘.")
@@ -144,155 +175,241 @@ def _build_poster_prompt(payload: ImageAdRequest, mood: str, layout_type: str) -
 
     if payload.promotion_goal:
         prompt_chunks.append(f"홍보 목적 맥락: {payload.promotion_goal}")
+
     if payload.tone:
         prompt_chunks.append(f"전반적인 문체/분위기: {payload.tone}")
+
     if payload.extra_notes:
         prompt_chunks.append(f"추가 요청사항: {payload.extra_notes}")
+
     if payload.prompt:
         prompt_chunks.append(f"사용자 직접 프롬프트: {payload.prompt}")
+
     return ", ".join(prompt_chunks)
 
 
 def _generate_poster_with_retries(
     *,
     provider,
-    source_image_path: Path,
-    output_dir: Path,
+    source_image_bytes: bytes,
     base_prompt: str,
-    mask_image_path: Path | None = None,
-) -> list[Path]:
+    mask_image_bytes: bytes | None = None,
+) -> list[bytes]:
     last_error: Exception | None = None
+
     for attempt_idx, suffix in enumerate(POSTER_RETRY_SUFFIXES):
         retry_prompt = f"{base_prompt}, {suffix}" if suffix else base_prompt
+
         try:
-            paths = provider.generate(
-                input_image_path=source_image_path,
-                mask_image_path=mask_image_path,
+            image_bytes_list = provider.generate(
+                input_image_bytes=source_image_bytes,
+                mask_image_bytes=mask_image_bytes,
                 prompt=retry_prompt,
                 num_images=1,
-                output_dir=output_dir / f"attempt_{attempt_idx + 1}",
             )
-            if paths:
-                return paths
+
+            if image_bytes_list:
+                return image_bytes_list
+
         except Exception as exc:
             last_error = exc
-    if last_error:
-        raise RuntimeError(f"포스터 생성 재시도 실패: {last_error}") from last_error
-    return []
+            logger.warning(
+                "poster_generation_attempt_failed | attempt={} | error={}",
+                attempt_idx + 1,
+                str(exc),
+            )
+
+    raise AppException(
+        errors.IMAGE_POSTER_RETRY_FAILED,
+        detail={
+            "attempt_count": len(POSTER_RETRY_SUFFIXES),
+            "last_error": str(last_error) if last_error else None,
+        },
+    )
 
 
 def generate_image_ads(
     payload: ImageAdRequest,
-    output_root: Path,
-    public_prefix: str = "/outputs",
+    source_image_bytes: bytes,
     seed: Optional[int] = None,
 ) -> ImageAdResponse:
+    """
+    이미지 광고 생성 파이프라인.
+
+    메모리 기반 처리 기준:
+    - 입력 이미지는 bytes로 받는다.
+    - 전처리 source/mask/poster 이미지를 서버 디스크에 저장하지 않는다.
+    - provider는 list[bytes]를 반환한다.
+    - API 응답용 이미지는 base64 문자열로 변환한다.
+    """
+
     started = time.perf_counter()
     request_id = f"img-{uuid.uuid4().hex[:10]}"
-    request_output_dir = output_root / request_id
-    request_output_dir.mkdir(parents=True, exist_ok=True)
 
-    source_path = Path(payload.input_image_path)
-    if not source_path.exists():
-        raise FileNotFoundError(f"입력 이미지를 찾을 수 없습니다: {source_path}")
-
-    source_rgba = Image.open(source_path).convert("RGBA")
-    prepared_source_path = request_output_dir / "source_rgba.png"
-    source_rgba.save(prepared_source_path, format="PNG")
-    mask_path = request_output_dir / "inpaint_mask.png"
-    _build_inpaint_mask(source_rgba, mask_path)
-
-    provider = get_image_provider()
-    generation_mode = _resolve_generation_mode(payload.generation_mode)
-    prompt_used = ""
-    generated_paths: list[Path] = []
-    applied_moods: list[str] = []
-    stage_latencies_ms: dict[str, int] = {}
-
-    food_stage_started = time.perf_counter()
-    if generation_mode == "two_stage":
-        for idx in range(payload.num_images):
-            current_mood = _resolve_mood_for_index(payload, idx)
-            applied_moods.append(current_mood)
-            current_prompt = _build_inpaint_prompt(payload, current_mood)
-            if not prompt_used:
-                prompt_used = current_prompt
-
-            iter_output_dir = request_output_dir / f"_gen_{idx + 1}"
-            iter_paths = provider.generate(
-                input_image_path=prepared_source_path,
-                mask_image_path=mask_path,
-                prompt=current_prompt,
-                num_images=1,
-                output_dir=iter_output_dir,
-            )
-            if not iter_paths:
-                raise RuntimeError("이미지 생성 결과가 비어 있습니다.")
-            final_generated_path = request_output_dir / f"generated_{idx + 1}.png"
-            shutil.move(str(iter_paths[0]), str(final_generated_path))
-            generated_paths.append(final_generated_path)
-    else:
-        for idx in range(payload.num_images):
-            applied_moods.append(_resolve_mood_for_index(payload, idx))
-    stage_latencies_ms["food_generation_ms"] = int((time.perf_counter() - food_stage_started) * 1000)
-
-    generated_items: list[GeneratedImageItem] = []
-    poster_items: list[GeneratedImageItem] = []
-    poster_stage_started = time.perf_counter()
-    for idx in range(payload.num_images):
-        source_for_poster = generated_paths[idx] if generation_mode == "two_stage" else prepared_source_path
-        if generation_mode == "two_stage":
-            generated_items.append(
-                GeneratedImageItem(
-                    index=idx,
-                    image_path=str(source_for_poster.as_posix()),
-                    download_url=f"{public_prefix}/{request_id}/{source_for_poster.name}",
-                )
-            )
-
-        poster_path = request_output_dir / f"poster_{idx + 1}.png"
-        resolved_layout = _resolve_layout_type(payload.layout_type, idx)
-        poster_prompt = _build_poster_prompt(
-            payload=ImageAdRequest(**{**payload.model_dump(), "mood": applied_moods[idx]}),
-            mood=applied_moods[idx],
-            layout_type=resolved_layout,
+    if not source_image_bytes:
+        raise AppException(
+            errors.EMPTY_IMAGE_FILE,
+            detail={"request_id": request_id},
         )
-        if not prompt_used:
-            prompt_used = poster_prompt
-        poster_iter_dir = request_output_dir / f"_poster_{idx + 1}"
-        poster_paths = _generate_poster_with_retries(
-            provider=provider,
-            source_image_path=source_for_poster,
-            output_dir=poster_iter_dir,
-            base_prompt=poster_prompt,
-            mask_image_path=mask_path if generation_mode == "direct_poster" else None,
-        )
-        if not poster_paths:
-            raise RuntimeError("포스터 생성 결과가 비어 있습니다.")
-        shutil.move(str(poster_paths[0]), str(poster_path))
-        poster_items.append(
-            GeneratedImageItem(
-                index=idx,
-                image_path=str(poster_path.as_posix()),
-                download_url=f"{public_prefix}/{request_id}/{poster_path.name}",
-            )
-        )
-    stage_latencies_ms["poster_generation_ms"] = int((time.perf_counter() - poster_stage_started) * 1000)
 
-    latency_ms = int((time.perf_counter() - started) * 1000)
-    stage_latencies_ms["total_ms"] = latency_ms
-    return ImageAdResponse(
-        request_id=request_id,
-        mood=payload.mood,
-        prompt_used=prompt_used,
-        num_images=payload.num_images,
-        latency_ms=latency_ms,
-        generation_mode=generation_mode,
-        stage_latencies_ms=stage_latencies_ms,
-        images=poster_items,
-        background_images=[],
-        composite_images=generated_items,
-        poster_images=poster_items,
-        applied_moods=applied_moods,
-        seed=seed or payload.seed,
+    logger.info(
+        "image_pipeline_started | request_id={} | mode={} | num_images={} | input_bytes={}",
+        request_id,
+        payload.generation_mode,
+        payload.num_images,
+        len(source_image_bytes),
     )
+
+    try:
+        source_rgba = image_bytes_to_pil(source_image_bytes).convert("RGBA")
+        prepared_source_bytes = pil_image_to_png_bytes(source_rgba)
+        mask_bytes = _build_inpaint_mask_bytes(source_rgba)
+
+        provider = get_image_provider()
+        generation_mode = _resolve_generation_mode(payload.generation_mode)
+
+        prompt_used = ""
+        generated_image_bytes: list[bytes] = []
+        generated_image_base64: list[str] = []
+        applied_moods: list[str] = []
+        stage_latencies_ms: dict[str, int] = {}
+
+        food_stage_started = time.perf_counter()
+
+        if generation_mode == "two_stage":
+            for idx in range(payload.num_images):
+                current_mood = _resolve_mood_for_index(payload, idx)
+                applied_moods.append(current_mood)
+
+                current_prompt = _build_inpaint_prompt(payload, current_mood)
+
+                if not prompt_used:
+                    prompt_used = current_prompt
+
+                iter_images = provider.generate(
+                    input_image_bytes=prepared_source_bytes,
+                    mask_image_bytes=mask_bytes,
+                    prompt=current_prompt,
+                    num_images=1,
+                )
+
+                if not iter_images:
+                    raise AppException(
+                        errors.IMAGE_GENERATION_EMPTY_RESULT,
+                        detail={
+                            "request_id": request_id,
+                            "stage": "food_generation",
+                            "index": idx,
+                        },
+                    )
+
+                generated_image_bytes.append(iter_images[0])
+                generated_image_base64.append(encode_image_bytes_to_base64(iter_images[0]))
+
+        else:
+            for idx in range(payload.num_images):
+                applied_moods.append(_resolve_mood_for_index(payload, idx))
+
+        stage_latencies_ms["food_generation_ms"] = int(
+            (time.perf_counter() - food_stage_started) * 1000
+        )
+
+        poster_stage_started = time.perf_counter()
+        poster_image_bytes: list[bytes] = []
+
+        for idx in range(payload.num_images):
+            source_for_poster = (
+                generated_image_bytes[idx]
+                if generation_mode == "two_stage"
+                else prepared_source_bytes
+            )
+
+            resolved_layout = _resolve_layout_type(payload.layout_type, idx)
+
+            poster_payload = ImageAdRequest(
+                **{
+                    **payload.model_dump(),
+                    "mood": applied_moods[idx],
+                }
+            )
+
+            poster_prompt = _build_poster_prompt(
+                payload=poster_payload,
+                mood=applied_moods[idx],
+                layout_type=resolved_layout,
+            )
+
+            if not prompt_used:
+                prompt_used = poster_prompt
+
+            poster_outputs = _generate_poster_with_retries(
+                provider=provider,
+                source_image_bytes=source_for_poster,
+                base_prompt=poster_prompt,
+                mask_image_bytes=mask_bytes if generation_mode == "direct_poster" else None,
+            )
+
+            if not poster_outputs:
+                raise AppException(
+                    errors.IMAGE_GENERATION_EMPTY_RESULT,
+                    detail={
+                        "request_id": request_id,
+                        "stage": "poster_generation",
+                        "index": idx,
+                    },
+                )
+
+            poster_image_bytes.append(poster_outputs[0])
+
+        stage_latencies_ms["poster_generation_ms"] = int(
+            (time.perf_counter() - poster_stage_started) * 1000
+        )
+
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        stage_latencies_ms["total_ms"] = latency_ms
+
+        poster_images_base64 = [
+            encode_image_bytes_to_base64(image_bytes)
+            for image_bytes in poster_image_bytes
+        ]
+
+        logger.info(
+            "image_pipeline_completed | request_id={} | latency_ms={} | poster_count={}",
+            request_id,
+            latency_ms,
+            len(poster_images_base64),
+        )
+
+        return ImageAdResponse(
+            request_id=request_id,
+            mood=payload.mood,
+            prompt_used=prompt_used,
+            num_images=payload.num_images,
+            latency_ms=latency_ms,
+            generation_mode=generation_mode,
+            stage_latencies_ms=stage_latencies_ms,
+            images=poster_images_base64,
+            background_images=[],
+            composite_images=generated_image_base64,
+            poster_images=poster_images_base64,
+            image_bytes_list=poster_image_bytes,
+            applied_moods=applied_moods,
+            seed=seed or payload.seed,
+        )
+
+    except AppException:
+        raise
+
+    except Exception as exc:
+        logger.exception(
+            "image_pipeline_failed | request_id={} | error={}",
+            request_id,
+            str(exc),
+        )
+        raise AppException(
+            errors.IMAGE_PIPELINE_FAILED,
+            detail={
+                "request_id": request_id,
+                "error": str(exc),
+            },
+        ) from exc

@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MoodType = Literal["cozy", "minimal", "luxury", "fresh", "vintage"]
 GenerationMode = Literal["direct_poster", "two_stage"]
+
 MOOD_ALIAS_MAP: dict[str, MoodType] = {
     "cozy": "cozy",
     "감성카페": "cozy",
@@ -24,14 +25,30 @@ MOOD_ALIAS_MAP: dict[str, MoodType] = {
 
 
 class ImageAdRequest(BaseModel):
+    """
+    이미지 광고 생성 요청 schema.
+
+    메모리 기반 처리 기준:
+    - 통합 생성 API에서는 UploadFile.read()로 받은 bytes를 pipeline에 직접 전달한다.
+    - 단독 이미지 API에서 필요하면 input_image_base64를 사용할 수 있다.
+    - input_image_path/image_path는 이전 구조 호환용으로만 남겨둔다.
+    """
+
     model_config = ConfigDict(extra="allow")
 
     input_image_path: Optional[str] = Field(
-        default=None, description="전경(누끼) 이미지 경로(RGBA 권장)"
+        default=None,
+        description="이전 파일 저장 방식 호환용 이미지 경로. 신규 로직에서는 사용하지 않는다.",
     )
     image_path: Optional[str] = Field(
-        default=None, description="호환성을 위한 input_image_path 별칭"
+        default=None,
+        description="이전 input_image_path 별칭. 신규 로직에서는 사용하지 않는다.",
     )
+    input_image_base64: Optional[str] = Field(
+        default=None,
+        description="단독 이미지 생성 API에서 사용할 수 있는 입력 이미지 base64 문자열",
+    )
+
     mood: str = Field(default="cozy", description="인스타 무드 프리셋")
     mood_list: Optional[List[str]] = Field(
         default=None,
@@ -40,6 +57,7 @@ class ImageAdRequest(BaseModel):
     prompt: Optional[str] = Field(default=None, description="추가 프롬프트 문구(선택)")
     num_images: int = Field(default=3, ge=1, le=6, description="생성할 이미지 개수")
     seed: Optional[int] = Field(default=None, description="재현성을 위한 시드값(선택)")
+
     store_name: Optional[str] = Field(default=None, description="가게명 메타데이터")
     menu_name: Optional[str] = Field(default=None, description="메뉴명 메타데이터")
     promotion_goal: Optional[str] = Field(default=None, description="홍보 목적 메타데이터")
@@ -57,15 +75,19 @@ class ImageAdRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_input_path(self) -> "ImageAdRequest":
+    def normalize_values(self) -> "ImageAdRequest":
         if not self.input_image_path and self.image_path:
             self.input_image_path = self.image_path
-        if not self.input_image_path:
-            raise ValueError("input_image_path 값이 필요합니다.")
-        normalized = MOOD_ALIAS_MAP.get(self.mood.replace(" ", ""), MOOD_ALIAS_MAP.get(self.mood))
+
+        normalized = MOOD_ALIAS_MAP.get(
+            self.mood.replace(" ", ""),
+            MOOD_ALIAS_MAP.get(self.mood),
+        )
         if not normalized:
             raise ValueError("지원하지 않는 mood 값입니다.")
+
         self.mood = normalized
+
         if self.mood_list:
             normalized_list: list[MoodType] = []
             for mood_value in self.mood_list:
@@ -75,16 +97,31 @@ class ImageAdRequest(BaseModel):
                     raise ValueError(f"지원하지 않는 mood_list 값입니다: {mood_value}")
                 normalized_list.append(mapped)
             self.mood_list = normalized_list
+
         return self
 
 
 class GeneratedImageItem(BaseModel):
+    """
+    이전 파일 경로 기반 응답 호환용 schema.
+
+    신규 메모리 기반 응답에서는 ImageAdResponse.images의 base64 문자열을 사용한다.
+    """
+
     index: int
-    image_path: str
-    download_url: str
+    image_base64: str = ""
+    image_path: Optional[str] = None
+    download_url: Optional[str] = None
 
 
 class ImageAdResponse(BaseModel):
+    """
+    이미지 광고 생성 응답 schema.
+
+    images/poster_images/composite_images/background_images는 모두 base64 문자열 목록이다.
+    image_bytes_list는 내부 pipeline 전달용이며 API 응답에서는 제외된다.
+    """
+
     request_id: str
     mood: MoodType
     prompt_used: str
@@ -92,10 +129,14 @@ class ImageAdResponse(BaseModel):
     latency_ms: int
     generation_mode: GenerationMode = "direct_poster"
     stage_latencies_ms: dict[str, int] = Field(default_factory=dict)
-    images: List[GeneratedImageItem]
-    background_images: List[GeneratedImageItem] = Field(default_factory=list)
-    composite_images: List[GeneratedImageItem] = Field(default_factory=list)
-    poster_images: List[GeneratedImageItem] = Field(default_factory=list)
+
+    images: List[str] = Field(default_factory=list, description="최종 포스터 이미지 base64 목록")
+    background_images: List[str] = Field(default_factory=list)
+    composite_images: List[str] = Field(default_factory=list)
+    poster_images: List[str] = Field(default_factory=list)
+
+    image_bytes_list: List[bytes] = Field(default_factory=list, exclude=True)
+
     applied_moods: List[MoodType] = Field(default_factory=list)
     seed: Optional[int] = None
     message: str = "ok"
