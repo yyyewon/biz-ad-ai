@@ -19,6 +19,19 @@ from app.services.providers.base import ImageGenerationProvider
 from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
 
 
+try:
+    import torch
+    from diffusers import StableDiffusion3Img2ImgPipeline, StableDiffusion3Pipeline
+
+    _TORCH_DIFFUSERS_IMPORT_ERROR: Exception | None = None
+
+except ImportError as _import_exc:
+    torch = None
+    StableDiffusion3Pipeline = None
+    StableDiffusion3Img2ImgPipeline = None
+    _TORCH_DIFFUSERS_IMPORT_ERROR = _import_exc
+
+
 _TEXT2IMG_PIPELINE_CACHE: dict[tuple[str, str, str], Any] = {}
 _IMG2IMG_PIPELINE_CACHE: dict[tuple[str, str, str], Any] = {}
 _PIPELINE_LOAD_LOCK = threading.RLock()
@@ -104,58 +117,51 @@ class HFImageProvider(ImageGenerationProvider):
         return self._height
 
 
-    def _import_torch_and_diffusers(self):
-        try:
-            import torch
-            from diffusers import StableDiffusion3Img2ImgPipeline, StableDiffusion3Pipeline
-
-        except ImportError as exc:
+    def _ensure_torch_and_diffusers_available(self) -> None:
+        if _TORCH_DIFFUSERS_IMPORT_ERROR is not None:
             raise AppException(
                 errors.HF_IMAGE_PIPELINE_DEPENDENCY_ERROR,
                 detail={
-                    "reason": "torch/diffusers import failed",
+                    "reason": "torch/diffusers import failed at server startup",
                     "hint": (
                         'requirements에 "torch", "diffusers", "transformers", '
                         '"accelerate", "sentencepiece"가 설치되어야 합니다.'
                     ),
-                    "error": str(exc),
+                    "error": str(_TORCH_DIFFUSERS_IMPORT_ERROR),
                 },
-            ) from exc
+            )
 
-        return torch, StableDiffusion3Pipeline, StableDiffusion3Img2ImgPipeline
-
-    def _resolve_torch_dtype(self, torch_module: Any) -> Any:
+    def _resolve_torch_dtype(self) -> Any:
+        self._ensure_torch_and_diffusers_available()
         mapping = {
-            "auto": torch_module.bfloat16,
-            "bf16": torch_module.bfloat16,
-            "bfloat16": torch_module.bfloat16,
-            "fp16": torch_module.float16,
-            "float16": torch_module.float16,
-            "fp32": torch_module.float32,
-            "float32": torch_module.float32,
+            "auto": torch.bfloat16,
+            "bf16": torch.bfloat16,
+            "bfloat16": torch.bfloat16,
+            "fp16": torch.float16,
+            "float16": torch.float16,
+            "fp32": torch.float32,
+            "float32": torch.float32,
         }
-        return mapping.get(self._dtype_setting.lower(), torch_module.bfloat16)
+        return mapping.get(self._dtype_setting.lower(), torch.bfloat16)
 
-    def _resolve_device(self, torch_module: Any) -> str:
+    def _resolve_device(self) -> str:
+        self._ensure_torch_and_diffusers_available()
         name = self._device_setting.lower()
 
         if name != "auto":
             return name
-
-        if torch_module.cuda.is_available():
+        if torch.cuda.is_available():
             return "cuda"
-
-        mps_backend = getattr(torch_module.backends, "mps", None)
+        mps_backend = getattr(torch.backends, "mps", None)
         if mps_backend is not None and mps_backend.is_available():
             return "mps"
-
         return "cpu"
 
     def _load_text2img_pipeline(self):
-        torch_module, sd3_pipeline_cls, _ = self._import_torch_and_diffusers()
+        self._ensure_torch_and_diffusers_available()
 
-        dtype = self._resolve_torch_dtype(torch_module)
-        device = self._resolve_device(torch_module)
+        dtype = self._resolve_torch_dtype()
+        device = self._resolve_device()
         cache_key = (self._model_id, str(dtype), device)
 
         cached = _TEXT2IMG_PIPELINE_CACHE.get(cache_key)
@@ -169,45 +175,40 @@ class HFImageProvider(ImageGenerationProvider):
 
             logger.info(
                 "hf_image_pipeline_loading | model_id={} | device={} | dtype={}",
-                self._model_id,
-                device,
-                str(dtype),
+                self._model_id, device, str(dtype),
             )
 
             try:
-                pipe = sd3_pipeline_cls.from_pretrained(
+                pipe = StableDiffusion3Pipeline.from_pretrained(
                     self._model_id,
                     torch_dtype=dtype,
                     token=self._hf_token,
+                    low_cpu_mem_usage=True,
                 )
-                pipe = pipe.to(device)
+
+                if device == "cuda":
+                    pipe.to(device)
+                else:
+                    pipe.enable_model_cpu_offload()
 
             except Exception as exc:
                 raise AppException(
                     errors.HF_IMAGE_MODEL_LOAD_FAILED,
                     detail={
-                        "provider": "hf",
-                        "role": "image_generation",
-                        "model_id": self._model_id,
-                        "error": str(exc),
+                        "provider": "hf", "role": "image_generation",
+                        "model_id": self._model_id, "error": str(exc),
                     },
                 ) from exc
 
             _TEXT2IMG_PIPELINE_CACHE[cache_key] = pipe
-
-            logger.info(
-                "hf_image_pipeline_loaded | model_id={} | device={}",
-                self._model_id,
-                device,
-            )
-
+            logger.info("hf_image_pipeline_loaded | model_id={} | device={}", self._model_id, device)
             return pipe
 
     def _load_img2img_pipeline(self):
-        torch_module, _, img2img_cls = self._import_torch_and_diffusers()
+        self._ensure_torch_and_diffusers_available()
 
-        dtype = self._resolve_torch_dtype(torch_module)
-        device = self._resolve_device(torch_module)
+        dtype = self._resolve_torch_dtype()
+        device = self._resolve_device()
         cache_key = (self._model_id, str(dtype), device)
 
         cached = _IMG2IMG_PIPELINE_CACHE.get(cache_key)
@@ -222,16 +223,18 @@ class HFImageProvider(ImageGenerationProvider):
             text2img_pipe = self._load_text2img_pipeline()
 
             try:
-                img2img_pipe = img2img_cls(**text2img_pipe.components)
+                img2img_pipe = StableDiffusion3Img2ImgPipeline(**text2img_pipe.components)
+                if device == "cuda":
+                    img2img_pipe.to(device)
+                else:
+                    img2img_pipe.enable_model_cpu_offload()
 
             except Exception as exc:
                 raise AppException(
                     errors.HF_IMAGE_MODEL_LOAD_FAILED,
                     detail={
-                        "provider": "hf",
-                        "role": "image_generation",
-                        "model_id": self._model_id,
-                        "stage": "img2img_pipeline_init",
+                        "provider": "hf", "role": "image_generation",
+                        "model_id": self._model_id, "stage": "img2img_pipeline_init",
                         "error": str(exc),
                     },
                 ) from exc

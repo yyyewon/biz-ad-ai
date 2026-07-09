@@ -19,6 +19,15 @@ from app.utils.image_bytes import (
 )
 
 
+NON_RETRYABLE_ERROR_CODES: set[str] = {
+    "HF_IMAGE_PIPELINE_DEPENDENCY_ERROR",
+    "HF_IMAGE_MODEL_LOAD_FAILED",
+    "HF_TOKEN_MISSING",
+    "MODEL_SETTINGS_NOT_FOUND",
+    "OPENAI_API_KEY_MISSING",
+    "PROVIDER_NOT_SUPPORTED",
+}
+
 MOOD_INPAINT_STYLE_MAP: dict[str, str] = {
     "cozy": "따뜻한 베이지/우드 계열 색감, 부드러운 자연광, 아늑한 카페 무드",
     "minimal": "밝은 아이보리/그레이 계열 색감, 단순한 배경, 정돈된 미니멀 무드",
@@ -59,6 +68,23 @@ POSTER_RETRY_SUFFIXES: list[str] = [
     "재시도 지시: 텍스트 정확도와 가독성을 최우선으로 다시 생성해줘. 레이아웃은 단순하고 안정적으로 구성해줘.",
     "최종 재시도 지시: 텍스트 3개를 상단/중앙에 명확히 분리 배치하고, 음식은 하단 히어로 컷으로 크게 배치해줘.",
 ]
+
+async def _gather_fail_fast(coros: list) -> list:
+    tasks = [asyncio.ensure_future(coro) for coro in coros]
+
+    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+
+    if pending:
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    for task in done:
+        exc = task.exception()
+        if exc is not None:
+            raise exc
+
+    return [task.result() for task in tasks]
 
 
 def _build_inpaint_prompt(payload: ImageAdRequest, mood: str) -> str:
@@ -202,8 +228,7 @@ async def _generate_poster_with_retries(
         retry_prompt = f"{base_prompt}, {suffix}" if suffix else base_prompt
 
         try:
-            image_bytes_list = await asyncio.to_thread(
-                provider.generate,
+            image_bytes_list = await provider.generate(
                 input_image_bytes=source_image_bytes,
                 mask_image_bytes=mask_image_bytes,
                 prompt=retry_prompt,
@@ -212,6 +237,22 @@ async def _generate_poster_with_retries(
 
             if image_bytes_list:
                 return image_bytes_list
+
+        except AppException as exc:
+            if exc.code in NON_RETRYABLE_ERROR_CODES:
+                logger.error(
+                    "poster_generation_non_retryable_failure | code={} | error={}",
+                    exc.code,
+                    str(exc),
+                )
+                raise
+
+            last_error = exc
+            logger.warning(
+                "poster_generation_attempt_failed | attempt={} | error={}",
+                attempt_idx + 1,
+                str(exc),
+            )
 
         except Exception as exc:
             last_error = exc
@@ -284,14 +325,13 @@ async def generate_image_ads(
                 current_mood = _resolve_mood_for_index(payload, idx)
                 current_prompt = _build_inpaint_prompt(payload, current_mood)
 
-                iter_images = await asyncio.to_thread(
-                    provider.generate,
+                iter_images = await provider.generate(
                     input_image_bytes=prepared_source_bytes,
                     mask_image_bytes=mask_bytes,
                     prompt=current_prompt,
                     num_images=1,
                 )
-
+                
                 if not iter_images:
                     raise AppException(
                         errors.IMAGE_GENERATION_EMPTY_RESULT,
@@ -304,11 +344,8 @@ async def generate_image_ads(
 
                 return idx, current_mood, iter_images[0]
 
-            food_results = await asyncio.gather(
-                *[
-                    _generate_food_image(idx)
-                    for idx in range(payload.num_images)
-                ]
+            food_results = await _gather_fail_fast(
+                [_generate_food_image(idx) for idx in range(payload.num_images)]
             )
 
             for idx, current_mood, image_bytes in sorted(food_results, key=lambda item: item[0]):
@@ -372,11 +409,8 @@ async def generate_image_ads(
 
             return idx, poster_outputs[0], poster_prompt
 
-        poster_results = await asyncio.gather(
-            *[
-                _generate_poster_image(idx)
-                for idx in range(payload.num_images)
-            ]
+        poster_results = await _gather_fail_fast(
+            [_generate_poster_image(idx) for idx in range(payload.num_images)]
         )
 
         poster_image_bytes: list[bytes] = []
