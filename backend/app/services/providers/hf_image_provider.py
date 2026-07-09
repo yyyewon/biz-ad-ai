@@ -1,14 +1,15 @@
 """
 HF 이미지 생성 provider
 """
-
 from __future__ import annotations
 
 import os
+import threading
 from typing import Any
 
 from loguru import logger
 from PIL import Image
+from starlette.concurrency import run_in_threadpool
 
 from app.core import error_constants as errors
 from app.core.config import get_settings
@@ -18,9 +19,10 @@ from app.services.providers.base import ImageGenerationProvider
 from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
 
 
-# 프로세스 내 파이프라인 캐시. key: (model_id, dtype_repr, device)
 _TEXT2IMG_PIPELINE_CACHE: dict[tuple[str, str, str], Any] = {}
 _IMG2IMG_PIPELINE_CACHE: dict[tuple[str, str, str], Any] = {}
+_PIPELINE_LOAD_LOCK = threading.RLock()
+_PIPELINE_INFERENCE_LOCK = threading.Lock()
 
 
 class HFImageProvider(ImageGenerationProvider):
@@ -101,9 +103,6 @@ class HFImageProvider(ImageGenerationProvider):
     def height(self) -> int:
         return self._height
 
-    # ------------------------------------------------------------------
-    # 내부: torch / diffusers 지연 import + 파이프라인 로딩
-    # ------------------------------------------------------------------
 
     def _import_torch_and_diffusers(self):
         try:
@@ -159,44 +158,50 @@ class HFImageProvider(ImageGenerationProvider):
         device = self._resolve_device(torch_module)
         cache_key = (self._model_id, str(dtype), device)
 
-        if cache_key in _TEXT2IMG_PIPELINE_CACHE:
-            return _TEXT2IMG_PIPELINE_CACHE[cache_key]
+        cached = _TEXT2IMG_PIPELINE_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
 
-        logger.info(
-            "hf_image_pipeline_loading | model_id={} | device={} | dtype={}",
-            self._model_id,
-            device,
-            str(dtype),
-        )
+        with _PIPELINE_LOAD_LOCK:
+            cached = _TEXT2IMG_PIPELINE_CACHE.get(cache_key)
+            if cached is not None:
+                return cached
 
-        try:
-            pipe = sd3_pipeline_cls.from_pretrained(
+            logger.info(
+                "hf_image_pipeline_loading | model_id={} | device={} | dtype={}",
                 self._model_id,
-                torch_dtype=dtype,
-                token=self._hf_token,
+                device,
+                str(dtype),
             )
-            pipe = pipe.to(device)
 
-        except Exception as exc:
-            raise AppException(
-                errors.HF_IMAGE_MODEL_LOAD_FAILED,
-                detail={
-                    "provider": "hf",
-                    "role": "image_generation",
-                    "model_id": self._model_id,
-                    "error": str(exc),
-                },
-            ) from exc
+            try:
+                pipe = sd3_pipeline_cls.from_pretrained(
+                    self._model_id,
+                    torch_dtype=dtype,
+                    token=self._hf_token,
+                )
+                pipe = pipe.to(device)
 
-        _TEXT2IMG_PIPELINE_CACHE[cache_key] = pipe
+            except Exception as exc:
+                raise AppException(
+                    errors.HF_IMAGE_MODEL_LOAD_FAILED,
+                    detail={
+                        "provider": "hf",
+                        "role": "image_generation",
+                        "model_id": self._model_id,
+                        "error": str(exc),
+                    },
+                ) from exc
 
-        logger.info(
-            "hf_image_pipeline_loaded | model_id={} | device={}",
-            self._model_id,
-            device,
-        )
+            _TEXT2IMG_PIPELINE_CACHE[cache_key] = pipe
 
-        return pipe
+            logger.info(
+                "hf_image_pipeline_loaded | model_id={} | device={}",
+                self._model_id,
+                device,
+            )
+
+            return pipe
 
     def _load_img2img_pipeline(self):
         torch_module, _, img2img_cls = self._import_torch_and_diffusers()
@@ -205,34 +210,37 @@ class HFImageProvider(ImageGenerationProvider):
         device = self._resolve_device(torch_module)
         cache_key = (self._model_id, str(dtype), device)
 
-        if cache_key in _IMG2IMG_PIPELINE_CACHE:
-            return _IMG2IMG_PIPELINE_CACHE[cache_key]
+        cached = _IMG2IMG_PIPELINE_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
 
-        text2img_pipe = self._load_text2img_pipeline()
+        with _PIPELINE_LOAD_LOCK:
+            cached = _IMG2IMG_PIPELINE_CACHE.get(cache_key)
+            if cached is not None:
+                return cached
 
-        try:
-            img2img_pipe = img2img_cls(**text2img_pipe.components)
+            text2img_pipe = self._load_text2img_pipeline()
 
-        except Exception as exc:
-            raise AppException(
-                errors.HF_IMAGE_MODEL_LOAD_FAILED,
-                detail={
-                    "provider": "hf",
-                    "role": "image_generation",
-                    "model_id": self._model_id,
-                    "stage": "img2img_pipeline_init",
-                    "error": str(exc),
-                },
-            ) from exc
+            try:
+                img2img_pipe = img2img_cls(**text2img_pipe.components)
 
-        _IMG2IMG_PIPELINE_CACHE[cache_key] = img2img_pipe
-        return img2img_pipe
+            except Exception as exc:
+                raise AppException(
+                    errors.HF_IMAGE_MODEL_LOAD_FAILED,
+                    detail={
+                        "provider": "hf",
+                        "role": "image_generation",
+                        "model_id": self._model_id,
+                        "stage": "img2img_pipeline_init",
+                        "error": str(exc),
+                    },
+                ) from exc
 
-    # ------------------------------------------------------------------
-    # 공개 interface
-    # ------------------------------------------------------------------
+            _IMG2IMG_PIPELINE_CACHE[cache_key] = img2img_pipe
+            return img2img_pipe
 
-    def generate_backgrounds(
+
+    async def generate_backgrounds(
         self,
         *,
         prompt: str,
@@ -242,6 +250,18 @@ class HFImageProvider(ImageGenerationProvider):
         순수 text-to-image로 배경/레퍼런스 이미지 생성
         """
 
+        return await run_in_threadpool(
+            self._generate_backgrounds_sync,
+            prompt=prompt,
+            num_images=num_images,
+        )
+
+    def _generate_backgrounds_sync(
+        self,
+        *,
+        prompt: str,
+        num_images: int,
+    ) -> list[bytes]:
         pipe = self._load_text2img_pipeline()
 
         logger.info(
@@ -251,15 +271,16 @@ class HFImageProvider(ImageGenerationProvider):
         )
 
         try:
-            result = pipe(
-                prompt=prompt,
-                num_inference_steps=self._num_inference_steps,
-                guidance_scale=self._guidance_scale,
-                height=self._height,
-                width=self._width,
-                max_sequence_length=self._max_sequence_length,
-                num_images_per_prompt=num_images,
-            )
+            with _PIPELINE_INFERENCE_LOCK:
+                result = pipe(
+                    prompt=prompt,
+                    num_inference_steps=self._num_inference_steps,
+                    guidance_scale=self._guidance_scale,
+                    height=self._height,
+                    width=self._width,
+                    max_sequence_length=self._max_sequence_length,
+                    num_images_per_prompt=num_images,
+                )
 
         except AppException:
             raise
@@ -300,7 +321,7 @@ class HFImageProvider(ImageGenerationProvider):
 
         return [pil_image_to_png_bytes(image.convert("RGB")) for image in images]
 
-    def generate(
+    async def generate(
         self,
         *,
         input_image_bytes: bytes,
@@ -312,6 +333,22 @@ class HFImageProvider(ImageGenerationProvider):
         입력 이미지를 기반으로 광고 이미지 생성
         """
 
+        return await run_in_threadpool(
+            self._generate_sync,
+            input_image_bytes=input_image_bytes,
+            prompt=prompt,
+            num_images=num_images,
+            mask_image_bytes=mask_image_bytes,
+        )
+
+    def _generate_sync(
+        self,
+        *,
+        input_image_bytes: bytes,
+        prompt: str,
+        num_images: int,
+        mask_image_bytes: bytes | None = None,
+    ) -> list[bytes]:
         if not input_image_bytes:
             raise AppException(
                 errors.IMAGE_INPUT_FILE_NOT_FOUND,
@@ -335,15 +372,16 @@ class HFImageProvider(ImageGenerationProvider):
         )
 
         try:
-            result = pipe(
-                prompt=prompt,
-                image=resized_source,
-                strength=self._img2img_strength,
-                num_inference_steps=self._num_inference_steps,
-                guidance_scale=self._guidance_scale,
-                max_sequence_length=self._max_sequence_length,
-                num_images_per_prompt=num_images,
-            )
+            with _PIPELINE_INFERENCE_LOCK:
+                result = pipe(
+                    prompt=prompt,
+                    image=resized_source,
+                    strength=self._img2img_strength,
+                    num_inference_steps=self._num_inference_steps,
+                    guidance_scale=self._guidance_scale,
+                    max_sequence_length=self._max_sequence_length,
+                    num_images_per_prompt=num_images,
+                )
 
         except AppException:
             raise
