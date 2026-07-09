@@ -6,7 +6,7 @@ from __future__ import annotations
 import requests
 import streamlit as st
 
-from core.config import ME_ENDPOINT, DEV_RESET_QUOTA_ENDPOINT, REQUEST_TIMEOUT_AUTH
+from core.config import DEV_GUEST_MODE_DEFAULT, ME_ENDPOINT, DEV_RESET_QUOTA_ENDPOINT, REQUEST_TIMEOUT_AUTH
 
 
 def init_auth_state() -> None:
@@ -14,8 +14,20 @@ def init_auth_state() -> None:
         st.session_state.auth = {"access_token": None, "refresh_token": None, "user": None}
 
 
-def is_logged_in() -> bool:
-    return bool(st.session_state.auth.get("access_token"))
+def is_logged_in(session_state: dict | None = None) -> bool:
+    if session_state is None:
+        session_state = st.session_state
+    return bool(session_state.get("auth", {}).get("access_token"))
+
+
+def should_allow_access(mock_mode: bool | None = None, dev_guest_mode: bool | None = None, session_state: dict | None = None) -> bool:
+    if session_state is None:
+        session_state = st.session_state
+    if mock_mode is None:
+        mock_mode = session_state.get("mock_mode", False)
+    if dev_guest_mode is None:
+        dev_guest_mode = session_state.get("dev_guest_mode", DEV_GUEST_MODE_DEFAULT)
+    return bool(mock_mode or is_logged_in(session_state=session_state) or dev_guest_mode)
 
 
 def fetch_me(access_token: str) -> dict | None:

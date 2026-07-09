@@ -12,6 +12,7 @@ from core.auth import (
     consume_login_token_from_query,
     is_logged_in,
     logout,
+    should_allow_access,
     sync_usage,
     reset_quota_for_testing,
 )
@@ -123,11 +124,7 @@ def main() -> None:
     _inject_css()
     _render_sidebar()
 
-    authenticated = (
-        st.session_state.mock_mode
-        or is_logged_in()
-        or st.session_state.get("dev_guest_mode", DEV_GUEST_MODE_DEFAULT)
-    )
+    authenticated = should_allow_access()
 
     if not authenticated:
         step_login.render()
