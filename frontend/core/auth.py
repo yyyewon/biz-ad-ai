@@ -12,6 +12,9 @@ from core.config import ME_ENDPOINT, DEV_RESET_QUOTA_ENDPOINT, REQUEST_TIMEOUT_A
 def init_auth_state() -> None:
     if "auth" not in st.session_state:
         st.session_state.auth = {"is_logged_in": False, "user": None}
+    
+    if "is_logged_in" not in st.session_state.auth:
+        st.session_state.auth["is_logged_in"] = False
 
 
 def is_logged_in() -> bool:
@@ -32,8 +35,10 @@ def check_auth_status_from_cookies(cookies: dict) -> None:
     브라우저 쿠키에 담긴 토큰을 기반으로 최초 로그인 세션 수립
     """
     init_auth_state()
+    
     if st.session_state.auth["is_logged_in"]:
         return
+    
 
     try:
         res = requests.get(
