@@ -84,16 +84,16 @@ def _render_sidebar() -> None:
         st.markdown("### ⚙️ 개발 / 데모 설정")
         st.caption("백엔드(A·C·D 담당)가 준비되기 전까지는 목업 모드로 프론트 작업을 이어갈 수 있어요.")
 
-        st.session_state.mock_mode = st.toggle(
+        st.toggle(
             "목업 모드 (백엔드 없이 테스트)",
-            value=st.session_state.mock_mode,
+            key="mock_mode",
         )
         if is_logged_in():
             st.session_state.dev_guest_mode = False
 
-        st.session_state.dev_guest_mode = st.toggle(
+        st.toggle(
             "로그인 우회 모드 (개발용)",
-            value=st.session_state.dev_guest_mode,
+            key="dev_guest_mode",
             help="카카오 로그인 없이 Step 1/2/3 테스트를 진행합니다.",
             disabled=is_logged_in(),
         )
