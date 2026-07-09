@@ -11,7 +11,10 @@ from core.config import DEV_GUEST_MODE_DEFAULT, ME_ENDPOINT, DEV_RESET_QUOTA_END
 
 def init_auth_state() -> None:
     if "auth" not in st.session_state:
-        st.session_state.auth = {"access_token": None, "refresh_token": None, "user": None}
+        st.session_state.auth = {"is_logged_in": False, "user": None}
+    
+    if "is_logged_in" not in st.session_state.auth:
+        st.session_state.auth["is_logged_in"] = False
 
 
 def is_logged_in(session_state: dict | None = None) -> bool:
@@ -20,77 +23,94 @@ def is_logged_in(session_state: dict | None = None) -> bool:
     return bool(session_state.get("auth", {}).get("access_token"))
 
 
+def is_dev_guest_mode(session_state: dict | None = None) -> bool:
+    """로그인 우회 모드. 실제 로그인 상태면 항상 False."""
+    if session_state is None:
+        session_state = st.session_state
+    if is_logged_in(session_state=session_state):
+        return False
+    return bool(session_state.get("dev_guest_mode", DEV_GUEST_MODE_DEFAULT))
+
+
 def should_allow_access(mock_mode: bool | None = None, dev_guest_mode: bool | None = None, session_state: dict | None = None) -> bool:
     if session_state is None:
         session_state = st.session_state
     if mock_mode is None:
         mock_mode = session_state.get("mock_mode", False)
     if dev_guest_mode is None:
-        dev_guest_mode = session_state.get("dev_guest_mode", DEV_GUEST_MODE_DEFAULT)
+        dev_guest_mode = is_dev_guest_mode(session_state=session_state)
     return bool(mock_mode or is_logged_in(session_state=session_state) or dev_guest_mode)
 
 
-def fetch_me(access_token: str) -> dict | None:
+# ✨ HEAD 브랜치의 쿠키 기반 인증 상태 체크 함수 유지
+def check_auth_status_from_cookies(cookies: dict) -> None:
     """
-    /api/v1/auth/me 호출로 사용자 정보 + 오늘 생성 사용량 요청
+    브라우저 쿠키에 담긴 토큰을 기반으로 최초 로그인 세션 수립
+    """
+    init_auth_state()
+    
+    if st.session_state.auth["is_logged_in"]:
+        return
+    
+
+    try:
+        res = requests.get(
+            ME_ENDPOINT,
+            cookies=cookies,
+            timeout=REQUEST_TIMEOUT_AUTH,
+        )
+        if res.status_code == 200:
+            st.session_state.auth = {"is_logged_in": True, "user": res.json().get("data")}
+            # 로그인 성공 시 우회 모드는 자동 해제
+            st.session_state.dev_guest_mode = False
+    except requests.exceptions.RequestException:
+        pass
+
+
+def refresh_me(cookies: dict) -> None:
+    """
+    로그인된 상태에서 오늘 생성 사용량 등 최신 정보를 다시 가져오기
     """
     try:
         res = requests.get(
             ME_ENDPOINT,
-            headers={"Authorization": f"Bearer {access_token}"},
+            cookies=cookies,
             timeout=REQUEST_TIMEOUT_AUTH,
         )
-        if res.status_code != 200:
-            return None
-        body = res.json()
-        return body.get("data")
+        if res.status_code == 200:
+            st.session_state.auth["user"] = res.json().get("data")
     except requests.exceptions.RequestException:
-        return None
+        pass
 
 
-def consume_login_token_from_query() -> None:
+def request_refresh_token(cookies: dict) -> bool:
     """
-    세션에 Access & Refresh 토큰 저장 후 주소창에서 제거
+    401 발생 시 쿠키를 실어 서버에 토큰 재발급을 요청합니다.
     """
-    init_auth_state()
+    try:
+        refresh_endpoint = ME_ENDPOINT.replace("/me", "/refresh")
+        res = requests.post(
+            refresh_endpoint,
+            cookies=cookies,
+            timeout=REQUEST_TIMEOUT_AUTH
+        )
+        if res.status_code == 200:
+            return True
+    except Exception:
+        pass
+        
+    logout_session()
+    return False
 
-    # 💡 백엔드에서 리다이렉트해 준 두 토큰을 모두 낚아챕니다.
-    access_token = st.query_params.get("login_token")
-    refresh_token = st.query_params.get("refresh_token")
-    
-    if not access_token:
-        return
 
-    user = fetch_me(access_token)
-    if user is None:
-        st.session_state.auth = {"access_token": None, "refresh_token": None, "user": None}
-    else:
-        # 💡 세션에 Refresh Token도 안전하게 박아둡니다.
-        st.session_state.auth = {
-            "access_token": access_token, 
-            "refresh_token": refresh_token, 
-            "user": user
-        }
-
+def logout_session() -> None:
+    st.session_state.auth = {"is_logged_in": False, "user": None}
     st.query_params.clear()
-    st.rerun()
 
 
-def refresh_me() -> None:
-    """
-    로그인된 상태에서 오늘 생성 사용량 등 최신 정보를 다시 가져오기
-    """
-    token = st.session_state.auth.get("access_token")
-    if not token:
-        return
-    user = fetch_me(token)
-    if user is not None:
-        st.session_state.auth["user"] = user
-
-
-def logout() -> None:
-    st.session_state.auth = {"access_token": None, "refresh_token": None, "user": None}
-
+# ===============================================================
+# ✨ [컴포넌트 연동용 블록] 삭제되었던 필수 메서드 완벽 부활 및 쿠키 연동
+# ===============================================================
 
 def get_daily_usage() -> dict | None:
     """
@@ -114,34 +134,33 @@ def is_quota_exceeded() -> bool:
     return usage.get("remaining", 1) <= 0
 
 
-def sync_usage() -> None:
+def sync_usage(cookies: dict) -> None:
     """
     로그인 상태에서 최신 사용량 정보를 서버에서 다시 가져와 세션에 반영
     """
     if st.session_state.get("mock_mode") or not is_logged_in():
         return
-    refresh_me()
+    refresh_me(cookies)
 
 
-def reset_quota_for_testing() -> tuple[bool, str]:
+def reset_quota_for_testing(cookies: dict) -> tuple[bool, str]:
     """
     테스트용: 오늘 생성 횟수 초기화
     """
-    token = st.session_state.auth.get("access_token")
-    if not token:
+    if not is_logged_in():
         return False, "로그인 후 이용할 수 있어요."
 
     try:
         res = requests.post(
             DEV_RESET_QUOTA_ENDPOINT,
-            headers={"Authorization": f"Bearer {token}"},
+            cookies=cookies,
             timeout=REQUEST_TIMEOUT_AUTH,
         )
     except requests.exceptions.RequestException:
         return False, "서버에 연결할 수 없어요."
 
     if res.status_code == 200:
-        refresh_me()
+        refresh_me(cookies)
         return True, "오늘 생성 횟수를 초기화했어요."
 
     try:
@@ -149,32 +168,3 @@ def reset_quota_for_testing() -> tuple[bool, str]:
     except ValueError:
         message = "초기화에 실패했어요."
     return False, message
-
-
-def request_refresh_token() -> bool:
-    """
-    💡 401 발생 시 백엔드에 토큰 갱신을 요청하는 구원 함수
-    """
-    refresh_token = st.session_state.auth.get("refresh_token")
-    if not refresh_token:
-        return False
-
-    try:
-        # ME_ENDPOINT(/api/v1/auth/me) 주소를 기반으로 /api/v1/auth/refresh 주소를 동적으로 유추합니다.
-        refresh_endpoint = ME_ENDPOINT.replace("/me", "/refresh")
-        res = requests.post(
-            refresh_endpoint,
-            json={"refresh_token": refresh_token},
-            timeout=REQUEST_TIMEOUT_AUTH
-        )
-        if res.status_code == 200:
-            res_data = res.json().get("data", {})
-            st.session_state.auth["access_token"] = res_data.get("access_token")
-            st.session_state.auth["refresh_token"] = res_data.get("refresh_token")
-            return True
-    except Exception:
-        pass
-        
-    # Refresh 토큰마저 만료되었으면 세션을 파괴하고 아웃시킵니다.
-    logout()
-    return False

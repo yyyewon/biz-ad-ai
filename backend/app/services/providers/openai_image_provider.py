@@ -19,7 +19,7 @@ from typing import Any
 import os
 
 from loguru import logger
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from app.core import error_constants as errors
 from app.core.config import get_settings
@@ -75,7 +75,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
                 },
             )
 
-        self._client = OpenAI(api_key=self._api_key)
+        self._client = AsyncOpenAI(api_key=self._api_key)
 
     @staticmethod
     def _resolve_api_key() -> str:
@@ -108,7 +108,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
     def output_format(self) -> str:
         return self._output_format
 
-    def generate(
+    async def generate(
         self,
         *,
         input_image_bytes: bytes,
@@ -157,7 +157,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
                         filename=f"mask_{idx + 1}.png",
                     )
 
-                    result = self._client.images.edit(
+                    result = await self._client.images.edit(
                         **self._build_image_edit_kwargs(
                             image=image_file,
                             prompt=prompt,
@@ -165,7 +165,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
                         )
                     )
                 else:
-                    result = self._client.images.edit(
+                    result = await self._client.images.edit(
                         **self._build_image_edit_kwargs(
                             image=image_file,
                             prompt=prompt,
@@ -203,7 +203,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
 
         return output_images
 
-    def generate_backgrounds(
+    async def generate_backgrounds(
         self,
         *,
         prompt: str,
@@ -227,7 +227,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
 
         try:
             for _ in range(num_images):
-                result = self._client.images.generate(
+                result = await self._client.images.generate(
                     **self._build_image_generate_kwargs(prompt=prompt)
                 )
 

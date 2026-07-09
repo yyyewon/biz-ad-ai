@@ -1,0 +1,95 @@
+# Docker 개발용 Jupyter Proxy 예시 파일
+#
+# 사용 방법:
+# 1. 이 파일을 복사한다.
+#    cp docker-compose.dev.proxy.example.yml docker-compose.dev.proxy.yml
+#
+# 2. docker-compose.dev.proxy.yml 안의 아래 값을 본인 계정/포트로 수정한다.
+#    - Jupyter 계정명
+#    - Backend 개발 포트
+#    - Frontend 개발 포트
+#    - container_name
+#    - image 이름
+#    - API_BROWSER_BASE_URL
+#    - --root-path
+#
+# 3. docker-compose.dev.proxy.yml은 Git에 올리지 않는다.
+#    docker-compose.dev.proxy.example.yml만 Git에 올린다.
+#
+# 팀원별 포트:
+# 황예원 spai0904: backend 8011, frontend 8511
+# 손영욱 spai0928: backend 8012, frontend 8512
+# 박도원 spai0908: backend 8013, frontend 8513
+# 채영환 spai0913: backend 8014, frontend 8514
+# 천지연 spai0925: backend 8015, frontend 8515
+
+services:
+  backend:
+    # 예시: biz-ad-ai-backend-dev-spai0913:latest
+    image: biz-ad-ai-backend-dev-본인계정명:latest
+
+    # 예시: biz-ad-ai-backend-dev-spai0913
+    container_name: biz-ad-ai-backend-dev-본인계정명
+
+    # 왼쪽: VM에서 접근할 개발용 backend 포트
+    # 오른쪽: 컨테이너 내부 backend 포트
+    # 예시: "8014:8010"
+    ports: !override
+      - "본인_BACKEND_포트:8010"
+
+    env_file:
+      - ./backend/.env
+
+    entrypoint: !override
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8010"
+      - --reload
+      - --root-path
+      # 예시: /user/spai0913/proxy/8014
+      - /user/본인계정명/proxy/본인_BACKEND_포트
+
+    volumes: !override
+      # backend 코드 변경을 컨테이너에 바로 반영
+      - ./backend:/app
+
+      # 개발용 로그 폴더
+      - ./backend/logs-dev:/app/logs
+
+    restart: "no"
+
+  frontend:
+    # 예시: biz-ad-ai-frontend-dev-spai0913:latest
+    image: biz-ad-ai-frontend-dev-본인계정명:latest
+
+    # 예시: biz-ad-ai-frontend-dev-spai0913
+    container_name: biz-ad-ai-frontend-dev-본인계정명
+
+    # 왼쪽: VM에서 접근할 개발용 frontend 포트
+    # 오른쪽: 컨테이너 내부 Streamlit 포트
+    # 예시: "8514:8501"
+    ports: !override
+      - "본인_FRONTEND_포트:8501"
+
+    env_file:
+      - ./frontend/.env
+
+    environment:
+      # Docker Compose 내부에서는 backend 서비스명을 DNS처럼 사용할 수 있음
+      - API_BASE_URL=http://backend:8010
+
+      # 브라우저가 직접 접근하는 backend 주소
+      # 예시: http://34.60.252.165:8000/user/spai0913/proxy/8014
+      - API_BROWSER_BASE_URL=http://34.60.252.165:8000/user/본인계정명/proxy/본인_BACKEND_포트
+
+    volumes: !override
+      # frontend 코드 변경을 컨테이너에 바로 반영
+      - ./frontend:/app
+
+    depends_on:
+      - backend
+
+    restart: "no"

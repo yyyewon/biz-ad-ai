@@ -60,41 +60,30 @@ def generate_ad(
     image_name: str,
     moods: list[str],
     tone: str,
-    access_token: str | None = None,
+    cookies: dict | None = None, # 토큰 문자열 대신 쿠키 딕셔너리를 전송받음
     mock: bool = False,
 ) -> dict:
+    # ============================================================
+    # ✨ [완벽 복구] 기본 Mock 모드 분기 처리 블록
+    # ============================================================
     if mock:
-        time.sleep(1.2)
-
-        hashtag_mood = moods[0] if moods else "감성"
-        hashtag_purpose = purpose.replace(" ", "").replace("/", "") if purpose else "홍보"
-
-        caption = (
-            f"{store_name}의 {menu_name}, 오늘도 한 입이면 반해요 ️\n"
-            f"{tone} 하루엔 {menu_name} 한 그릇 어떠세요?\n\n"
-            f"#{store_name.replace(' ', '')} #{menu_name.replace(' ', '')} "
-            f"#{hashtag_mood.replace(' ', '')} #{hashtag_purpose} #맛집스타그램 #오늘뭐먹지"
-        )
-
+        time.sleep(1.5)  # 실제 생성되는 느낌을 주기 위한 가짜 딜레이
         return {
             "ok": True,
             "data": {
-                "caption": caption,
-                "images": [_PLACEHOLDER_PNG] * 3,
+                "caption": f"✨ [{store_name}]의 신메뉴 '{menu_name}' 출시! ✨\n\n{purpose or '홍보'}를 위해 정성껏 준비했습니다. {request_note if request_note else ''}\n지금 바로 매장에서 만나보세요! #소상공인두레",
+                "images": [image_bytes if image_bytes else _PLACEHOLDER_PNG],
                 "partial_success": False,
                 "warnings": [],
                 "image_generation_success": True,
+                "image_generation": {"status": "SUCCESS"},
             },
         }
 
-    files = {
-        "image": (
-            image_name or "upload.png",
-            image_bytes,
-            "application/octet-stream",
-        )
-    }
-
+    # ============================================================
+    # 실제 백엔드 API 호출 영역
+    # ============================================================
+    files = {"image": (image_name or "upload.png", image_bytes, "application/octet-stream")}
     payload = {
         "store_name": store_name,
         "menu_name": menu_name,
@@ -104,30 +93,22 @@ def generate_ad(
         "tone": tone,
     }
 
-    headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
-
     try:
         res = requests.post(
             GENERATE_ENDPOINT,
             files=files,
             data=payload,
-            headers=headers,
+            cookies=cookies,
             timeout=REQUEST_TIMEOUT_GENERATE,
         )
 
-        # 💡 만약 토큰이 만료되어 401 에러가 났다면 인터셉트하여 리트라이합니다.
         if res.status_code == 401:
-            if request_refresh_token():  # 백엔드에 갱신 요청 성공 시
-                # 싱싱한 새 Access Token을 다시 세션에서 가져와 헤더를 교체합니다.
-                new_token = st.session_state.auth.get("access_token")
-                headers["Authorization"] = f"Bearer {new_token}"
-                
-                # 동일한 요청을 다시 한번 전송합니다 (재시도)
+            if request_refresh_token(cookies):
                 res = requests.post(
                     GENERATE_ENDPOINT,
                     files=files,
                     data=payload,
-                    headers=headers,
+                    cookies=cookies,
                     timeout=REQUEST_TIMEOUT_GENERATE,
                 )
 
@@ -143,10 +124,6 @@ def generate_ad(
             }
 
         data = body.get("data") or {}
-
-        if not data and ("caption" in body or "images" in body):
-            data = body
-
         caption = data.get("caption", "")
         image_base64_list = data.get("images") or []
         images: list[bytes] = []
@@ -172,35 +149,19 @@ def generate_ad(
             },
         }
 
-    except requests.exceptions.Timeout:
-        return {
-            "ok": False,
-            "error": (
-                "생성이 지연되고 있어요. 잠시 후 다시 시도해 주세요. "
-                f"(endpoint={GENERATE_ENDPOINT}, timeout={REQUEST_TIMEOUT_GENERATE}s)"
-            ),
-            "error_code": None,
-        }
-
-    except requests.exceptions.ConnectionError:
-        return {
-            "ok": False,
-            "error": "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요.",
-            "error_code": None,
-        }
-
-    except requests.exceptions.HTTPError:
-        fallback = f"생성에 실패했어요. (서버 응답 코드: {res.status_code})"
-        message, code = _extract_error(res, fallback)
-        return {
-            "ok": False,
-            "error": message,
-            "error_code": code,
-        }
-
-    except requests.exceptions.RequestException:
-        return {
-            "ok": False,
-            "error": "알 수 없는 오류로 생성하지 못했어요.",
-            "error_code": None,
-        }
+    except requests.exceptions.RequestException as exc:
+        # 💡 기본값: 서버 응답 없이 아예 네트워크가 끊겼거나 타임아웃인 경우
+        fallback = "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요."
+        code = "NETWORK_DISCONNECTED"
+        
+        if hasattr(exc, 'response') and exc.response is not None:
+            status_code = exc.response.status_code
+            # 💡 502, 503, 504처럼 백엔드가 완전히 죽어서 에러 바디를 못 내려줄 때의 방어 로직 추가
+            if status_code in [502, 503, 504]:
+                fallback = f"서버가 응답하지 않습니다. 잠시 후 다시 시도해 주세요. (오류 코드: {status_code})"
+                code = f"SERVER_{status_code}"
+            else:
+                # 정상적으로 백엔드가 살아있고 커스텀 에러 응답을 줄 때
+                fallback, code = _extract_error(exc.response, f"오류 발생: {status_code}")
+                
+        return {"ok": False, "error": fallback, "error_code": code}
