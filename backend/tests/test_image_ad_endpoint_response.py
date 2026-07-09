@@ -35,7 +35,7 @@ def _sample_png_base64(color: str = "white") -> str:
 
 
 def _override_login_user(user_id: int = 1):
-    from app.api.v1.endpoints import image_ad as image_ad_endpoint
+    from app.api.v1.endpoints import dev_apis as image_ad_endpoint
 
     app.dependency_overrides[image_ad_endpoint.get_current_user] = lambda: {
         "id": user_id,
@@ -46,7 +46,7 @@ def _override_login_user(user_id: int = 1):
 
 
 def test_image_ad_endpoint_returns_common_success_response(monkeypatch):
-    from app.api.v1.endpoints import image_ad as image_ad_endpoint
+    from app.api.v1.endpoints import dev_apis as image_ad_endpoint
 
     _override_login_user(user_id=123)
 
@@ -97,7 +97,7 @@ def test_image_ad_endpoint_returns_common_success_response(monkeypatch):
     )
 
     response = client.post(
-        "/api/v1/ad/image",
+        "/api/v1/dev/ad/image",
         json={
             "input_image_base64": input_b64,
             "store_name": "만월",
@@ -129,7 +129,7 @@ def test_image_ad_endpoint_requires_login():
     input_b64 = _sample_png_base64("white")
 
     response = client.post(
-        "/api/v1/ad/image",
+        "/api/v1/dev/ad/image",
         json={
             "input_image_base64": input_b64,
             "store_name": "만월",
@@ -152,7 +152,7 @@ def test_image_ad_endpoint_requires_input_image_base64():
     _override_login_user(user_id=123)
 
     response = client.post(
-        "/api/v1/ad/image",
+        "/api/v1/dev/ad/image",
         json={
             "store_name": "만월",
             "menu_name": "데몬헌터스 케이크",
@@ -174,7 +174,7 @@ def test_image_ad_endpoint_rejects_invalid_base64():
     _override_login_user(user_id=123)
 
     response = client.post(
-        "/api/v1/ad/image",
+        "/api/v1/dev/ad/image",
         json={
             "input_image_base64": "not-valid-base64@@@",
             "store_name": "만월",
@@ -238,7 +238,7 @@ class RejectingLimiter:
 
 
 def test_image_ad_endpoint_returns_quota_exceeded_when_daily_limit_exceeded(monkeypatch):
-    from app.api.v1.endpoints import image_ad as image_ad_endpoint
+    from app.api.v1.endpoints import dev_apis as image_ad_endpoint
     from app.core.exceptions import AppException
 
     _override_login_user(user_id=123)
@@ -280,7 +280,7 @@ def test_image_ad_endpoint_returns_quota_exceeded_when_daily_limit_exceeded(monk
     )
 
     response = client.post(
-        "/api/v1/ad/image",
+        "/api/v1/dev/ad/image",
         json={
             "input_image_base64": input_b64,
             "store_name": "만월",
@@ -305,7 +305,7 @@ def test_image_ad_endpoint_returns_quota_exceeded_when_daily_limit_exceeded(monk
 
 
 def test_image_ad_endpoint_uses_generation_limiter(monkeypatch):
-    from app.api.v1.endpoints import image_ad as image_ad_endpoint
+    from app.api.v1.endpoints import dev_apis as image_ad_endpoint
 
     _override_login_user(user_id=123)
 
@@ -356,7 +356,7 @@ def test_image_ad_endpoint_uses_generation_limiter(monkeypatch):
     )
 
     response = client.post(
-        "/api/v1/ad/image",
+        "/api/v1/dev/ad/image",
         json={
             "input_image_base64": input_b64,
             "store_name": "만월",
@@ -380,7 +380,7 @@ def test_image_ad_endpoint_uses_generation_limiter(monkeypatch):
 
 
 def test_image_ad_endpoint_returns_generation_busy_when_limiter_rejects(monkeypatch):
-    from app.api.v1.endpoints import image_ad as image_ad_endpoint
+    from app.api.v1.endpoints import dev_apis as image_ad_endpoint
 
     _override_login_user(user_id=123)
 
@@ -412,7 +412,7 @@ def test_image_ad_endpoint_returns_generation_busy_when_limiter_rejects(monkeypa
     )
 
     response = client.post(
-        "/api/v1/ad/image",
+        "/api/v1/dev/ad/image",
         json={
             "input_image_base64": input_b64,
             "store_name": "만월",
@@ -479,7 +479,7 @@ class RejectingLimiter:
 
 
 def test_image_ad_endpoint_returns_quota_exceeded_when_daily_limit_exceeded(monkeypatch):
-    from app.api.v1.endpoints import image_ad as image_ad_endpoint
+    from app.api.v1.endpoints import dev_apis as image_ad_endpoint
     from app.core.exceptions import AppException
 
     _override_login_user(user_id=123)
@@ -521,7 +521,7 @@ def test_image_ad_endpoint_returns_quota_exceeded_when_daily_limit_exceeded(monk
     )
 
     response = client.post(
-        "/api/v1/ad/image",
+        "/api/v1/dev/ad/image",
         json={
             "input_image_base64": input_b64,
             "store_name": "만월",
@@ -546,7 +546,7 @@ def test_image_ad_endpoint_returns_quota_exceeded_when_daily_limit_exceeded(monk
 
 
 def test_image_ad_endpoint_uses_generation_limiter(monkeypatch):
-    from app.api.v1.endpoints import image_ad as image_ad_endpoint
+    from app.api.v1.endpoints import dev_apis as image_ad_endpoint
 
     _override_login_user(user_id=123)
 
@@ -597,7 +597,7 @@ def test_image_ad_endpoint_uses_generation_limiter(monkeypatch):
     )
 
     response = client.post(
-        "/api/v1/ad/image",
+        "/api/v1/dev/ad/image",
         json={
             "input_image_base64": input_b64,
             "store_name": "만월",
@@ -621,7 +621,7 @@ def test_image_ad_endpoint_uses_generation_limiter(monkeypatch):
 
 
 def test_image_ad_endpoint_returns_generation_busy_when_limiter_rejects(monkeypatch):
-    from app.api.v1.endpoints import image_ad as image_ad_endpoint
+    from app.api.v1.endpoints import dev_apis as image_ad_endpoint
 
     _override_login_user(user_id=123)
 
@@ -653,7 +653,7 @@ def test_image_ad_endpoint_returns_generation_busy_when_limiter_rejects(monkeypa
     )
 
     response = client.post(
-        "/api/v1/ad/image",
+        "/api/v1/dev/ad/image",
         json={
             "input_image_base64": input_b64,
             "store_name": "만월",

@@ -8,9 +8,15 @@ import os
 # --------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8010").rstrip("/")
 API_BROWSER_BASE_URL = os.getenv("API_BROWSER_BASE_URL", API_BASE_URL).rstrip("/")
-TEXT_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/text"
-IMAGE_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/image"
+# 실제 서비스용 통합 생성 API
 GENERATE_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/generate"
+
+# 개발/테스트용 API
+TEXT_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/ad/text"
+IMAGE_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/ad/image"
+IMAGE_PREPROCESS_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/image/preprocess"
+
+# Health Check API
 HEALTH_ENDPOINT = f"{API_BASE_URL}/api/v1/health"
 
 # --------------------------------------------------------------

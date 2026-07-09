@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from PIL import Image
 
@@ -126,7 +128,9 @@ def test_generate_backgrounds_returns_png_bytes(monkeypatch, tmp_path):
 
     monkeypatch.setattr(provider, "_load_text2img_pipeline", lambda: FakePipe())
 
-    result = provider.generate_backgrounds(prompt="테스트 프롬프트", num_images=2)
+    result = asyncio.run(
+        provider.generate_backgrounds(prompt="테스트 프롬프트", num_images=2)
+    )
 
     assert len(result) == 2
     for image_bytes in result:
@@ -149,7 +153,7 @@ def test_generate_with_mask_preserves_subject_pixels(monkeypatch, tmp_path):
         def __call__(self, **kwargs):
             return FakeResult()
 
-    monkeypatch.setattr(provider, "_load_img2img_pipeline", lambda: FakePipe())
+    monkeypatch.setattr(provider, "_load_inpaint_pipeline", lambda: FakePipe())
 
     # 왼쪽 절반: alpha=255(피사체 보존), 오른쪽 절반: alpha=0(배경 교체)
     mask = Image.new("RGBA", size, (0, 0, 0, 0))
@@ -157,11 +161,13 @@ def test_generate_with_mask_preserves_subject_pixels(monkeypatch, tmp_path):
         for y in range(size[1]):
             mask.putpixel((x, y), (0, 0, 0, 255))
 
-    result = provider.generate(
-        input_image_bytes=pil_image_to_png_bytes(original),
-        prompt="테스트",
-        num_images=1,
-        mask_image_bytes=pil_image_to_png_bytes(mask),
+    result = asyncio.run(
+        provider.generate(
+            input_image_bytes=pil_image_to_png_bytes(original),
+            prompt="테스트",
+            num_images=1,
+            mask_image_bytes=pil_image_to_png_bytes(mask),
+        )
     )
 
     output_image = image_bytes_to_pil(result[0]).convert("RGB")

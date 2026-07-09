@@ -14,7 +14,9 @@ import io
 
 from loguru import logger
 from PIL import Image
-from rembg import remove
+
+from app.core import error_constants as errors
+from app.core.exceptions import AppException
 
 
 def remove_background_and_resize(
@@ -23,6 +25,9 @@ def remove_background_and_resize(
 ) -> bytes:
     """
     이미지 배경을 제거하고 지정된 크기로 리사이즈한 뒤 PNG bytes로 반환한다.
+
+    실제 이미지 전처리 공통 함수.
+    endpoint와 pipeline에서 모두 이 함수를 사용한다.
 
     Args:
         image_bytes:
@@ -34,8 +39,10 @@ def remove_background_and_resize(
         배경 제거 및 리사이즈가 완료된 PNG bytes.
 
     Raises:
+        AppException:
+            rembg/onnxruntime 등 전처리 의존성 문제가 발생한 경우.
         Exception:
-            PIL 이미지 열기, rembg 처리, resize, PNG 변환 중 발생한 예외를 그대로 전달한다.
+            PIL 이미지 열기, rembg 처리, resize, PNG 변환 중 발생한 예외.
             상위 endpoint 또는 pipeline에서 AppException으로 변환한다.
     """
 
@@ -46,7 +53,27 @@ def remove_background_and_resize(
             target_size,
         )
 
-        # 1. 입력받은 바이너리 데이터를 이미지 객체로 변환한다.
+        try:
+            from rembg import remove
+
+        except SystemExit as exc:
+            raise AppException(
+                errors.IMAGE_PREPROCESS_DEPENDENCY_ERROR,
+                detail={
+                    "reason": "rembg CPU backend가 필요합니다.",
+                    "hint": 'requirements에 "rembg[cpu]" 또는 "onnxruntime"이 포함되어야 합니다.',
+                },
+            ) from exc
+
+        except ImportError as exc:
+            raise AppException(
+                errors.IMAGE_PREPROCESS_DEPENDENCY_ERROR,
+                detail={
+                    "reason": "rembg import failed",
+                    "error": str(exc),
+                },
+            ) from exc
+
         input_image = Image.open(io.BytesIO(image_bytes))
 
         logger.info(
@@ -56,18 +83,14 @@ def remove_background_and_resize(
             input_image.size,
         )
 
-        # 2. rembg 라이브러리로 배경 제거를 수행한다.
         logger.info("image_preprocess_remove_background_started")
         output_image = remove(input_image)
 
-        # 3. 투명도 보존을 위해 RGBA로 정규화한다.
         output_image = output_image.convert("RGBA")
 
-        # 4. AI 모델 입력 규격에 맞게 크기를 변환한다.
         logger.info("image_preprocess_resize_started | target_size={}", target_size)
         output_image = output_image.resize(target_size, Image.Resampling.LANCZOS)
 
-        # 5. 처리된 이미지를 PNG bytes로 변환한다.
         buffer = io.BytesIO()
         output_image.save(buffer, format="PNG")
         result = buffer.getvalue()
@@ -79,6 +102,9 @@ def remove_background_and_resize(
         )
 
         return result
+
+    except AppException:
+        raise
 
     except Exception as exc:
         logger.exception(

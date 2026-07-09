@@ -4,6 +4,7 @@ Step 2: 사진 업로드 & 무드/톤 선택
 from __future__ import annotations
 import streamlit as st
 from core.config import MOOD_OPTIONS, TONE_OPTIONS, MAX_UPLOAD_MB, ALLOWED_IMAGE_TYPES
+from core.upload_validation import validate_upload_image_file
 from core.auth import get_daily_usage, is_quota_exceeded
 from core.state import set_upload, set_style, is_upload_step_valid, next_step, prev_step
 from components.ui_kit import phone_preview, quota_exceeded_banner
@@ -35,9 +36,11 @@ def render() -> None:
             
             if uploaded_file is not None:
                 image_bytes = uploaded_file.getvalue()
-                size_mb = len(image_bytes) / (1024 * 1024)
-                if size_mb > MAX_UPLOAD_MB:
-                    st.error(f"파일이 너무 커요 ({size_mb:.1f}MB). {MAX_UPLOAD_MB}MB 이하로 올려주세요.")
+                is_valid, error_message = validate_upload_image_file(uploaded_file.name, image_bytes)
+
+                if not is_valid:
+                    st.error(error_message)
+                    set_upload(None, None)
                 else:
                     set_upload(image_bytes, uploaded_file.name)
 
