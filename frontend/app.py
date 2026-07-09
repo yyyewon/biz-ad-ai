@@ -9,10 +9,10 @@ from core.state import init_state
 from core.api_client import check_backend_health
 from core.auth import (
     init_auth_state,
-    consume_login_token_from_query,
+    check_auth_status_from_cookies,
     is_logged_in,
     is_dev_guest_mode,
-    logout,
+    logout_session,  
     sync_usage,
     reset_quota_for_testing,
 )
@@ -52,7 +52,7 @@ def _render_login_section() -> None:
         st.success(f"{nickname}님 환영해요 👋")
         st.caption(f"오늘 생성 {used}/{limit}회 사용")
         if st.button("로그아웃", width="stretch"):
-            logout()
+            logout_session()
             st.rerun()
     else:
         st.caption("메인 화면에서 카카오 로그인 후 이용할 수 있어요.")
@@ -68,7 +68,7 @@ def _render_dev_tools() -> None:
     st.markdown("### 🧪 테스트 도구")
     st.caption("백엔드 DEV_TOOLS_ENABLED=true 일 때만 동작해요. (배포 환경에서는 비활성화 권장)")
     if st.button("오늘 생성 횟수 초기화", width="stretch"):
-        ok, message = reset_quota_for_testing()
+        ok, message = reset_quota_for_testing(st.context.cookies)
         if ok:
             st.success(message)
         else:
@@ -124,7 +124,7 @@ def _render_sidebar() -> None:
 def main() -> None:
     init_state()
     init_auth_state()
-    consume_login_token_from_query()  # ?login_token=... 이 있으면 처리 후 rerun
+    check_auth_status_from_cookies(st.context.cookies)
 
     _inject_css()
     _render_sidebar()
@@ -139,7 +139,7 @@ def main() -> None:
         step_login.render()
         return
 
-    sync_usage()
+    sync_usage(st.context.cookies)
 
     render_topbar(
         mock_mode=st.session_state.mock_mode,
