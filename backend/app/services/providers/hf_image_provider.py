@@ -8,7 +8,7 @@ import threading
 from typing import Any
 
 from loguru import logger
-from PIL import Image
+from PIL import Image, ImageFilter, ImageOps
 from starlette.concurrency import run_in_threadpool
 
 from app.core import error_constants as errors
@@ -21,19 +21,19 @@ from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
 
 try:
     import torch
-    from diffusers import StableDiffusion3Img2ImgPipeline, StableDiffusion3Pipeline
+    from diffusers import StableDiffusion3InpaintPipeline, StableDiffusion3Pipeline
 
     _TORCH_DIFFUSERS_IMPORT_ERROR: Exception | None = None
 
 except ImportError as _import_exc:
     torch = None
     StableDiffusion3Pipeline = None
-    StableDiffusion3Img2ImgPipeline = None
+    StableDiffusion3InpaintPipeline = None
     _TORCH_DIFFUSERS_IMPORT_ERROR = _import_exc
 
 
 _TEXT2IMG_PIPELINE_CACHE: dict[tuple[str, str, str], Any] = {}
-_IMG2IMG_PIPELINE_CACHE: dict[tuple[str, str, str], Any] = {}
+_INPAINT_PIPELINE_CACHE: dict[tuple[str, str, str], Any] = {}
 _PIPELINE_LOAD_LOCK = threading.RLock()
 _PIPELINE_INFERENCE_LOCK = threading.Lock()
 
@@ -80,7 +80,15 @@ class HFImageProvider(ImageGenerationProvider):
         self._num_inference_steps = int(self._settings.get("num_inference_steps", 40))
         self._guidance_scale = float(self._settings.get("guidance_scale", 4.5))
         self._max_sequence_length = int(self._settings.get("max_sequence_length", 512))
-        self._img2img_strength = float(self._settings.get("img2img_strength", 0.65))
+
+        self._inpaint_strength = float(
+            self._settings.get(
+                "inpaint_strength",
+                self._settings.get("img2img_strength", 0.99),
+            )
+        )
+
+        self._mask_feather_px = int(self._settings.get("mask_feather_px", 6))
 
         self._hf_token = hf_token or self._resolve_hf_token()
 
@@ -116,7 +124,6 @@ class HFImageProvider(ImageGenerationProvider):
     def height(self) -> int:
         return self._height
 
-
     def _ensure_torch_and_diffusers_available(self) -> None:
         if _TORCH_DIFFUSERS_IMPORT_ERROR is not None:
             raise AppException(
@@ -128,6 +135,15 @@ class HFImageProvider(ImageGenerationProvider):
                         '"accelerate", "sentencepiece"가 설치되어야 합니다.'
                     ),
                     "error": str(_TORCH_DIFFUSERS_IMPORT_ERROR),
+                },
+            )
+
+        if StableDiffusion3InpaintPipeline is None:
+            raise AppException(
+                errors.HF_IMAGE_PIPELINE_DEPENDENCY_ERROR,
+                detail={
+                    "reason": "StableDiffusion3InpaintPipeline import 실패",
+                    "hint": "diffusers>=0.31 로 업그레이드가 필요합니다. (현재 pin: diffusers==0.39.0 이면 충족)",
                 },
             )
 
@@ -204,44 +220,49 @@ class HFImageProvider(ImageGenerationProvider):
             logger.info("hf_image_pipeline_loaded | model_id={} | device={}", self._model_id, device)
             return pipe
 
-    def _load_img2img_pipeline(self):
+    def _load_inpaint_pipeline(self):
         self._ensure_torch_and_diffusers_available()
 
         dtype = self._resolve_torch_dtype()
         device = self._resolve_device()
         cache_key = (self._model_id, str(dtype), device)
 
-        cached = _IMG2IMG_PIPELINE_CACHE.get(cache_key)
+        cached = _INPAINT_PIPELINE_CACHE.get(cache_key)
         if cached is not None:
             return cached
 
         with _PIPELINE_LOAD_LOCK:
-            cached = _IMG2IMG_PIPELINE_CACHE.get(cache_key)
+            cached = _INPAINT_PIPELINE_CACHE.get(cache_key)
             if cached is not None:
                 return cached
 
             text2img_pipe = self._load_text2img_pipeline()
 
             try:
-                img2img_pipe = StableDiffusion3Img2ImgPipeline(**text2img_pipe.components)
+                inpaint_pipe = StableDiffusion3InpaintPipeline(**text2img_pipe.components)
+
                 if device == "cuda":
-                    img2img_pipe.to(device)
+                    inpaint_pipe.to(device)
                 else:
-                    img2img_pipe.enable_model_cpu_offload()
+                    inpaint_pipe.enable_model_cpu_offload()
 
             except Exception as exc:
                 raise AppException(
                     errors.HF_IMAGE_MODEL_LOAD_FAILED,
                     detail={
                         "provider": "hf", "role": "image_generation",
-                        "model_id": self._model_id, "stage": "img2img_pipeline_init",
+                        "model_id": self._model_id, "stage": "inpaint_pipeline_init",
                         "error": str(exc),
                     },
                 ) from exc
 
-            _IMG2IMG_PIPELINE_CACHE[cache_key] = img2img_pipe
-            return img2img_pipe
-
+            _INPAINT_PIPELINE_CACHE[cache_key] = inpaint_pipe
+            logger.info(
+                "hf_inpaint_pipeline_loaded | model_id={} | device={}",
+                self._model_id,
+                device,
+            )
+            return inpaint_pipe
 
     async def generate_backgrounds(
         self,
@@ -344,6 +365,21 @@ class HFImageProvider(ImageGenerationProvider):
             mask_image_bytes=mask_image_bytes,
         )
 
+    def _flatten_on_white(self, rgba_image: Image.Image) -> Image.Image:
+        canvas = Image.new("RGB", rgba_image.size, (255, 255, 255))
+        canvas.paste(rgba_image, mask=rgba_image.split()[-1])
+        return canvas
+
+    def _build_inpaint_mask(self, subject_alpha: Image.Image) -> Image.Image:
+        inpaint_mask = ImageOps.invert(subject_alpha.convert("L"))
+
+        if self._mask_feather_px > 0:
+            inpaint_mask = inpaint_mask.filter(
+                ImageFilter.GaussianBlur(self._mask_feather_px)
+            )
+
+        return inpaint_mask
+
     def _generate_sync(
         self,
         *,
@@ -362,10 +398,20 @@ class HFImageProvider(ImageGenerationProvider):
                 },
             )
 
-        source_image = image_bytes_to_pil(input_image_bytes).convert("RGB")
-        resized_source = source_image.resize((self._width, self._height))
+        source_rgba = image_bytes_to_pil(input_image_bytes).convert("RGBA")
 
-        pipe = self._load_img2img_pipeline()
+        flattened_source = self._flatten_on_white(source_rgba)
+        resized_source = flattened_source.resize((self._width, self._height))
+
+        mask_source = (
+            image_bytes_to_pil(mask_image_bytes).convert("RGBA")
+            if mask_image_bytes
+            else source_rgba
+        )
+        subject_alpha = mask_source.split()[-1].resize((self._width, self._height))
+        inpaint_mask = self._build_inpaint_mask(subject_alpha)
+
+        pipe = self._load_inpaint_pipeline()
 
         logger.info(
             "hf_image_generation_started | model_id={} | num_images={} | has_mask={}",
@@ -379,7 +425,8 @@ class HFImageProvider(ImageGenerationProvider):
                 result = pipe(
                     prompt=prompt,
                     image=resized_source,
-                    strength=self._img2img_strength,
+                    mask_image=inpaint_mask,
+                    strength=self._inpaint_strength,
                     num_inference_steps=self._num_inference_steps,
                     guidance_scale=self._guidance_scale,
                     max_sequence_length=self._max_sequence_length,
@@ -420,17 +467,9 @@ class HFImageProvider(ImageGenerationProvider):
         output_images: list[bytes] = []
 
         for generated_image in generated_images:
-            generated_rgb = generated_image.convert("RGB")
-
-            if mask_image_bytes:
-                composited = self._composite_with_mask(
-                    original=resized_source,
-                    generated=generated_rgb,
-                    mask_image_bytes=mask_image_bytes,
-                )
-                output_images.append(pil_image_to_png_bytes(composited))
-            else:
-                output_images.append(pil_image_to_png_bytes(generated_rgb))
+            generated_rgb = generated_image.convert("RGB").resize(resized_source.size)
+            composited = Image.composite(resized_source, generated_rgb, subject_alpha)
+            output_images.append(pil_image_to_png_bytes(composited))
 
         logger.info(
             "hf_image_generation_completed | model_id={} | generated_count={}",
@@ -439,21 +478,3 @@ class HFImageProvider(ImageGenerationProvider):
         )
 
         return output_images
-
-    @staticmethod
-    def _composite_with_mask(
-        *,
-        original: Image.Image,
-        generated: Image.Image,
-        mask_image_bytes: bytes,
-    ) -> Image.Image:
-        """
-        마스크의 알파 채널을 기준으로 원본(피사체)과 생성 결과(배경)를 합성
-        """
-
-        mask_image = image_bytes_to_pil(mask_image_bytes).convert("RGBA")
-        alpha_channel = mask_image.split()[-1].resize(generated.size)
-
-        original_resized = original.convert("RGB").resize(generated.size)
-
-        return Image.composite(original_resized, generated, alpha_channel)
