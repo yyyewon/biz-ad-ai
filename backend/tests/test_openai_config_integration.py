@@ -187,6 +187,7 @@ def test_text_pipeline_uses_text_provider(monkeypatch):
         request_note="가성비를 강조",
         moods=["fresh"],
         tone="친근한",
+      )
     )
 
     assert "테스트 광고 문구입니다." in result
