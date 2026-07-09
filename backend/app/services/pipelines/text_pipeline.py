@@ -20,8 +20,7 @@ def run_text_pipeline(
     store_name: str,
     menu_name: str,
     purpose: str,
-    request_note: str,
-    moods: list,
+    llm_request: str,
     tone: str,
 ) -> str:
     """
@@ -31,17 +30,14 @@ def run_text_pipeline(
     따라서 추후 HF text provider가 추가되어도 동일한 후처리 규칙이 적용된다.
     """
 
-    mood_str = ", ".join(moods) if moods else "일반적인"
-
     prompt = f"""
 아래 정보를 바탕으로 SNS(인스타그램)용 광고 문구를 작성해 주세요.
 
 - 가게 이름: {store_name}
 - 메뉴/상품: {menu_name}
 - 광고 목적: {purpose}
-- 분위기: {mood_str}
 - 말투/톤: {tone}
-- 추가 요청사항: {request_note}
+- 추가 요청사항: {llm_request}
 
 작성 조건:
 1. 문구 중간중간 적절한 이모지를 섞어 주세요.
@@ -54,10 +50,9 @@ def run_text_pipeline(
     )
 
     logger.info(
-        "text_pipeline_started | store_name={} | menu_name={} | mood_count={}",
+        "text_pipeline_started | store_name={} | menu_name={}",
         store_name,
         menu_name,
-        len(moods or []),
     )
 
     provider = get_text_provider()

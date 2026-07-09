@@ -15,12 +15,14 @@ def init_state() -> None:
     """
     defaults = {
         "step": 1,
-        "business": {"store_name": "", "menu_name": "", "purpose": None, "request_note": ""},
+        "business": {"store_name": "", "menu_name": "", "purpose": None},
         "upload": {
             "image_bytes": None,
             "image_name": None,
-            "moods": [],
+            "food": None,
             "tone": None,
+            "image_request": "",
+            "llm_request": "",
         },
         "generation": {
             "status": "idle",       # idle | loading | done | error
@@ -55,12 +57,11 @@ def prev_step() -> None:
 # ---------------------------------------------------------------
 # 입력값 접근자
 # ---------------------------------------------------------------
-def set_business_info(store_name: str, menu_name: str, purpose: str | None, request_note: str) -> None:
+def set_business_info(store_name: str, menu_name: str, purpose: str | None) -> None:
     st.session_state.business = {
         "store_name": store_name.strip(),
         "menu_name": menu_name.strip(),
         "purpose": purpose,
-        "request_note": request_note.strip(),
     }
 
 
@@ -74,14 +75,16 @@ def set_upload(image_bytes: bytes | None, image_name: str | None) -> None:
     st.session_state.upload["image_name"] = image_name
 
 
-def set_style(moods: list[str], tone: str | None) -> None:
-    st.session_state.upload["moods"] = moods
+def set_style(food: str | None, tone: str | None, image_request: str, llm_request: str) -> None:
+    st.session_state.upload["food"] = food
     st.session_state.upload["tone"] = tone
+    st.session_state.upload["image_request"] = image_request
+    st.session_state.upload["llm_requset"] = llm_request
 
 
 def is_upload_step_valid() -> bool:
     u = st.session_state.upload
-    return u["image_bytes"] is not None and u["food"] is not None and u["tone"] is not None and u["poster_type"] is not None
+    return u["image_bytes"] is not None and u["food"] is not None and u["tone"] is not None
 
 
 # ---------------------------------------------------------------

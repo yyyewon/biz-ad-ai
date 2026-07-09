@@ -53,12 +53,12 @@ def generate_ad(
     store_name: str,
     menu_name: str,
     purpose: str | None,
-    request_note: str,
     image_bytes: bytes,
     image_name: str,
     food: str,
-    poster_type: str,
     tone: str,
+    image_request: str,
+    llm_request: str,
     access_token: str | None = None,
     mock: bool = False,
 ) -> dict:
@@ -127,10 +127,10 @@ def generate_ad(
         "store_name": store_name,
         "menu_name": menu_name,
         "purpose": purpose,
-        "request_note": request_note,
+        "llm_request": llm_request,
         "food": food,
-        "poster_type": poster_type,
         "tone": tone,
+        "image_request": image_request,
     }
 
     headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}

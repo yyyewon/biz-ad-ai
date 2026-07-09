@@ -3,7 +3,7 @@ Step 2: 사진 업로드 & 무드/톤 선택
 """
 from __future__ import annotations
 import streamlit as st
-from core.config import POSTER_OPTIONS, FOOD_OPTIONS, TONE_OPTIONS, MAX_UPLOAD_MB, ALLOWED_IMAGE_TYPES
+from core.config import FOOD_OPTIONS, TONE_OPTIONS, MAX_UPLOAD_MB, ALLOWED_IMAGE_TYPES
 from core.auth import get_daily_usage, is_quota_exceeded
 from core.state import set_upload, set_style, is_upload_step_valid, next_step, prev_step
 from components.ui_kit import phone_preview, quota_exceeded_banner
@@ -27,14 +27,6 @@ def render() -> None:
                 usage = get_daily_usage() or {}
                 quota_exceeded_banner(limit=usage.get("limit"))
 
-            layout_type = st.segmented_control(
-                "광고 레이아웃 유형",
-                options=POSTER_OPTIONS,
-                selection_mode="single",
-                default=st.session_state.upload.get("poster_type", "단일 메뉴형"),
-                key="upload_poster_style",
-                help=f"음식 집중형은 문구가 나타나지 않아요"
-            )
 
 
             uploaded_file = st.file_uploader(
@@ -67,7 +59,21 @@ def render() -> None:
                 key="upload_tone_select",
             )
 
-            set_style(food, tone)
+            image_request = st.text_area(
+                "배경 및 이미지 요청사항 (선택)",
+                placeholder="예) 따뜻한 햇살이 드는 우드 테이블 느낌으로 해주세요.",
+                value=st.session_state.upload["image_request"],
+                key="upload_image_request"
+            )
+
+            llm_request = st.text_area(
+                "광고 문구 생성에 대한 요청사항(선택)",
+                placeholder="예)현재 1주일간 이벤트 중인데 해당 사항을 포함하게 해주세요.",
+                value=st.session_state.upload["llm_request"],
+                key="upload_llm_request"
+            )
+
+            set_style(food, tone, image_request, llm_request)
 
             nav_left, nav_right = st.columns(2)
             with nav_left:

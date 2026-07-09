@@ -21,9 +21,10 @@ async def generate_ad_endpoint(
     store_name: str = Form(..., description="가게 이름"),
     menu_name: str = Form(..., description="메뉴 이름"),
     purpose: str | None = Form(None, description="광고 목적"),
-    request_note: str = Form("", description="요청 사항"),
-    moods: str = Form("", description="분위기 (콤마 구분)"),
+    food: str = Form("", description="음식 종류"),
     tone: str = Form("", description="톤앤매너"),
+    image_request: str = Form("", description="이미지 생성 요구사항"),
+    llm_request: str = Form("", description="광고 문구 생성 요구사항"),
     image: UploadFile | None = File(None, description="참고용 이미지"),
     current_user: dict | None = Depends(get_current_user_optional),
 ):
@@ -50,7 +51,6 @@ async def generate_ad_endpoint(
 
     try:
         # 콤마로 구분된 분위기 문자열을 리스트로 변환
-        mood_list = [m.strip() for m in moods.split(",") if m.strip()] if moods else []
 
         # 업로드된 이미지 파일 읽기
         image_bytes = None
@@ -63,11 +63,11 @@ async def generate_ad_endpoint(
             await check_and_increment_daily_usage_async(current_user["id"])
 
         logger.info(
-            "generate_ad_endpoint_started | store_name={} | menu_name={} | has_image={} | mood_count={}",
+            "generate_ad_endpoint_started | store_name={} | menu_name={} | has_image={} | food={}",
             store_name,
             menu_name,
             bool(image_bytes),
-            len(mood_list),
+            food,
         )
 
         # 동시 생성 요청 수 제한
@@ -77,9 +77,10 @@ async def generate_ad_endpoint(
                 store_name=store_name,
                 menu_name=menu_name,
                 purpose=purpose or "홍보",
-                request_note=request_note,
-                moods=mood_list,
+                food=food,
                 tone=tone,
+                image_request=image_request,
+                llm_request=llm_request,
                 image_bytes=image_bytes,
             )
 
@@ -103,7 +104,7 @@ async def generate_ad_endpoint(
             str(exc),
         )
         raise AppException(
-            errors.GENERATE_AD_ENDPOINT_FAILED,
+            errors.GENERATE_ENDPOINT_FAILED,
             detail={
                 "store_name": store_name,
                 "menu_name": menu_name,

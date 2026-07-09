@@ -21,29 +21,6 @@ from app.utils.image_bytes import encode_image_bytes_to_base64
 from app.utils.performance_logger import measure_stage, record_performance_metric
 
 
-# 프론트에서 넘어오는 추가 무드명을 이미지 생성 파이프라인에서 쓰는 내부 무드명으로 변환한다.
-EXTRA_MOOD_ALIAS_MAP: dict[str, str] = {
-    "우드톤 내추럴": "cozy",
-    "밤분위기 무드": "luxury",
-    "비비드 팝": "fresh",
-}
-
-
-def _normalize_image_moods(moods: list[str]) -> tuple[str, list[str] | None]:
-    """
-    텍스트/프론트 기준 mood 값을 이미지 생성 파이프라인 기준 mood 값으로 변환한다.
-
-    반환:
-    - 첫 번째 mood: ImageAdRequest.mood
-    - 전체 mood list: ImageAdRequest.mood_list
-    """
-
-    normalized = [EXTRA_MOOD_ALIAS_MAP.get(mood, mood) for mood in moods]
-
-    if not normalized:
-        return "cozy", None
-
-    return normalized[0], normalized
 
 
 def _safe_active_profile_name() -> str:
@@ -106,9 +83,9 @@ def _build_image_payload(
     store_name: str,
     menu_name: str,
     purpose: str,
-    request_note: str,
-    moods: list[str],
+    food: str,
     tone: str,
+    image_request: str,
 ) -> ImageAdRequest:
     """
     통합 파이프라인 입력값을 이미지 생성 파이프라인의 ImageAdRequest로 변환한다.
@@ -120,16 +97,13 @@ def _build_image_payload(
     - 광고 이미지는 기본 3장 생성한다.
     """
 
-    normalized_mood, normalized_mood_list = _normalize_image_moods(moods or [])
-
     return ImageAdRequest(
         store_name=store_name,
         menu_name=menu_name,
         promotion_goal=purpose,
         tone=tone,
-        extra_notes=request_note,
-        mood=normalized_mood,
-        mood_list=normalized_mood_list,
+        image_request=image_request,
+        food=food,
         num_images=3,
         generation_mode="direct_poster",
     )
@@ -151,7 +125,6 @@ def _build_image_generation_response(image_result) -> dict[str, Any]:
         "stage_latencies_ms": image_result.stage_latencies_ms,
         "num_images": image_result.num_images,
         "poster_image_count": len(image_result.poster_images or []),
-        "applied_moods": image_result.applied_moods,
     }
 
 
@@ -235,8 +208,9 @@ def run_generate_pipeline(
     store_name: str,
     menu_name: str,
     purpose: str,
-    request_note: str,
-    moods: list,
+    food: str,
+    llm_request: str,
+    image_request: str,
     tone: str,
     image_bytes: bytes | None = None,
 ) -> dict[str, Any]:
@@ -296,8 +270,7 @@ def run_generate_pipeline(
                 store_name=store_name,
                 menu_name=menu_name,
                 purpose=purpose,
-                request_note=request_note,
-                moods=moods,
+                llm_request=llm_request,
                 tone=tone,
             )
 
@@ -351,8 +324,8 @@ def run_generate_pipeline(
                     store_name=store_name,
                     menu_name=menu_name,
                     purpose=purpose,
-                    request_note=request_note,
-                    moods=moods or [],
+                    image_request=image_request,
+                    food=food,
                     tone=tone,
                 )
 
