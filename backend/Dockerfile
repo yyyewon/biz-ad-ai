@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.9.2-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04
 
 # rembg, onnxruntime 컴파일을 위한 필수 리눅스 빌드 도구 설치
 RUN apt-get update && apt-get install -y \

@@ -202,7 +202,8 @@ async def _generate_poster_with_retries(
         retry_prompt = f"{base_prompt}, {suffix}" if suffix else base_prompt
 
         try:
-            image_bytes_list = await provider.generate(
+            image_bytes_list = await asyncio.to_thread(
+                provider.generate,
                 input_image_bytes=source_image_bytes,
                 mask_image_bytes=mask_image_bytes,
                 prompt=retry_prompt,
@@ -283,7 +284,8 @@ async def generate_image_ads(
                 current_mood = _resolve_mood_for_index(payload, idx)
                 current_prompt = _build_inpaint_prompt(payload, current_mood)
 
-                iter_images = await provider.generate(
+                iter_images = await asyncio.to_thread(
+                    provider.generate,
                     input_image_bytes=prepared_source_bytes,
                     mask_image_bytes=mask_bytes,
                     prompt=current_prompt,
