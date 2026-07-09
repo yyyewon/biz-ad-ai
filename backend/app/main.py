@@ -4,6 +4,8 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+from contextlib import asynccontextmanager
+from starlette.concurrency import run_in_threadpool
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -30,6 +32,34 @@ if setup_logger:
 
 if init_db:
     init_db()
+
+async def _warm_up_hf_image_pipeline() -> None:
+    from app.core.model_config import get_provider_name
+
+    try:
+        if get_provider_name("image_generation") != "hf":
+            return
+    except Exception:
+        return
+
+    try:
+        from app.services.providers.factory import get_image_provider
+
+        provider = get_image_provider()
+
+        if hasattr(provider, "_load_text2img_pipeline"):
+            logger.info("hf_image_pipeline_warmup_started")
+            await run_in_threadpool(provider._load_text2img_pipeline)
+            logger.info("hf_image_pipeline_warmup_completed")
+
+    except Exception as exc:
+        logger.exception("hf_image_pipeline_warmup_failed | error={}", str(exc))
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await _warm_up_hf_image_pipeline()
+    yield
 
 app = FastAPI(
     title=settings.app_name,

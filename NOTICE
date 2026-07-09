@@ -1,0 +1,16 @@
+This project uses the following third-party AI model:
+
+stabilityai/stable-diffusion-3.5-medium
+https://huggingface.co/stabilityai/stable-diffusion-3.5-medium
+
+This Stability AI Model is licensed under the Stability AI Community License,
+Copyright © Stability AI Ltd. All Rights Reserved.
+
+Full license text: https://stability.ai/community-license-agreement
+Local copy: THIRD_PARTY_LICENSES/STABILITY_AI_COMMUNITY_LICENSE.md
+
+Modifications:
+This project does not modify the model weights or architecture. It uses the
+model via the HuggingFace `diffusers` library for text-to-image and
+image-to-image generation as part of a custom application pipeline
+(HFImageProvider). No Derivative Work of the model itself has been created.
