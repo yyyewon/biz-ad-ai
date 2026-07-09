@@ -172,6 +172,24 @@ HF_IMAGE_GENERATION_FAILED = ErrorSpec(
     status_code=500,
 )
 
+HF_TOKEN_MISSING = ErrorSpec(
+    code="HF_TOKEN_MISSING",
+    message="HuggingFace token이 설정되어 있지 않습니다.",
+    status_code=500,
+)
+
+HF_IMAGE_PIPELINE_DEPENDENCY_ERROR = ErrorSpec(
+    code="HF_IMAGE_PIPELINE_DEPENDENCY_ERROR",
+    message="HuggingFace 이미지 생성 의존성(torch, diffusers)이 올바르게 설치되지 않았습니다.",
+    status_code=500,
+)
+
+HF_IMAGE_MODEL_LOAD_FAILED = ErrorSpec(
+    code="HF_IMAGE_MODEL_LOAD_FAILED",
+    message="HuggingFace 이미지 모델을 불러오는 중 오류가 발생했습니다.",
+    status_code=500,
+)
+
 
 # ============================================================
 # Performance logging errors
