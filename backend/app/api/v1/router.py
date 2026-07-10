@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, generate_ad, health, image_ad, image_preprocess
+from app.api.v1.endpoints import auth, dev_apis, generate_ad, health
 
 api_router = APIRouter()
 
@@ -11,13 +11,6 @@ api_router.include_router(
     tags=["Health"],
 )
 
-# Image preprocess API
-api_router.include_router(
-    image_preprocess.router,
-    prefix="/image",
-    tags=["Image Preprocess"],
-)
-
 # Auth API
 api_router.include_router(
     auth.router,
@@ -25,12 +18,15 @@ api_router.include_router(
     tags=["Auth"],
 )
 
-# Combined generation API
+# 실제 서비스용 통합 광고 이미지 생성 API
 api_router.include_router(
     generate_ad.router,
-    prefix="/ad/generate",
+    prefix="/ad",
     tags=["Generate Ad"],
 )
 
-# Image-only generation API
-api_router.include_router(image_ad.router)
+# 개발/테스트용 API 묶음
+api_router.include_router(
+    dev_apis.router,
+    prefix="/dev",
+)

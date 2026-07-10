@@ -295,3 +295,19 @@ GENERATE_ENDPOINT_FAILED = ErrorSpec(
     message="통합 광고 생성 API 처리 중 오류가 발생했습니다.",
     status_code=500,
 )
+
+# ============================================================
+# Upload validation errors
+# ============================================================
+IMAGE_FILE_TOO_LARGE = ErrorSpec(
+    code="IMAGE_FILE_TOO_LARGE",
+    message="이미지 파일 용량이 너무 큽니다. 15MB 이하의 이미지를 업로드해 주세요.",
+    status_code=413,
+)
+
+UNSUPPORTED_IMAGE_FORMAT = ErrorSpec(
+    code="UNSUPPORTED_IMAGE_FORMAT",
+    message="지원하지 않는 이미지 형식입니다. JPG, PNG, WEBP 이미지만 업로드해 주세요.",
+    status_code=415,
+)
+

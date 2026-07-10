@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from loguru import logger
 
 from app.core import error_constants as errors
@@ -10,6 +10,7 @@ from app.core.exceptions import AppException
 from app.core.quota import ensure_daily_quota_available_async, increment_daily_usage_async
 from app.schemas.common import APIResponse, success_response
 from app.services.pipelines.generate_pipeline import run_generate_pipeline
+from app.utils.upload_image_validator import validate_uploaded_image_bytes
 
 
 router = APIRouter()
@@ -20,7 +21,11 @@ def _should_count_daily_usage(result: dict) -> bool:
     return result.get("image_generation_success") is True
 
 
-@router.post("", response_model=APIResponse)
+@router.post(
+    "/generate",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def generate_ad_endpoint(
     store_name: str = Form(..., description="가게 이름"),
     menu_name: str = Form(..., description="메뉴 이름"),
@@ -62,6 +67,11 @@ async def generate_ad_endpoint(
 
         if image and image.filename:
             image_bytes = await image.read()
+            validate_uploaded_image_bytes(
+                image_bytes,
+                filename=image.filename,
+                content_type=image.content_type,
+            )
 
         # 로그인된 사용자: 한도 확인만 먼저 (실패 시에는 차감하지 않음)
         if current_user:

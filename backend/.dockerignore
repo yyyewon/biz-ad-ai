@@ -50,3 +50,8 @@ docs/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local / cache / secret files
+logs-local/
+.hf-cache/
+*.pyc

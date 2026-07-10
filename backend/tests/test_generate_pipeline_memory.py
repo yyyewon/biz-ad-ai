@@ -90,7 +90,7 @@ def test_run_generate_pipeline_with_image_uses_memory_bytes(monkeypatch):
     )
     monkeypatch.setattr(
         generate_pipeline,
-        "run_remove_background_and_resize",
+        "remove_background_and_resize",
         fake_preprocess,
     )
     monkeypatch.setattr(
@@ -151,7 +151,7 @@ def test_run_generate_pipeline_image_failure_returns_fallback(monkeypatch):
     )
     monkeypatch.setattr(
         generate_pipeline,
-        "run_remove_background_and_resize",
+        "remove_background_and_resize",
         lambda image_bytes: processed_bytes,
     )
     monkeypatch.setattr(

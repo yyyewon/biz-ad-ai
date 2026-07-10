@@ -153,7 +153,9 @@ def test_get_hf_image_provider_requires_token(monkeypatch, tmp_path):
     _write_model_config(config_path, active_profile="hybrid_openai_text_hf_image")
 
     monkeypatch.setenv("MODEL_CONFIG_PATH", str(config_path))
-    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setenv("HF_TOKEN", "")
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf-home"))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hf-cache"))
     model_config.reload_model_config()
 
     with pytest.raises(AppException) as exc_info:
@@ -179,7 +181,9 @@ def test_get_hf_image_provider_with_token_succeeds(monkeypatch, tmp_path):
     assert provider.model_id
 
     monkeypatch.delenv("MODEL_CONFIG_PATH", raising=False)
-    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setenv("HF_TOKEN", "")
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf-home"))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hf-cache"))
     model_config.reload_model_config()
 
 
@@ -205,6 +209,7 @@ def test_text_pipeline_uses_text_provider(monkeypatch):
         request_note="가성비를 강조",
         moods=["fresh"],
         tone="친근한",
+      )
     )
 
     assert "테스트 광고 문구입니다." in result

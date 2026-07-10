@@ -8,7 +8,7 @@ from typing import Any
 from loguru import logger
 from starlette.concurrency import run_in_threadpool
 
-from app.api.v1.endpoints.image_preprocess import run_remove_background_and_resize
+from app.utils.image_processor import remove_background_and_resize
 from app.core import error_constants as errors
 from app.core.exceptions import AppException
 from app.core.model_config import (
@@ -311,7 +311,7 @@ async def run_generate_pipeline(
                     },
                 ):
                     result = await run_in_threadpool(
-                        run_remove_background_and_resize,
+                        remove_background_and_resize,
                         image_bytes,
                     )
 

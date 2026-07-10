@@ -355,7 +355,7 @@ image_generation_success=false
 ## 6.1 이미지 광고 생성
 
 ```http
-POST /api/v1/ad/image
+POST /api/v1/dev/ad/image
 ```
 
 이미지 광고만 생성하는 API다.  

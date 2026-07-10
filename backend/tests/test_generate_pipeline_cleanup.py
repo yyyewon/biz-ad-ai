@@ -37,7 +37,7 @@ def test_generate_pipeline_does_not_pass_output_path_arguments(monkeypatch):
 
     monkeypatch.setattr(
         generate_pipeline,
-        "run_remove_background_and_resize",
+        "remove_background_and_resize",
         lambda image_bytes: processed_bytes,
     )
 
@@ -117,7 +117,7 @@ def test_generate_pipeline_fallback_does_not_create_file_path_response(monkeypat
 
     monkeypatch.setattr(
         generate_pipeline,
-        "run_remove_background_and_resize",
+        "remove_background_and_resize",
         lambda image_bytes: processed_bytes,
     )
 

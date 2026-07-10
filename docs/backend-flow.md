@@ -138,7 +138,7 @@ backend/app/utils/image_bytes.py
 ```text
 UploadFile.read()
 → image_bytes
-→ run_remove_background_and_resize(image_bytes)
+→ remove_background_and_resize(image_bytes)
 → rembg 배경 제거
 → target size resize
 → PNG bytes 반환
@@ -352,7 +352,7 @@ fallback 우선순위:
 API:
 
 ```text
-POST /api/v1/ad/image
+POST /api/v1/dev/ad/image
 ```
 
 흐름:

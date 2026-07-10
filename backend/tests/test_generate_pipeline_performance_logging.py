@@ -66,7 +66,7 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
 
     monkeypatch.setattr(
         generate_pipeline,
-        "run_remove_background_and_resize",
+        "remove_background_and_resize",
         lambda image_bytes: processed_bytes,
     )
 
@@ -182,7 +182,7 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
 
     monkeypatch.setattr(
         generate_pipeline,
-        "run_remove_background_and_resize",
+        "remove_background_and_resize",
         lambda image_bytes: processed_bytes,
     )
 
