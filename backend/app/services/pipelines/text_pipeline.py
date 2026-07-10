@@ -22,6 +22,8 @@ async def run_text_pipeline(
     llm_request: str,
     tone: str,
     food: str = "",
+    price: str = "",
+    store_location: str = "",
 ) -> str:
     """
     광고 문구 생성 파이프라인.
@@ -44,6 +46,12 @@ async def run_text_pipeline(
     conditions_str = "\n".join(f"{i+1}. {cond}" for i, cond in enumerate(conditions))
 
     food_line = f"- 음식 유형: {food.strip()}\n" if food and food.strip() else ""
+    price_line = f"- 가격: {price.strip()}\n" if price and price.strip() else ""
+    location_line = (
+        f"- 위치/지역: {store_location.strip()}\n"
+        if store_location and store_location.strip()
+        else ""
+    )
 
     prompt = f"""
 아래 정보를 바탕으로 SNS(인스타그램)용 광고 문구를 작성해 주세요.
@@ -51,7 +59,7 @@ async def run_text_pipeline(
 [기본 정보]
 - 가게 이름: {store_name}
 - 메뉴/상품: {menu_name}
-- 광고 목적: {purpose}
+{location_line}{price_line}- 광고 목적: {purpose}
 {food_line}- 말투/톤: {tone}
 
 [작성 조건]

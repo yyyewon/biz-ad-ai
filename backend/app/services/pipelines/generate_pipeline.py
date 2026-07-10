@@ -69,10 +69,12 @@ def _build_image_payload(
     image_request: str,
     headline: str | None = None,
     price_text: str | None = None,
+    store_location: str | None = None,
 ) -> ImageAdRequest:
     return ImageAdRequest(
         store_name=store_name,
         menu_name=menu_name,
+        store_location=(store_location or "").strip() or None,
         food_type=food_type,
         promotion_goal=purpose,
         tone=tone,
@@ -186,6 +188,8 @@ async def run_generate_pipeline(
     llm_request: str,
     image_request: str,
     tone: str,
+    price: str = "",
+    store_location: str = "",
     image_bytes: bytes | None = None,
 ) -> dict[str, Any]:
     """
@@ -233,6 +237,8 @@ async def run_generate_pipeline(
                 food_type=resolved_food_type,
                 tone=tone,
                 headline=poster_headline or None,
+                price_text=price,
+                store_location=store_location,
             )
             image_model_info = _safe_model_info("image_generation")
 
@@ -258,6 +264,8 @@ async def run_generate_pipeline(
                         llm_request=llm_request,
                         tone=tone,
                         food=food,
+                        price=price,
+                        store_location=store_location,
                     )
 
             text_task = asyncio.create_task(_run_text_stage())
@@ -360,6 +368,8 @@ async def run_generate_pipeline(
                     llm_request=llm_request,
                     tone=tone,
                     food=food,
+                    price=price,
+                    store_location=store_location,
                 )
 
         response: dict[str, Any] = {

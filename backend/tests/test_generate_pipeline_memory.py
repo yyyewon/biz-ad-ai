@@ -99,6 +99,8 @@ def test_run_generate_pipeline_with_image_uses_memory_bytes(monkeypatch):
             llm_request="캐릭터 컨셉",
             image_request="따뜻한 배경",
             tone="감성적인",
+            price="12,000원",
+            store_location="서울 마포구",
             image_bytes=source_bytes,
         )
     )
@@ -110,6 +112,8 @@ def test_run_generate_pipeline_with_image_uses_memory_bytes(monkeypatch):
     assert image_payload.image_path is None
     assert image_payload.store_name == "만월"
     assert image_payload.menu_name == "데몬헌터스 케이크"
+    assert image_payload.store_location == "서울 마포구"
+    assert image_payload.price_text == "12,000원"
     assert image_payload.food_type == "rice_dish"
     assert image_payload.extra_notes == "따뜻한 배경"
 

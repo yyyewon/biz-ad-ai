@@ -19,6 +19,8 @@ def _input_signature() -> tuple:
     return (
         b["store_name"],
         b["menu_name"],
+        b["store_location"],
+        b["price"],
         b["purpose"],
         u["food"],
         u["tone"],
@@ -60,6 +62,8 @@ def _run_generation() -> None:
             store_name=b["store_name"],
             menu_name=b["menu_name"],
             purpose=b["purpose"],
+            price=b["price"],
+            store_location=b["store_location"],
             image_bytes=u["image_bytes"],
             image_name=u["image_name"],
             food=u["food"],

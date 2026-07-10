@@ -27,6 +27,7 @@ def build_reels_overlay_copy(payload: ImageAdRequest) -> ReelsHookCopy:
         payload.promotion_goal or "",
         store_name=payload.store_name or "",
         menu_name=payload.menu_name or "",
+        store_location=payload.store_location or "",
         price_text=payload.price_text or "",
     )
 

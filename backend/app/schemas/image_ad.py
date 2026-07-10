@@ -45,6 +45,7 @@ class ImageAdRequest(BaseModel):
     seed: Optional[int] = Field(default=None, description="재현성을 위한 시드값(선택)")
 
     store_name: Optional[str] = Field(default=None, description="가게명 메타데이터")
+    store_location: Optional[str] = Field(default=None, description="가게 위치/지역 메타데이터")
     menu_name: Optional[str] = Field(default=None, description="메뉴명 메타데이터")
     food_type: Optional[FoodType] = Field(default=None, description="음식 유형")
     promotion_goal: Optional[str] = Field(default=None, description="홍보 목적 메타데이터")

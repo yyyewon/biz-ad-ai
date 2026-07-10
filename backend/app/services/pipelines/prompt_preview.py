@@ -30,7 +30,8 @@ class PromptPreviewSample:
     tone: str = "친근한"
     request_note: str = ""
     headline: str = "오늘 저녁은 든든하게"
-    price_text: str = ""
+    price_text: str = "12,000원"
+    store_location: str = "서울 마포구"
 
 
 def build_sample_payload(
@@ -42,6 +43,7 @@ def build_sample_payload(
     return ImageAdRequest(
         store_name=sample.store_name,
         menu_name=sample.menu_name,
+        store_location=sample.store_location or None,
         food_type=food_type,
         promotion_goal=sample.purpose,
         tone=sample.tone,

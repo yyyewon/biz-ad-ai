@@ -593,6 +593,7 @@ def _build_reels_hook_line(
     *,
     store_name: str,
     menu_name: str,
+    store_location: str = "",
     promotion_goal: str,
     price_text: str = "",
 ) -> str:
@@ -600,6 +601,7 @@ def _build_reels_hook_line(
         promotion_goal,
         store_name=store_name,
         menu_name=menu_name,
+        store_location=store_location,
         price_text=price_text,
     )
     return f"- **후킹 문구 (하단 자막으로 표기)**: {hook}"
@@ -625,10 +627,19 @@ def _build_poster_price_lines(price_text: str) -> tuple[str, str]:
     return ("- 가격 문구는 넣지 말 것", "")
 
 
-def _build_poster_store_footer_line(store_name: str) -> str:
-    if store_name:
-        return f"- **하단 가게명 (작게, 가운데 정렬, 선택)**: {store_name}"
-    return ""
+def _build_poster_store_footer_line(
+    store_name: str,
+    store_location: str = "",
+) -> str:
+    lines: list[str] = []
+    location = (store_location or "").strip()
+    name = (store_name or "").strip()
+
+    if location:
+        lines.append(f"- **위치 (작게, 가운데 정렬)**: {location}")
+    if name:
+        lines.append(f"- **하단 가게명 (작게, 가운데 정렬, 선택)**: {name}")
+    return "\n".join(lines)
 
 
 def _lookup_food_rules(registry: dict[FoodType, str], food_type: FoodType) -> str:
@@ -655,6 +666,7 @@ def build_template_context(
     variant: ImageVariantType,
 ) -> dict[str, str]:
     store_name = payload.store_name or ""
+    store_location = (payload.store_location or "").strip()
     headline = (payload.headline or "").strip()
     price_text = (payload.price_text or "").strip()
     extra_notes = (payload.extra_notes or "").strip()
@@ -662,6 +674,7 @@ def build_template_context(
 
     return {
         "store_name": store_name,
+        "store_location": store_location,
         "menu_name": payload.menu_name or "오늘의 메뉴",
         "tone": payload.tone or "",
         "promotion_goal": payload.promotion_goal or "",
@@ -688,7 +701,10 @@ def build_template_context(
             FOOD_POSTER_BACKGROUND_RULES, food_type
         ),
         "poster_layout_rules": _POSTER_LAYOUT_RULES.format(
-            store_footer_line=_build_poster_store_footer_line(store_name),
+            store_footer_line=_build_poster_store_footer_line(
+                store_name,
+                store_location,
+            ),
         ),
         # 릴스 (전 유형 공통)
         "reels_food_rules": _REELS_FOOD_RULES,
@@ -697,6 +713,7 @@ def build_template_context(
         "reels_hook_line": _build_reels_hook_line(
             store_name=store_name,
             menu_name=payload.menu_name or "",
+            store_location=store_location,
             promotion_goal=payload.promotion_goal or "",
             price_text=price_text,
         ),

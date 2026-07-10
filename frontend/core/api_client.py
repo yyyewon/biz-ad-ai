@@ -57,6 +57,8 @@ def generate_ad(
     tone: str,
     image_request: str,
     llm_request: str,
+    price: str = "",
+    store_location: str = "",
     cookies: dict | None = None, # 토큰 문자열 대신 쿠키 딕셔너리를 전송받음
     mock: bool = False,
 ) -> dict:
@@ -100,6 +102,8 @@ def generate_ad(
         "llm_request": llm_request,
         "food": food,
         "tone": tone,
+        "price": price,
+        "store_location": store_location,
         "image_request": image_request,
     }
     try:
