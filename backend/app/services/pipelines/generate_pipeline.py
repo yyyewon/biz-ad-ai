@@ -13,10 +13,13 @@ from app.core.model_config import (
     get_active_profile_name,
     get_model_settings,
 )
+from app.schemas.food_type import FoodType
 from app.schemas.image_ad import ImageAdRequest
+from app.services.pipelines.food_type_resolver import require_food_type
 from app.services.pipelines.image_pipeline import generate_image_ads
 from app.services.pipelines.text_pipeline import run_text_pipeline
 from app.utils.image_bytes import encode_image_bytes_to_base64
+from app.utils.poster_taglines import resolve_poster_headline_from_purpose
 from app.utils.performance_logger import measure_stage, record_performance_metric
 
 
@@ -61,19 +64,23 @@ def _build_image_payload(
     store_name: str,
     menu_name: str,
     purpose: str,
-    food: str,
+    food_type: FoodType,
     tone: str,
     image_request: str,
+    headline: str | None = None,
+    price_text: str | None = None,
 ) -> ImageAdRequest:
     return ImageAdRequest(
         store_name=store_name,
         menu_name=menu_name,
+        food_type=food_type,
         promotion_goal=purpose,
         tone=tone,
-        image_request=image_request,
-        food=food,
+        extra_notes=(image_request or "").strip() or None,
+        headline=(headline or "").strip() or None,
+        price_text=(price_text or "").strip() or None,
         num_images=3,
-        generation_mode="two_stage",
+        generation_mode="direct_poster",
     )
 
 
@@ -93,6 +100,8 @@ def _build_image_generation_response(image_result) -> dict[str, Any]:
         "stage_latencies_ms": image_result.stage_latencies_ms,
         "num_images": image_result.num_images,
         "poster_image_count": len(image_result.poster_images or []),
+        "applied_variants": image_result.applied_variants,
+        "food_type": image_result.food_type,
     }
 
 
@@ -214,13 +223,16 @@ async def run_generate_pipeline(
         image_generation_success: bool | None = None
 
         if image_bytes:
+            resolved_food_type = require_food_type(food)
+            poster_headline = resolve_poster_headline_from_purpose(purpose)
             image_payload = _build_image_payload(
                 store_name=store_name,
                 menu_name=menu_name,
                 purpose=purpose,
                 image_request=image_request,
-                food=food,
+                food_type=resolved_food_type,
                 tone=tone,
+                headline=poster_headline or None,
             )
             image_model_info = _safe_model_info("image_generation")
 
@@ -236,7 +248,7 @@ async def run_generate_pipeline(
                         "store_name": store_name,
                         "menu_name": menu_name,
                         "has_image": True,
-                        "food": food,
+                        "food_type": resolved_food_type,
                     },
                 ):
                     return await run_text_pipeline(
@@ -265,8 +277,7 @@ async def run_generate_pipeline(
                 ):
                     image_result = await generate_image_ads(
                         payload=image_payload,
-                        original_image_bytes=image_bytes,
-                        subject_cutout_bytes=None,
+                        source_image_bytes=image_bytes,
                     )
 
                 _record_image_pipeline_stage_metrics(

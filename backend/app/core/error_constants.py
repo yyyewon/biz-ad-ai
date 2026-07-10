@@ -257,8 +257,21 @@ GENERATE_PIPELINE_IMAGE_FAILED = ErrorSpec(
     message="통합 파이프라인의 이미지 생성 단계에서 오류가 발생했습니다.",
     status_code=500,
 )
+
+INVALID_FOOD_TYPE = ErrorSpec(
+    code="INVALID_FOOD_TYPE",
+    message="지원하지 않는 음식 유형입니다.",
+    status_code=400,
+)
+
+MISSING_FOOD_TYPE = ErrorSpec(
+    code="MISSING_FOOD_TYPE",
+    message="이미지 생성 시 음식 유형 선택이 필요합니다.",
+    status_code=400,
+)
+
 # ============================================================
-# Endpoint / preprocess errors\
+# Endpoint / preprocess errors
 # ============================================================
 IMAGE_PREPROCESS_DEPENDENCY_ERROR = ErrorSpec(
     code="IMAGE_PREPROCESS_DEPENDENCY_ERROR",

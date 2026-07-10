@@ -265,11 +265,11 @@ async def create_image_ad(
         user_id = current_user["id"]
 
         logger.info(
-            "image_ad_endpoint_started | user_id={} | store_name={} | menu_name={} | mood={} | num_images={}",
+            "image_ad_endpoint_started | user_id={} | store_name={} | menu_name={} | food_type={} | num_images={}",
             user_id,
             payload.store_name,
             payload.menu_name,
-            payload.mood,
+            payload.food_type,
             payload.num_images,
         )
 
