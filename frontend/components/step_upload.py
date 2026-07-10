@@ -42,6 +42,8 @@ def render() -> None:
                     st.error(f"파일이 너무 커요 ({size_mb:.1f}MB). {MAX_UPLOAD_MB}MB 이하로 올려주세요.")
                 else:
                     set_upload(image_bytes, uploaded_file.name)
+            else:
+                set_upload(None, "")
 
             food = st.pills(
                 "음식 형태",
