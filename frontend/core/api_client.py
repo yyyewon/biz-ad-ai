@@ -55,11 +55,12 @@ def generate_ad(
     store_name: str,
     menu_name: str,
     purpose: str | None,
-    request_note: str,
     image_bytes: bytes,
     image_name: str,
-    moods: list[str],
+    food: str,
     tone: str,
+    image_request: str,
+    llm_request: str,
     cookies: dict | None = None, # 토큰 문자열 대신 쿠키 딕셔너리를 전송받음
     mock: bool = False,
 ) -> dict:
@@ -67,11 +68,22 @@ def generate_ad(
     # ✨ [완벽 복구] 기본 Mock 모드 분기 처리 블록
     # ============================================================
     if mock:
-        time.sleep(1.5)  # 실제 생성되는 느낌을 주기 위한 가짜 딜레이
+        time.sleep(1.2)
+
+        hashtag_food = food if food else "맛집"
+        hashtag_purpose = purpose.replace(" ", "").replace("/", "") if purpose else "홍보"
+
+        caption = (
+            f"{store_name}의 {menu_name}, 오늘도 한 입이면 반해요 ️\n"
+            f"{tone} 하루엔 {menu_name} 한 그릇 어떠세요?\n\n"
+            f"#{store_name.replace(' ', '')} #{menu_name.replace(' ', '')} "
+            f"#{hashtag_food.replace(' ', '')} #{hashtag_purpose} #맛집스타그램 #오늘뭐먹지"
+        )
+
         return {
             "ok": True,
             "data": {
-                "caption": f"✨ [{store_name}]의 신메뉴 '{menu_name}' 출시! ✨\n\n{purpose or '홍보'}를 위해 정성껏 준비했습니다. {request_note if request_note else ''}\n지금 바로 매장에서 만나보세요! #소상공인두레",
+                "caption": f"✨ [{store_name}]의 신메뉴 '{menu_name}' 출시! ✨\n\n{purpose or '홍보'}를 위해 정성껏 준비했습니다. \n지금 바로 매장에서 만나보세요! #소상공인두레",
                 "images": [image_bytes if image_bytes else _PLACEHOLDER_PNG],
                 "partial_success": False,
                 "warnings": [],
@@ -88,10 +100,12 @@ def generate_ad(
         "store_name": store_name,
         "menu_name": menu_name,
         "purpose": purpose,
-        "request_note": request_note,
-        "moods": ",".join(moods),
+        "llm_request": llm_request,
+        "food": food,
         "tone": tone,
+        "image_request": image_request,
     }
+    print("⚡ [FRONTEND DEBUG] 보내는 페이로드:", payload)
 
     try:
         res = requests.post(

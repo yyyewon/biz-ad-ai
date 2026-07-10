@@ -88,16 +88,16 @@ async def _gather_fail_fast(coros: list) -> list:
 
 
 def _build_photo_restyle_prompt(payload: ImageAdRequest, mood: str) -> str:
-    style = MOOD_INPAINT_STYLE_MAP.get(mood, MOOD_INPAINT_STYLE_MAP["cozy"])
+    food_context = getattr(payload, "food", "") or payload.menu_name or "음식"
 
-    parts = [
+    prompt_chunks = [
         "Professional restaurant editorial food photography",
+        f"food_context : {food_context}"
         "re-photograph the same dish shown in the reference image",
         "preserve the dish identity, portion, garnish, and plate",
         "same tabletop close-up perspective",
         "realistic natural contact shadows and coherent lighting",
         "appetizing food texture, premium commercial food photo",
-        style,
         "not a cutout, not a collage, not a floating product",
         "no duplicate food, no extra plate, no text, no logo, no watermark",
     ]
@@ -129,11 +129,6 @@ def _resolve_layout_type(layout_type: Optional[str], index: int) -> str:
     return ordered[index % len(ordered)]
 
 
-def _resolve_mood_for_index(payload: ImageAdRequest, index: int) -> str:
-    if payload.mood_list:
-        return payload.mood_list[index % len(payload.mood_list)]
-
-    return payload.mood
 
 
 def _resolve_generation_mode(mode: GenerationMode | str | None) -> GenerationMode:
@@ -143,21 +138,15 @@ def _resolve_generation_mode(mode: GenerationMode | str | None) -> GenerationMod
     return "direct_poster"
 
 
-def _build_poster_prompt(payload: ImageAdRequest, mood: str, layout_type: str) -> str:
-    mood_style = MOOD_INPAINT_STYLE_MAP.get(mood, MOOD_INPAINT_STYLE_MAP["cozy"])
-    layout_guide = LAYOUT_POSTER_GUIDE_MAP.get(
-        layout_type,
-        LAYOUT_POSTER_GUIDE_MAP["classic"],
-    )
-
+def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
+    food = (payload.food or "국")
     headline = (payload.headline or "").strip()
     menu_name = payload.menu_name or "오늘의 메뉴"
     price_text = (payload.price_text or "").strip()
 
     prompt_chunks = [
         "Create a realistic vertical Instagram ad poster based on the input food photo.",
-        f"poster mood: {mood_style}",
-        f"layout guide: {layout_guide}",
+        f"food: {food}"
         "keep the food and plate shape/texture, redesign background, lighting, and composition for the poster",
         "sleek brand advertisement look, avoid a generic template feel",
         "render the text directly in the poster, spelled exactly and correctly",
@@ -192,10 +181,7 @@ def _build_poster_prompt(payload: ImageAdRequest, mood: str, layout_type: str) -
         prompt_chunks.append(f"tone: {payload.tone}")
 
     if payload.extra_notes:
-        prompt_chunks.append(f"extra request: {payload.extra_notes}")
-
-    if payload.prompt:
-        prompt_chunks.append(f"user prompt: {payload.prompt}")
+        prompt_chunks.append(f"image request: {payload.image_request}")
 
     return ", ".join(prompt_chunks)
 
@@ -302,7 +288,6 @@ async def generate_image_ads(
         prompt_used = ""
         generated_image_bytes: list[bytes] = []
         generated_image_base64: list[str] = []
-        applied_moods: list[str] = []
         stage_latencies_ms: dict[str, int] = {}
 
         food_stage_started = time.perf_counter()
@@ -330,25 +315,19 @@ async def generate_image_ads(
                         },
                     )
 
-                return idx, current_mood, iter_images[0]
+                return idx, iter_images[0]
 
             food_results = await _gather_fail_fast(
                 [_generate_food_image(idx) for idx in range(payload.num_images)]
             )
 
-            for idx, current_mood, image_bytes in sorted(food_results, key=lambda item: item[0]):
-                applied_moods.append(current_mood)
+            for idx, image_bytes in sorted(food_results, key=lambda item: item[0]):
                 generated_image_bytes.append(image_bytes)
                 generated_image_base64.append(encode_image_bytes_to_base64(image_bytes))
 
             if applied_moods:
                 prompt_used = _build_photo_restyle_prompt(payload, applied_moods[0])
 
-        else:
-            applied_moods = [
-                _resolve_mood_for_index(payload, idx)
-                for idx in range(payload.num_images)
-            ]
 
         stage_latencies_ms["food_generation_ms"] = int(
             (time.perf_counter() - food_stage_started) * 1000
@@ -371,13 +350,11 @@ async def generate_image_ads(
             poster_payload = ImageAdRequest(
                 **{
                     **payload.model_dump(),
-                    "mood": applied_moods[idx],
                 }
             )
 
             poster_prompt = _build_poster_prompt(
                 payload=poster_payload,
-                mood=applied_moods[idx],
                 layout_type=resolved_layout,
             )
 
@@ -433,7 +410,6 @@ async def generate_image_ads(
 
         return ImageAdResponse(
             request_id=request_id,
-            mood=payload.mood,
             prompt_used=prompt_used,
             num_images=payload.num_images,
             latency_ms=latency_ms,
@@ -444,7 +420,6 @@ async def generate_image_ads(
             composite_images=generated_image_base64,
             poster_images=poster_images_base64,
             image_bytes_list=poster_image_bytes,
-            applied_moods=applied_moods,
             seed=seed or payload.seed,
         )
 

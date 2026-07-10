@@ -20,9 +20,10 @@ def _input_signature() -> tuple:
         b["store_name"],
         b["menu_name"],
         b["purpose"],
-        b["request_note"],
-        tuple(sorted(u["moods"])),
+        u["food"],
         u["tone"],
+        u["image_request"],
+        u["llm_request"],
         img_hash,
     )
 
@@ -59,11 +60,12 @@ def _run_generation() -> None:
             store_name=b["store_name"],
             menu_name=b["menu_name"],
             purpose=b["purpose"],
-            request_note=b["request_note"],
             image_bytes=u["image_bytes"],
             image_name=u["image_name"],
-            moods=u["moods"],
+            food=u["food"],
             tone=u["tone"],
+            image_request=u["image_request"],
+            llm_request=u["llm_request"],
             cookies=st.context.cookies,
             mock=mock,
         )
