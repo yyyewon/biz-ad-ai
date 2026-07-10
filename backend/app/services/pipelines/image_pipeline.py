@@ -100,11 +100,9 @@ def _build_inpaint_prompt(payload: ImageAdRequest) -> str:
     if payload.tone:
         prompt_chunks.append(f"전반적인 무드 톤: {payload.tone}")
 
-    if payload.extra_notes:
-        prompt_chunks.append(f"추가 요청사항: {payload.extra_notes}")
+    if payload.image_request:
+        prompt_chunks.append(f"추가 요청사항: {payload.image_request}")
 
-    if payload.prompt:
-        prompt_chunks.append(f"사용자 요구사항: {payload.prompt}")
 
     return ", ".join(prompt_chunks)
 
@@ -149,11 +147,7 @@ def _resolve_generation_mode(mode: GenerationMode | str | None) -> GenerationMod
 
 
 def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
-    layout_guide = LAYOUT_POSTER_GUIDE_MAP.get(
-        layout_type,
-        LAYOUT_POSTER_GUIDE_MAP["classic"],
-    )
-    food = (payload.food or "찌개")
+    food = (payload.food or "국")
     headline = (payload.headline or "").strip()
     menu_name = payload.menu_name or "오늘의 메뉴"
     price_text = (payload.price_text or "").strip()
@@ -161,7 +155,6 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
     prompt_chunks = [
         "입력된 음식 사진을 기반으로 인스타그램용 세로 광고 포스터를 실사 스타일로 만들어줘.",
         f"음식 종류: {food}"
-        f"레이아웃 가이드: {layout_guide}",
         "음식과 접시의 형태/재질은 유지하고 배경, 조명, 구도는 포스터 디자인에 맞게 새롭게 구성해줘.",
         "세련된 브랜드 광고 느낌으로 전체 레이아웃을 새로 디자인해줘. 기존 템플릿처럼 보이지 않게 다양성을 확보해줘.",
         "텍스트를 포스터 안에 직접 넣어줘. 글자 오탈자 없이 정확히 표기해줘.",
@@ -196,8 +189,6 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
     if payload.image_request:
         prompt_chunks.append(f"추가 요청사항: {payload.image_request}")
 
-    if payload.prompt:
-        prompt_chunks.append(f"사용자 직접 프롬프트: {payload.prompt}")
 
     return ", ".join(prompt_chunks)
 
@@ -308,7 +299,7 @@ async def generate_image_ads(
 
         if generation_mode == "two_stage":
             async def _generate_food_image(idx: int) -> tuple[int, str, bytes]:
-                current_prompt = _build_inpaint_prompt(payload, current_mood)
+                current_prompt = _build_inpaint_prompt(payload)
 
                 iter_images = await provider.generate(
                     input_image_bytes=prepared_source_bytes,
@@ -327,19 +318,18 @@ async def generate_image_ads(
                         },
                     )
 
-                return idx, current_mood, iter_images[0]
+                return idx, iter_images[0]
 
             food_results = await _gather_fail_fast(
                 [_generate_food_image(idx) for idx in range(payload.num_images)]
             )
 
-            for idx, current_mood, image_bytes in sorted(food_results, key=lambda item: item[0]):
-                applied_moods.append(current_mood)
+            for idx, image_bytes in sorted(food_results, key=lambda item: item[0]):
                 generated_image_bytes.append(image_bytes)
                 generated_image_base64.append(encode_image_bytes_to_base64(image_bytes))
 
                 if not prompt_used:
-                    prompt_used = _build_inpaint_prompt(payload, current_mood)
+                    prompt_used = _build_inpaint_prompt(payload)
 
 
         stage_latencies_ms["food_generation_ms"] = int(

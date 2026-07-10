@@ -83,7 +83,7 @@ def generate_ad(
         return {
             "ok": True,
             "data": {
-                "caption": f"✨ [{store_name}]의 신메뉴 '{menu_name}' 출시! ✨\n\n{purpose or '홍보'}를 위해 정성껏 준비했습니다. {request_note if request_note else ''}\n지금 바로 매장에서 만나보세요! #소상공인두레",
+                "caption": f"✨ [{store_name}]의 신메뉴 '{menu_name}' 출시! ✨\n\n{purpose or '홍보'}를 위해 정성껏 준비했습니다. \n지금 바로 매장에서 만나보세요! #소상공인두레",
                 "images": [image_bytes if image_bytes else _PLACEHOLDER_PNG],
                 "partial_success": False,
                 "warnings": [],
@@ -105,6 +105,7 @@ def generate_ad(
         "tone": tone,
         "image_request": image_request,
     }
+    print("⚡ [FRONTEND DEBUG] 보내는 페이로드:", payload)
 
     try:
         res = requests.post(

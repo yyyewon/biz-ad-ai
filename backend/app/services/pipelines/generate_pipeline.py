@@ -302,8 +302,7 @@ async def run_generate_pipeline(
                         store_name=store_name,
                         menu_name=menu_name,
                         purpose=purpose,
-                        request_note=request_note,
-                        moods=moods,
+                        llm_request=llm_request,
                         tone=tone,
                     )
 
@@ -445,8 +444,7 @@ async def run_generate_pipeline(
                     store_name=store_name,
                     menu_name=menu_name,
                     purpose=purpose,
-                    request_note=request_note,
-                    moods=moods,
+                    llm_request=llm_request,
                     tone=tone,
                 )
 

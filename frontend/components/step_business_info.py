@@ -27,8 +27,8 @@ def render() -> None:
         business = st.session_state.business
 
         with st.form("business_info_form", border=False):
-            col1, col2 = st.columns(2, gap="small")
-            with col1:
+            row1_col1, row1_col2 = st.columns(2, gap="small")
+            with row1_col1:
                 store_name = st.text_input(
                     "가게 이름",
                     value=business["store_name"],
@@ -36,7 +36,7 @@ def render() -> None:
                     max_chars=30,
                     help="영수증이나 간판에 적힌 상호명을 적어주세요."
                 )
-            with col2:
+            with row1_col2:
                 menu_name = st.text_input(
                     "대표 메뉴 이름",
                     value=business["menu_name"],
@@ -45,6 +45,23 @@ def render() -> None:
                     help="이번에 홍보하고 싶으신 핵심 메뉴를 적어주세요."
                 )
             
+            row2_col1, row2_col2 = st.columns(2, gap="small")
+            with row2_col1:
+                store_location = st.text_input(
+                    "가게 이름",
+                    value=business["store_location"],
+                    placeholder="예) 서울시 강서구",
+                    max_chars=30,
+                    help="가게 위치를 적어주세요"
+                )
+            with row2_col2:
+                price = st.text_input(
+                    "가격",
+                    value=business["price"],
+                    placeholder="예) 10000원",
+                    max_chars=30,
+                )
+
             # 홍보 목적 선택 구역
             st.markdown('<div style="margin-top: 0.5rem;"></div>', unsafe_allow_html=True)
             purpose = st.pills(
@@ -66,6 +83,6 @@ def render() -> None:
         if not store_name.strip() or not menu_name.strip() or purpose is None:
             st.warning("가게 이름, 메뉴 이름, 홍보 목적을 모두 입력해 주세요.")
             return
-        set_business_info(store_name, menu_name, purpose)
+        set_business_info(store_name, menu_name, store_location, price, purpose)
         next_step()
         st.rerun()

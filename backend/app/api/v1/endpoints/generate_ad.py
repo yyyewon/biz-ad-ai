@@ -52,6 +52,7 @@ async def generate_ad_endpoint(
     - pipeline은 내부 결과 dict만 반환한다.
     - API 응답 포맷 래핑은 endpoint에서 success_response로 처리한다.
     """
+    logger.info(f"⚡ [BACKEND ROUTER DEBUG] 수신된 llm_request: '{llm_request}' | image_request: '{image_request}'")
 
     try:
         # 콤마로 구분된 분위기 문자열을 리스트로 변환
