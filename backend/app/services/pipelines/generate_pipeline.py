@@ -111,16 +111,6 @@ def _build_image_payload(
     moods: list[str],
     tone: str,
 ) -> ImageAdRequest:
-    """
-    통합 파이프라인 입력값을 이미지 생성 파이프라인의 ImageAdRequest로 변환한다.
-
-    메모리 기반 처리 기준:
-    - 이미지 경로를 payload에 넣지 않는다.
-    - 실제 이미지 bytes는 generate_image_ads(source_image_bytes=...)로 직접 전달한다.
-    - generation_mode는 direct_poster를 기본값으로 사용한다.
-    - 광고 이미지는 기본 3장 생성한다.
-    """
-
     normalized_mood, normalized_mood_list = _normalize_image_moods(moods or [])
 
     return ImageAdRequest(
@@ -132,7 +122,7 @@ def _build_image_payload(
         mood=normalized_mood,
         mood_list=normalized_mood_list,
         num_images=3,
-        generation_mode="direct_poster",
+        generation_mode="two_stage",
     )
 
 
@@ -368,7 +358,8 @@ async def run_generate_pipeline(
                 ):
                     image_result = await generate_image_ads(
                         payload=image_payload,
-                        source_image_bytes=processed_bytes,
+                        original_image_bytes=image_bytes,
+                        subject_cutout_bytes=processed_bytes,
                     )
 
                 _record_image_pipeline_stage_metrics(
