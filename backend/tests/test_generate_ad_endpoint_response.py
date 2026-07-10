@@ -37,9 +37,10 @@ def test_generate_ad_endpoint_wraps_pipeline_result_with_success_response(monkey
             store_name="테스트가게",
             menu_name="김밥",
             purpose="홍보",
-            request_note="",
-            moods="cozy,fresh",
+            food="국, 찌개",
             tone="친근한",
+            image_request="",
+            llm_request="",
             image=None,
             current_user=None,
         )

@@ -124,7 +124,6 @@ networkx==3.6.1
     # via
     #   scikit-image
     #   torch
-numba==0.66.0
     # via pymatting
 numpy==2.4.6
     # via
@@ -182,7 +181,6 @@ nvidia-nvshmem-cu13==3.4.5
     # via torch
 nvidia-nvtx==13.0.85
     # via cuda-toolkit
-onnxruntime-gpu==1.27.0
     # via rembg
 openai==2.44.0
     # via -r backend/requirements.in
@@ -231,7 +229,6 @@ pygments==2.20.0
     #   rich
 pyjwt==2.13.0
     # via -r backend/requirements.in
-pymatting==1.1.15
     # via rembg
 pytest==9.1.1
     # via -r backend/requirements.in
@@ -257,7 +254,6 @@ regex==2026.6.28
     # via
     #   diffusers
     #   transformers
-rembg[gpu]==2.0.76
     # via -r backend/requirements.in
 requests==2.34.2
     # via

@@ -127,31 +127,37 @@ output_image:
   # - 1 이상 정수
   max_count: 4
 
+  # 출력 유형별 생성 해상도 — 여기만 수정 (OpenAI: 1024x1024 / 1024x1536 / 1536x1024)
+  variant_sizes:
+    studio: 1024x1024
+    poster: 1024x1536
+    instagram_feed: 1024x1536
+
 # ============================================================
 # Image preprocess settings
 # ============================================================
 
 image_preprocess:
-  # 이미지 배경 제거 provider.
+  # 업로드 이미지 정규화 provider.
   #
   # current option:
-  # - rembg
-  provider: rembg
+  # - pillow
+  provider: pillow
 
-  # 배경 제거 후 리사이징 크기.
+  # 다운스케일 시 최대 가로/세로 크기. 비율은 유지한다.
   #
   # common options:
   # - 512
   # - 768
   # - 1024
-  target_width: 512
-  target_height: 512
+  target_width: 1024
+  target_height: 1024
 
   # 전처리 결과 이미지 포맷.
   #
   # options:
-  # - png: 투명 배경 유지에 적합
-  # - jpeg: 용량은 작지만 투명 배경 불가
+  # - png
+  # - jpeg
   output_format: png
 
 # ============================================================
@@ -266,42 +272,13 @@ openai:
 
   image_generation:
     # OpenAI 광고 이미지 생성 기본 모델.
-    #
-    # options:
-    # - gpt-image-1-mini
-    # - gpt-image-1
-    # - gpt-image-2
     default_model: gpt-image-1-mini
 
     models:
       gpt-image-1-mini:
-        # 이미지 생성 API 타입.
-        #
-        # current option:
-        # - images
         api_type: images
-
-        # OpenAI 이미지 생성 크기.
-        #
-        # common options:
-        # - 1024x1024
-        # - 1024x1536
-        # - 1536x1024
         size: 1024x1536
-
-        # 이미지 품질.
-        #
-        # common options:
-        # - low
-        # - medium
-        # - high
         quality: medium
-
-        # 출력 포맷.
-        #
-        # options:
-        # - png
-        # - jpeg
         output_format: png
 
 # ============================================================
@@ -413,8 +390,7 @@ hf:
     # options:
     # - sdxl_lightning
     # - sdxl_base
-    # - sd35_medium
-    default_model: sd35_medium
+    default_model: sdxl_lightning
 
     models:
       sdxl_lightning:
@@ -503,46 +479,6 @@ hf:
         height: 1280
         num_inference_steps: 30
         guidance_scale: 5.0
-        num_images_per_prompt: 1
-
-      sd35_medium:
-        model_id: stabilityai/stable-diffusion-3.5-medium
-
-        task_type: text-to-image
-        backend_type: pytorch
-        model_family: diffusion
-
-        pipeline_class: StableDiffusion3Pipeline
-
-        device: auto
-
-        # 모델 카드 권장값: bfloat16
-        dtype: auto
-
-        quantization: none
-
-        # 생성 이미지 크기
-        width: 1024
-        height: 1280 
-
-        # 모델 카드
-        num_inference_steps: 40
-        guidance_scale: 4.5
-
-        # T5 텍스트 인코더 최대 토큰 길이 (모델 카드 기준)
-        max_sequence_length: 512
-
-        # image-to-image(배경 교체)에 사용할 강도.
-        # 0.0=원본과 거의 동일, 1.0=원본을 거의 무시
-        img2img_restyle_strength: 0.54
-        seam_blend_strength: 0.18
-        seam_ring_px: 12
-        composite_feather_px: 3
-        color_harmonize_strength: 0.55
-        drop_shadow_opacity: 0.3
-        drop_shadow_blur_px: 16
-        drop_shadow_offset_y: 14
-
         num_images_per_prompt: 1
 
 # ============================================================

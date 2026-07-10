@@ -11,14 +11,9 @@ import streamlit as st
 # 💡 토큰 재발급 함수 수입 추가
 from core.auth import request_refresh_token
 from core.config import (
-    TEXT_ENDPOINT,
-    IMAGE_ENDPOINT,
     GENERATE_ENDPOINT,
     HEALTH_ENDPOINT,
-    IMAGE_PREPROCESS_ENDPOINT,
-    REQUEST_TIMEOUT_TEXT,
-    REQUEST_TIMEOUT_IMAGE,
-    REQUEST_TIMEOUT_GENERATE
+    REQUEST_TIMEOUT_GENERATE,
 )
 
 
@@ -106,8 +101,6 @@ def generate_ad(
         "tone": tone,
         "image_request": image_request,
     }
-    print("⚡ [FRONTEND DEBUG] 보내는 페이로드:", payload)
-
     try:
         res = requests.post(
             GENERATE_ENDPOINT,

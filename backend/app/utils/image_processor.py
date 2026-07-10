@@ -3,8 +3,7 @@
 
 역할:
 - 업로드된 이미지 bytes를 PIL Image로 변환
-- rembg로 배경 제거
-- target_size 기준으로 리사이즈
+- 비율을 유지한 채 필요 시 다운스케일
 - PNG bytes로 반환
 """
 
@@ -15,64 +14,88 @@ import io
 from loguru import logger
 from PIL import Image
 
-from app.core import error_constants as errors
-from app.core.exceptions import AppException
+
+def _resize_preserving_aspect(
+    image: Image.Image,
+    *,
+    max_width: int,
+    max_height: int,
+) -> Image.Image:
+    width, height = image.size
+    if width <= max_width and height <= max_height:
+        return image
+
+    scale = min(max_width / width, max_height / height)
+    new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+    return image.resize(new_size, Image.Resampling.LANCZOS)
 
 
-def remove_background_and_resize(
+def zoom_center_crop(
+    image: Image.Image,
+    *,
+    zoom_factor: float = 1.45,
+) -> Image.Image:
+    """
+    중앙 기준으로 크롭 후 원본 해상도로 리사이즈해 음식 클로즈업 구도를 유도한다.
+  """
+
+    if zoom_factor <= 1.0:
+        return image
+
+    width, height = image.size
+    crop_width = max(1, int(width / zoom_factor))
+    crop_height = max(1, int(height / zoom_factor))
+    left = (width - crop_width) // 2
+    top = (height - crop_height) // 2
+    cropped = image.crop((left, top, left + crop_width, top + crop_height))
+    return cropped.resize((width, height), Image.Resampling.LANCZOS)
+
+
+def shrink_and_pad_for_wider_framing(
+    image: Image.Image,
+    *,
+    subject_scale: float = 0.68,
+    padding_rgb: tuple[int, int, int] = (78, 58, 42),
+) -> Image.Image:
+    """
+    images.edit API는 입력 프레이밍을 유지하는 경향이 있어,
+    음식을 작게 배치한 뒤 가장자리 여백을 두어 와이드 구도를 유도한다.
+
+    패딩 색은 검정이 아닌 월넛 나무 톤으로, 모델이 여백을 테이블로 채우도록 한다.
+    """
+
+    width, height = image.size
+    canvas = Image.new("RGB", (width, height), padding_rgb)
+
+    new_width = max(1, int(width * subject_scale))
+    new_height = max(1, int(height * subject_scale))
+    resized = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+    offset_x = (width - new_width) // 2
+    offset_y = (height - new_height) // 2
+    canvas.paste(resized, (offset_x, offset_y))
+    return canvas
+
+
+def prepare_upload_image(
     image_bytes: bytes,
-    target_size: tuple[int, int] = (512, 512),
+    *,
+    max_width: int = 1024,
+    max_height: int = 1024,
 ) -> bytes:
     """
-    이미지 배경을 제거하고 지정된 크기로 리사이즈한 뒤 PNG bytes로 반환한다.
+    업로드 이미지를 모델 입력용 PNG bytes로 정규화한다.
 
-    실제 이미지 전처리 공통 함수.
-    endpoint와 pipeline에서 모두 이 함수를 사용한다.
-
-    Args:
-        image_bytes:
-            입력 이미지 bytes.
-        target_size:
-            리사이즈할 이미지 크기. 기본값은 (512, 512).
-
-    Returns:
-        배경 제거 및 리사이즈가 완료된 PNG bytes.
-
-    Raises:
-        AppException:
-            rembg/onnxruntime 등 전처리 의존성 문제가 발생한 경우.
-        Exception:
-            PIL 이미지 열기, rembg 처리, resize, PNG 변환 중 발생한 예외.
-            상위 endpoint 또는 pipeline에서 AppException으로 변환한다.
+    배경 제거(누끼)는 수행하지 않고, 원본 구도와 반찬/테이블 구성을 그대로 유지한다.
     """
 
     try:
         logger.info(
-            "image_preprocess_started | input_bytes={} | target_size={}",
+            "image_preprocess_started | input_bytes={} | max_size={}x{}",
             len(image_bytes) if image_bytes else 0,
-            target_size,
+            max_width,
+            max_height,
         )
-
-        try:
-            from rembg import remove
-
-        except SystemExit as exc:
-            raise AppException(
-                errors.IMAGE_PREPROCESS_DEPENDENCY_ERROR,
-                detail={
-                    "reason": "rembg CPU backend가 필요합니다.",
-                    "hint": 'requirements에 "rembg[cpu]" 또는 "onnxruntime"이 포함되어야 합니다.',
-                },
-            ) from exc
-
-        except ImportError as exc:
-            raise AppException(
-                errors.IMAGE_PREPROCESS_DEPENDENCY_ERROR,
-                detail={
-                    "reason": "rembg import failed",
-                    "error": str(exc),
-                },
-            ) from exc
 
         input_image = Image.open(io.BytesIO(image_bytes))
 
@@ -83,13 +106,12 @@ def remove_background_and_resize(
             input_image.size,
         )
 
-        logger.info("image_preprocess_remove_background_started")
-        output_image = remove(input_image)
-
-        output_image = output_image.convert("RGBA")
-
-        logger.info("image_preprocess_resize_started | target_size={}", target_size)
-        output_image = output_image.resize(target_size, Image.Resampling.LANCZOS)
+        output_image = input_image.convert("RGB")
+        output_image = _resize_preserving_aspect(
+            output_image,
+            max_width=max_width,
+            max_height=max_height,
+        )
 
         buffer = io.BytesIO()
         output_image.save(buffer, format="PNG")
@@ -98,19 +120,17 @@ def remove_background_and_resize(
         logger.info(
             "image_preprocess_completed | output_bytes={} | output_size={}",
             len(result),
-            target_size,
+            output_image.size,
         )
 
         return result
 
-    except AppException:
-        raise
-
     except Exception as exc:
         logger.exception(
-            "image_preprocess_failed | input_bytes={} | target_size={} | error_type={} | error={}",
+            "image_preprocess_failed | input_bytes={} | max_size={}x{} | error_type={} | error={}",
             len(image_bytes) if image_bytes else 0,
-            target_size,
+            max_width,
+            max_height,
             exc.__class__.__name__,
             str(exc),
         )
