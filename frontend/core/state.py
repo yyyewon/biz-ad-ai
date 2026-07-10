@@ -15,12 +15,14 @@ def init_state() -> None:
     """
     defaults = {
         "step": 1,
-        "business": {"store_name": "", "menu_name": "", "purpose": None, "request_note": ""},
+        "business": {"store_name": "", "menu_name": "", "store_location": "", "price": "", "purpose": None},
         "upload": {
             "image_bytes": None,
             "image_name": None,
-            "moods": [],
+            "food": None,
             "tone": None,
+            "image_request": "",
+            "llm_request": "",
         },
         "generation": {
             "status": "idle",       # idle | loading | done | error
@@ -58,18 +60,19 @@ def prev_step() -> None:
 # ---------------------------------------------------------------
 # 입력값 접근자
 # ---------------------------------------------------------------
-def set_business_info(store_name: str, menu_name: str, purpose: str | None, request_note: str) -> None:
+def set_business_info(store_name: str, menu_name: str, store_location: str, price: str,  purpose: str | None) -> None:
     st.session_state.business = {
         "store_name": store_name.strip(),
         "menu_name": menu_name.strip(),
+        "store_location": store_location.strip(),
+        "price": price,
         "purpose": purpose,
-        "request_note": request_note.strip(),
     }
 
 
 def is_business_info_valid() -> bool:
     b = st.session_state.business
-    return bool(b["store_name"]) and bool(b["menu_name"]) and b["purpose"] is not None
+    return bool(b["store_name"]) and bool(b["menu_name"]) and bool(b["store_location"]) and bool(b["price"]) and b["purpose"] is not None
 
 
 def set_upload(image_bytes: bytes | None, image_name: str | None) -> None:
@@ -77,14 +80,16 @@ def set_upload(image_bytes: bytes | None, image_name: str | None) -> None:
     st.session_state.upload["image_name"] = image_name
 
 
-def set_style(moods: list[str], tone: str | None) -> None:
-    st.session_state.upload["moods"] = moods
+def set_style(food: str | None, tone: str | None, image_request: str, llm_request: str) -> None:
+    st.session_state.upload["food"] = food
     st.session_state.upload["tone"] = tone
+    st.session_state.upload["image_request"] = image_request
+    st.session_state.upload["llm_request"] = llm_request
 
 
 def is_upload_step_valid() -> bool:
     u = st.session_state.upload
-    return u["image_bytes"] is not None and len(u["moods"]) > 0 and u["tone"] is not None
+    return u["image_bytes"] is not None and u["food"] is not None and u["tone"] is not None
 
 
 # ---------------------------------------------------------------
