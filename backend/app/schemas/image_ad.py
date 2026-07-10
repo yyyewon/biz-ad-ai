@@ -54,7 +54,7 @@ class ImageAdRequest(BaseModel):
         description="포스터 레이아웃 타입(예: auto, classic, focus, left)",
     )
     generation_mode: GenerationMode = Field(
-        default="direct_poster",
+        default="two_stage",
         description="생성 모드(direct_poster: 누끼에서 바로 포스터, two_stage: 중간 음식 이미지 후 포스터)",
     )
 
@@ -91,7 +91,7 @@ class ImageAdResponse(BaseModel):
     prompt_used: str
     num_images: int
     latency_ms: int
-    generation_mode: GenerationMode = "direct_poster"
+    generation_mode: GenerationMode = "two_stage"
     stage_latencies_ms: dict[str, int] = Field(default_factory=dict)
 
     images: List[str] = Field(default_factory=list, description="최종 포스터 이미지 base64 목록")

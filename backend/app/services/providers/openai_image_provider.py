@@ -25,7 +25,7 @@ from app.core import error_constants as errors
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.model_config import get_model_settings, get_provider_section
-from app.services.providers.base import ImageGenerationProvider
+from app.services.providers.base import ImageGenerationProvider, ImageRenderMode
 from app.utils.image_bytes import bytes_to_named_file, decode_base64_to_image_bytes
 
 
@@ -115,6 +115,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
         prompt: str,
         num_images: int,
         mask_image_bytes: bytes | None = None,
+        render_mode: ImageRenderMode = "photo_restyle",
     ) -> list[bytes]:
         """
         입력 이미지를 기반으로 광고 이미지를 생성한다.
