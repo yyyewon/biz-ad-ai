@@ -110,7 +110,18 @@ class HFImageProvider(ImageGenerationProvider):
     def _resolve_hf_token() -> str:
         hf_config = get_provider_section("hf")
         token_env = str(hf_config.get("token_env", "HF_TOKEN"))
-        return os.getenv(token_env) or get_settings().hf_token
+
+        env_token = os.environ.get(token_env)
+
+        if env_token is not None:
+            return env_token.strip()
+
+        settings_token = get_settings().hf_token
+
+        if settings_token:
+            return settings_token.strip()
+
+        return ""
 
     @property
     def model_id(self) -> str:

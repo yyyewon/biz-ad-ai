@@ -94,6 +94,8 @@ def _build_provider(monkeypatch, tmp_path):
 def _teardown(monkeypatch):
     monkeypatch.delenv("MODEL_CONFIG_PATH", raising=False)
     monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HF_HOME", raising=False)
+    monkeypatch.delenv("HF_HUB_CACHE", raising=False)
     model_config.reload_model_config()
 
 
@@ -102,7 +104,9 @@ def test_missing_hf_token_raises_app_exception(monkeypatch, tmp_path):
     _write_model_config(config_path)
 
     monkeypatch.setenv("MODEL_CONFIG_PATH", str(config_path))
-    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setenv("HF_TOKEN", "")
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf-home"))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hf-cache"))
     model_config.reload_model_config()
 
     with pytest.raises(AppException) as exc_info:
