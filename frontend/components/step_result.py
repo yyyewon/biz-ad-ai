@@ -90,18 +90,6 @@ def _run_generation() -> None:
     )
 
     if not mock:
-        refresh_me(st.context.cookies)  
-
-    st.session_state.generation.update(
-        status="done",
-        caption=result["data"]["caption"],
-        images=result["data"]["images"],
-        error_message="",
-        error_code=None,
-        signature=_input_signature(),
-    )
-
-    if not mock:
         refresh_me(st.context.cookies)
 
 

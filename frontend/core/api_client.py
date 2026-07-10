@@ -70,8 +70,9 @@ def generate_ad(
         hashtag_purpose = purpose.replace(" ", "").replace("/", "") if purpose else "홍보"
 
         caption = (
-            f"{store_name}의 {menu_name}, 오늘도 한 입이면 반해요 ️\n"
-            f"{tone} 하루엔 {menu_name} 한 그릇 어떠세요?\n\n"
+            f"{store_name}의 {menu_name}, 오늘도 한 입이면 반해요\n"
+            f"{llm_request.strip() + chr(10) if llm_request and llm_request.strip() else ''}"
+            f"{tone} 톤으로 {menu_name} 한 그릇 어떠세요?\n\n"
             f"#{store_name.replace(' ', '')} #{menu_name.replace(' ', '')} "
             f"#{hashtag_food.replace(' ', '')} #{hashtag_purpose} #맛집스타그램 #오늘뭐먹지"
         )

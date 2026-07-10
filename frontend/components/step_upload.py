@@ -1,5 +1,5 @@
 """
-Step 2: 사진 업로드 & 무드/톤 선택
+Step 2: 사진 업로드 & 음식 유형/톤 선택
 """
 from __future__ import annotations
 import streamlit as st
@@ -93,7 +93,7 @@ def render() -> None:
                     disabled=quota_exceeded,
                 ):
                     if not is_upload_step_valid():
-                        st.warning("사진 업로드, 무드, 톤을 모두 선택해 주세요.")
+                        st.warning("사진 업로드, 음식 유형, 톤을 모두 선택해 주세요.")
                     else:
                         next_step()
                         st.rerun()

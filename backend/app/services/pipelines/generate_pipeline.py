@@ -245,6 +245,7 @@ async def run_generate_pipeline(
                         purpose=purpose,
                         llm_request=llm_request,
                         tone=tone,
+                        food=food,
                     )
 
             text_task = asyncio.create_task(_run_text_stage())
@@ -347,6 +348,7 @@ async def run_generate_pipeline(
                     purpose=purpose,
                     llm_request=llm_request,
                     tone=tone,
+                    food=food,
                 )
 
         response: dict[str, Any] = {

@@ -92,7 +92,7 @@ def _build_photo_restyle_prompt(payload: ImageAdRequest, mood: str) -> str:
 
     prompt_chunks = [
         "Professional restaurant editorial food photography",
-        f"food_context : {food_context}"
+        f"food_context: {food_context}",
         "re-photograph the same dish shown in the reference image",
         "preserve the dish identity, portion, garnish, and plate",
         "same tabletop close-up perspective",
@@ -102,10 +102,14 @@ def _build_photo_restyle_prompt(payload: ImageAdRequest, mood: str) -> str:
         "no duplicate food, no extra plate, no text, no logo, no watermark",
     ]
 
-    if payload.extra_notes:
-        parts.append(f"creative direction: {payload.extra_notes}")
+    if mood:
+        prompt_chunks.append(f"visual mood: {mood}")
 
-    return ", ".join(parts)
+    image_request = (payload.image_request or "").strip()
+    if image_request:
+        prompt_chunks.append(f"image request: {image_request}")
+
+    return ", ".join(prompt_chunks)
 
 
 def _build_inpaint_mask_bytes(source_rgba: Image.Image) -> bytes:
@@ -146,7 +150,7 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
 
     prompt_chunks = [
         "Create a realistic vertical Instagram ad poster based on the input food photo.",
-        f"food: {food}"
+        f"food: {food}",
         "keep the food and plate shape/texture, redesign background, lighting, and composition for the poster",
         "sleek brand advertisement look, avoid a generic template feel",
         "render the text directly in the poster, spelled exactly and correctly",
@@ -180,8 +184,9 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
     if payload.tone:
         prompt_chunks.append(f"tone: {payload.tone}")
 
-    if payload.extra_notes:
-        prompt_chunks.append(f"image request: {payload.image_request}")
+    image_request = (payload.image_request or "").strip()
+    if image_request:
+        prompt_chunks.append(f"image request: {image_request}")
 
     return ", ".join(prompt_chunks)
 

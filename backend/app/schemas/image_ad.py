@@ -33,9 +33,9 @@ class ImageAdRequest(BaseModel):
         description="단독 이미지 생성 API에서 사용할 수 있는 입력 이미지 base64 문자열",
     )
 
-    food: Optional[str] = Field(default=None, description="2페이지: 음식 형태 (국, 찌개 등 단일 선택)")
-    image_request: Optional[str] = Field(default="", description="2페이지: 배경 및 이미지 추가 요청사항")
-    poster_type: Optional[str] = Field(default="단일 메뉴형", description="2페이지: 광고 레이아웃 유형")
+    food: Optional[str] = Field(default=None, description="음식 형태 (국, 찌개 등 단일 선택)")
+    image_request: Optional[str] = Field(default="", description="배경 및 이미지 추가 요청사항")
+    poster_type: Optional[str] = Field(default="단일 메뉴형", description="광고 레이아웃 유형")
 
     prompt: Optional[str] = Field(default=None, description="추가 프롬프트 문구(선택)")
     num_images: int = Field(default=3, ge=1, le=6, description="생성할 이미지 개수")
@@ -45,8 +45,6 @@ class ImageAdRequest(BaseModel):
     menu_name: Optional[str] = Field(default=None, description="메뉴명 메타데이터")
     promotion_goal: Optional[str] = Field(default=None, description="홍보 목적 메타데이터")
     tone: Optional[str] = Field(default=None, description="문체/톤 메타데이터")
-    llm_request: Optional[str] = Field(default=None, description="문구 요청사항 메타데이터")
-    image_request: Optional[str] = Field(default=None, description="이미지 요청사항 메타데이터")
     headline: Optional[str] = Field(default=None, description="포스터 상단 문구")
     price_text: Optional[str] = Field(default=None, description="포스터 가격 문구")
     layout_type: Optional[str] = Field(

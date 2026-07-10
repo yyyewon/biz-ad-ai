@@ -59,11 +59,11 @@ DEV_GUEST_MODE_DEFAULT = os.getenv("RG_DEV_GUEST_MODE", "false").lower() == "tru
 FOOD_OPTIONS = [
     "국, 찌개",
     "튀김",
+    "구이, 바베큐",
     "덮밥, 볶음, 비빔",
     "빵, 디저트, 케이크",
     "버거, 샌드위치",
     "커피, 음료",
-    "구이, 바베큐",
 ]
 
 TONE_OPTIONS = [
