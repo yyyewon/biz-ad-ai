@@ -9,13 +9,13 @@ from core.state import init_state
 from core.api_client import check_backend_health
 from core.auth import (
     init_auth_state,
-    consume_login_token_from_query,
+    check_auth_status_from_cookies,
     is_logged_in,
-    logout,
+    is_dev_guest_mode,
+    logout_session,  
     sync_usage,
     reset_quota_for_testing,
 )
-from core.config import DEV_GUEST_MODE_DEFAULT
 from components.layout import render_topbar, render_stepper, render_footer
 from components import step_business_info, step_upload, step_result, step_login
 
@@ -52,7 +52,7 @@ def _render_login_section() -> None:
         st.success(f"{nickname}님 환영해요 👋")
         st.caption(f"오늘 생성 {used}/{limit}회 사용")
         if st.button("로그아웃", width="stretch"):
-            logout()
+            logout_session()
             st.rerun()
     else:
         st.caption("메인 화면에서 카카오 로그인 후 이용할 수 있어요.")
@@ -68,7 +68,7 @@ def _render_dev_tools() -> None:
     st.markdown("### 🧪 테스트 도구")
     st.caption("백엔드 DEV_TOOLS_ENABLED=true 일 때만 동작해요. (배포 환경에서는 비활성화 권장)")
     if st.button("오늘 생성 횟수 초기화", width="stretch"):
-        ok, message = reset_quota_for_testing()
+        ok, message = reset_quota_for_testing(st.context.cookies)
         if ok:
             st.success(message)
         else:
@@ -84,15 +84,21 @@ def _render_sidebar() -> None:
         st.markdown("### ⚙️ 개발 / 데모 설정")
         st.caption("백엔드(A·C·D 담당)가 준비되기 전까지는 목업 모드로 프론트 작업을 이어갈 수 있어요.")
 
-        st.session_state.mock_mode = st.toggle(
+        st.toggle(
             "목업 모드 (백엔드 없이 테스트)",
-            value=st.session_state.mock_mode,
+            key="mock_mode",
         )
-        st.session_state.dev_guest_mode = st.toggle(
+        if is_logged_in():
+            st.session_state.dev_guest_mode = False
+
+        st.toggle(
             "로그인 우회 모드 (개발용)",
-            value=st.session_state.get("dev_guest_mode", DEV_GUEST_MODE_DEFAULT),
+            key="dev_guest_mode",
             help="카카오 로그인 없이 Step 1/2/3 테스트를 진행합니다.",
+            disabled=is_logged_in(),
         )
+        if is_logged_in():
+            st.caption("로그인된 상태에서는 우회 모드가 적용되지 않아요.")
 
         if not st.session_state.mock_mode:
             if st.button("서버 연결 상태 확인", width="stretch"):
@@ -118,7 +124,7 @@ def _render_sidebar() -> None:
 def main() -> None:
     init_state()
     init_auth_state()
-    consume_login_token_from_query()  # ?login_token=... 이 있으면 처리 후 rerun
+    check_auth_status_from_cookies(st.context.cookies)
 
     _inject_css()
     _render_sidebar()
@@ -126,16 +132,20 @@ def main() -> None:
     authenticated = (
         st.session_state.mock_mode
         or is_logged_in()
-        or st.session_state.get("dev_guest_mode", DEV_GUEST_MODE_DEFAULT)
+        or is_dev_guest_mode()
     )
 
     if not authenticated:
         step_login.render()
         return
 
-    sync_usage()
+    sync_usage(st.context.cookies)
 
-    render_topbar(mock_mode=st.session_state.mock_mode)
+    render_topbar(
+        mock_mode=st.session_state.mock_mode,
+        guest_mode=is_dev_guest_mode(),
+        logged_in=is_logged_in(),
+    )
     render_stepper(current_step=st.session_state.step)
 
     step = st.session_state.step

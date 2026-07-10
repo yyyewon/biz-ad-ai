@@ -4,8 +4,14 @@
 #
 #    pip-compile --output-file=backend/requirements.txt backend/requirements.in
 #
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+accelerate==1.14.0
+    # via -r backend/requirements.in
 annotated-doc==0.0.4
-    # via fastapi
+    # via
+    #   fastapi
+    #   typer
 annotated-types==0.7.0
     # via pydantic
 anyio==4.14.1
@@ -27,18 +33,39 @@ certifi==2026.6.17
 charset-normalizer==3.4.7
     # via requests
 click==8.4.2
-    # via uvicorn
+    # via
+    #   huggingface-hub
+    #   uvicorn
+cuda-bindings==13.3.1
+    # via torch
+cuda-pathfinder==1.5.6
+    # via cuda-bindings
+cuda-toolkit[cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2
+    # via torch
+diffusers==0.39.0
+    # via -r backend/requirements.in
 distro==1.9.0
     # via openai
 fastapi==0.139.0
     # via -r backend/requirements.in
+filelock==3.29.6
+    # via
+    #   diffusers
+    #   huggingface-hub
+    #   torch
 flatbuffers==25.12.19
-    # via onnxruntime
+    # via onnxruntime-gpu
+fsspec==2026.6.0
+    # via
+    #   huggingface-hub
+    #   torch
 h11==0.16.0
     # via
     #   httpcore
     #   httpcore2
     #   uvicorn
+hf-xet==1.5.1
+    # via huggingface-hub
 httpcore==1.0.9
     # via httpx
 httpcore2==2.5.0
@@ -48,9 +75,17 @@ httptools==0.8.0
 httpx==0.28.1
     # via
     #   -r backend/requirements.in
+    #   diffusers
+    #   huggingface-hub
     #   openai
 httpx2==2.5.0
     # via -r backend/requirements.in
+huggingface-hub==1.22.0
+    # via
+    #   accelerate
+    #   diffusers
+    #   tokenizers
+    #   transformers
 idna==3.18
     # via
     #   anyio
@@ -59,8 +94,12 @@ idna==3.18
     #   requests
 imageio==2.37.3
     # via scikit-image
+importlib-metadata==9.0.0
+    # via diffusers
 iniconfig==2.3.0
     # via pytest
+jinja2==3.1.6
+    # via torch
 jiter==0.16.0
     # via openai
 jsonschema==4.26.0
@@ -73,39 +112,99 @@ llvmlite==0.48.0
     # via numba
 loguru==0.7.3
     # via -r backend/requirements.in
+markdown-it-py==4.2.0
+    # via rich
+markupsafe==3.0.3
+    # via jinja2
+mdurl==0.1.2
+    # via markdown-it-py
+mpmath==1.3.0
+    # via sympy
 networkx==3.6.1
-    # via scikit-image
+    # via
+    #   scikit-image
+    #   torch
 numba==0.66.0
     # via pymatting
 numpy==2.4.6
     # via
     #   -r backend/requirements.in
+    #   accelerate
+    #   diffusers
     #   imageio
     #   numba
-    #   onnxruntime
+    #   onnxruntime-gpu
     #   pymatting
     #   rembg
     #   scikit-image
     #   scipy
     #   tifffile
-onnxruntime==1.27.0
+    #   torchvision
+    #   transformers
+nvidia-cublas==13.1.1.3
+    # via
+    #   nvidia-cudnn-cu13
+    #   nvidia-cusolver
+    #   torch
+nvidia-cuda-cupti==13.0.85
+    # via cuda-toolkit
+nvidia-cuda-nvrtc==13.0.88
+    # via
+    #   cuda-toolkit
+    #   nvidia-cublas
+nvidia-cuda-runtime==13.0.96
+    # via cuda-toolkit
+nvidia-cudnn-cu13==9.20.0.48
+    # via torch
+nvidia-cufft==12.0.0.61
+    # via cuda-toolkit
+nvidia-cufile==1.15.1.6
+    # via cuda-toolkit
+nvidia-curand==10.4.0.35
+    # via cuda-toolkit
+nvidia-cusolver==12.0.4.66
+    # via cuda-toolkit
+nvidia-cusparse==12.6.3.3
+    # via
+    #   cuda-toolkit
+    #   nvidia-cusolver
+nvidia-cusparselt-cu13==0.8.1
+    # via torch
+nvidia-nccl-cu13==2.29.7
+    # via torch
+nvidia-nvjitlink==13.0.88
+    # via
+    #   cuda-toolkit
+    #   nvidia-cufft
+    #   nvidia-cusolver
+    #   nvidia-cusparse
+nvidia-nvshmem-cu13==3.4.5
+    # via torch
+nvidia-nvtx==13.0.85
+    # via cuda-toolkit
+onnxruntime-gpu==1.27.0
     # via rembg
 openai==2.44.0
     # via -r backend/requirements.in
 packaging==26.2
     # via
+    #   accelerate
+    #   huggingface-hub
     #   lazy-loader
-    #   onnxruntime
+    #   onnxruntime-gpu
     #   pooch
     #   pytest
     #   scikit-image
+    #   transformers
 pillow==12.3.0
     # via
     #   -r backend/requirements.in
+    #   diffusers
     #   imageio
     #   pymatting
     #   rembg
     #   scikit-image
+    #   torchvision
 platformdirs==4.10.0
     # via pooch
 pluggy==1.6.0
@@ -113,7 +212,9 @@ pluggy==1.6.0
 pooch==1.9.0
     # via rembg
 protobuf==7.35.1
-    # via onnxruntime
+    # via onnxruntime-gpu
+psutil==7.2.2
+    # via accelerate
 pydantic==2.13.4
     # via
     #   fastapi
@@ -127,6 +228,7 @@ pygments==2.20.0
     # via
     #   -r backend/requirements.in
     #   pytest
+    #   rich
 pyjwt==2.13.0
     # via -r backend/requirements.in
 pymatting==1.1.15
@@ -143,19 +245,35 @@ python-multipart==0.0.32
 pyyaml==6.0.3
     # via
     #   -r backend/requirements.in
+    #   accelerate
+    #   huggingface-hub
+    #   transformers
     #   uvicorn
 referencing==0.37.0
     # via
     #   jsonschema
     #   jsonschema-specifications
-rembg[cpu]==2.0.76
+regex==2026.6.28
+    # via
+    #   diffusers
+    #   transformers
+rembg[gpu]==2.0.76
     # via -r backend/requirements.in
 requests==2.34.2
-    # via pooch
+    # via
+    #   diffusers
+    #   pooch
+rich==15.0.0
+    # via typer
 rpds-py==2026.6.3
     # via
     #   jsonschema
     #   referencing
+safetensors==0.8.0
+    # via
+    #   accelerate
+    #   diffusers
+    #   transformers
 scikit-image==0.26.0
     # via rembg
 scipy==1.18.0
@@ -163,30 +281,57 @@ scipy==1.18.0
     #   pymatting
     #   rembg
     #   scikit-image
+sentencepiece==0.2.1
+    # via -r backend/requirements.in
+shellingham==1.5.4
+    # via typer
 sniffio==1.3.1
     # via openai
 starlette==1.3.1
     # via fastapi
+sympy==1.14.0
+    # via torch
 tifffile==2026.6.1
     # via scikit-image
+tokenizers==0.22.2
+    # via transformers
+torch==2.12.1
+    # via
+    #   -r backend/requirements.in
+    #   accelerate
+    #   torchvision
+torchaudio==2.11.0
+    # via -r backend/requirements.in
+torchvision==0.27.1
+    # via -r backend/requirements.in
 tqdm==4.68.3
     # via
+    #   huggingface-hub
     #   openai
     #   rembg
+    #   transformers
+transformers==5.13.0
+    # via -r backend/requirements.in
+triton==3.7.1
+    # via torch
 truststore==0.10.4
     # via
     #   httpcore2
     #   httpx2
+typer==0.26.8
+    # via transformers
 typing-extensions==4.15.0
     # via
     #   anyio
     #   fastapi
     #   httpx2
+    #   huggingface-hub
     #   openai
     #   pydantic
     #   pydantic-core
     #   referencing
     #   starlette
+    #   torch
     #   typing-inspection
 typing-inspection==0.4.2
     # via
@@ -203,3 +348,8 @@ watchfiles==1.2.0
     # via uvicorn
 websockets==16.0
     # via uvicorn
+zipp==4.1.0
+    # via importlib-metadata
+
+# The following packages are considered to be unsafe in a requirements file:
+# setuptools

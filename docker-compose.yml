@@ -30,6 +30,13 @@ services:
     volumes:
       - backend_data:/app/data
       - ./backend/logs:/app/logs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   backend_data:

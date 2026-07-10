@@ -44,7 +44,7 @@ async def generate_text_only_endpoint(
         )
 
         # 광고 문구 생성
-        caption = run_text_pipeline(
+        caption = await run_text_pipeline(
             store_name=store_name,
             menu_name=menu_name,
             purpose=purpose or "홍보",

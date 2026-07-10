@@ -7,7 +7,7 @@ import streamlit as st
 
 from core.state import prev_step, reset_all
 from core.api_client import generate_ad
-from core.auth import is_logged_in, refresh_me, is_quota_exceeded, get_daily_usage
+from core.auth import is_logged_in, refresh_me, is_quota_exceeded, get_daily_usage, is_dev_guest_mode
 from core.config import KAKAO_LOGIN_ENDPOINT
 from components.ui_kit import phone_preview, feed_grid, alert, quota_exceeded_banner
 
@@ -49,11 +49,11 @@ def _render_quota_exceeded() -> None:
             st.rerun()
 
 
+
 def _run_generation() -> None:
     b = st.session_state.business
     u = st.session_state.upload
     mock = st.session_state.mock_mode
-    access_token = st.session_state.auth.get("access_token")
 
     with st.spinner("AI가 광고 문구와 이미지를 만들고 있어요..."):
         result = generate_ad(
@@ -66,7 +66,7 @@ def _run_generation() -> None:
             tone=u["tone"],
             image_request=u["image_request"],
             llm_request=u["llm_request"],
-            access_token=access_token,
+            cookies=st.context.cookies,
             mock=mock,
         )
 
@@ -77,7 +77,7 @@ def _run_generation() -> None:
             error_code=result.get("error_code"),
         )
         if not mock and result.get("error_code") == "DAILY_LIMIT_EXCEEDED":
-            refresh_me()
+            refresh_me(st.context.cookies) 
         return
 
     st.session_state.generation.update(
@@ -90,7 +90,19 @@ def _run_generation() -> None:
     )
 
     if not mock:
-        refresh_me()
+        refresh_me(st.context.cookies)  
+
+    st.session_state.generation.update(
+        status="done",
+        caption=result["data"]["caption"],
+        images=result["data"]["images"],
+        error_message="",
+        error_code=None,
+        signature=_input_signature(),
+    )
+
+    if not mock:
+        refresh_me(st.context.cookies)
 
 
 def render() -> None:
@@ -102,7 +114,7 @@ def render() -> None:
             unsafe_allow_html=True,
         )
 
-    guest_mode = st.session_state.get("dev_guest_mode", False)
+    guest_mode = is_dev_guest_mode()
     if not st.session_state.mock_mode and not guest_mode and not is_logged_in():
         _render_login_required()
         return

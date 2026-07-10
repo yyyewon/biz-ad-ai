@@ -1,4 +1,5 @@
 from pathlib import Path
+import asyncio
 
 import pytest
 
@@ -8,6 +9,7 @@ from app.services.pipelines import text_pipeline
 from app.services.providers.factory import get_image_provider, get_text_provider
 from app.services.providers.openai_image_provider import OpenAIImageProvider
 from app.services.providers.openai_text_provider import OpenAITextProvider
+from app.services.providers.hf_image_provider import HFImageProvider
 
 
 def _write_model_config(path: Path, active_profile: str = "all_openai") -> None:
@@ -146,27 +148,44 @@ def test_hf_text_provider_is_not_available_yet(monkeypatch, tmp_path):
     model_config.reload_model_config()
 
 
-def test_hf_image_provider_is_not_available_yet(monkeypatch, tmp_path):
+def test_get_hf_image_provider_requires_token(monkeypatch, tmp_path):
     config_path = tmp_path / "model.yaml"
     _write_model_config(config_path, active_profile="hybrid_openai_text_hf_image")
 
     monkeypatch.setenv("MODEL_CONFIG_PATH", str(config_path))
-    monkeypatch.setenv("OPENAI_API_KEY", "test-api-key")
+    monkeypatch.delenv("HF_TOKEN", raising=False)
     model_config.reload_model_config()
 
     with pytest.raises(AppException) as exc_info:
         get_image_provider()
 
-    assert exc_info.value.code == "HF_PROVIDER_NOT_AVAILABLE"
+    assert exc_info.value.code == "HF_TOKEN_MISSING"
 
     monkeypatch.delenv("MODEL_CONFIG_PATH", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    model_config.reload_model_config()
+
+
+def test_get_hf_image_provider_with_token_succeeds(monkeypatch, tmp_path):
+    config_path = tmp_path / "model.yaml"
+    _write_model_config(config_path, active_profile="hybrid_openai_text_hf_image")
+
+    monkeypatch.setenv("MODEL_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("HF_TOKEN", "test-hf-token")
+    model_config.reload_model_config()
+
+    provider = get_image_provider()
+
+    assert isinstance(provider, HFImageProvider)
+    assert provider.model_id
+
+    monkeypatch.delenv("MODEL_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("HF_TOKEN", raising=False)
     model_config.reload_model_config()
 
 
 def test_text_pipeline_uses_text_provider(monkeypatch):
     class FakeTextProvider:
-        def generate_text(self, prompt: str, system_instruction: str) -> str:
+        async def generate_text(self, prompt: str, system_instruction: str) -> str:
             assert "테스트가게" in prompt
             assert "김밥" in prompt
             assert "광고 카피라이터" in system_instruction
@@ -178,7 +197,8 @@ def test_text_pipeline_uses_text_provider(monkeypatch):
         lambda: FakeTextProvider(),
     )
 
-    result = text_pipeline.run_text_pipeline(
+    result = asyncio.run(
+        text_pipeline.run_text_pipeline(
         store_name="테스트가게",
         menu_name="김밥",
         purpose="신메뉴 홍보",

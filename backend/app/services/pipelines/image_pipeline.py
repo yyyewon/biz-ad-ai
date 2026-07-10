@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from typing import Optional
@@ -18,6 +19,14 @@ from app.utils.image_bytes import (
 )
 
 
+NON_RETRYABLE_ERROR_CODES: set[str] = {
+    "HF_IMAGE_PIPELINE_DEPENDENCY_ERROR",
+    "HF_IMAGE_MODEL_LOAD_FAILED",
+    "HF_TOKEN_MISSING",
+    "MODEL_SETTINGS_NOT_FOUND",
+    "OPENAI_API_KEY_MISSING",
+    "PROVIDER_NOT_SUPPORTED",
+}
 
 LAYOUT_ALIAS_MAP: dict[str, str] = {
     "auto": "auto",
@@ -51,6 +60,23 @@ POSTER_RETRY_SUFFIXES: list[str] = [
     "재시도 지시: 텍스트 정확도와 가독성을 최우선으로 다시 생성해줘. 레이아웃은 단순하고 안정적으로 구성해줘.",
     "최종 재시도 지시: 텍스트 3개를 상단/중앙에 명확히 분리 배치하고, 음식은 하단 히어로 컷으로 크게 배치해줘.",
 ]
+
+async def _gather_fail_fast(coros: list) -> list:
+    tasks = [asyncio.ensure_future(coro) for coro in coros]
+
+    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+
+    if pending:
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    for task in done:
+        exc = task.exception()
+        if exc is not None:
+            raise exc
+
+    return [task.result() for task in tasks]
 
 
 def _build_inpaint_prompt(payload: ImageAdRequest) -> str:
@@ -176,7 +202,7 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
     return ", ".join(prompt_chunks)
 
 
-def _generate_poster_with_retries(
+async def _generate_poster_with_retries(
     *,
     provider,
     source_image_bytes: bytes,
@@ -189,7 +215,7 @@ def _generate_poster_with_retries(
         retry_prompt = f"{base_prompt}, {suffix}" if suffix else base_prompt
 
         try:
-            image_bytes_list = provider.generate(
+            image_bytes_list = await provider.generate(
                 input_image_bytes=source_image_bytes,
                 mask_image_bytes=mask_image_bytes,
                 prompt=retry_prompt,
@@ -198,6 +224,22 @@ def _generate_poster_with_retries(
 
             if image_bytes_list:
                 return image_bytes_list
+
+        except AppException as exc:
+            if exc.code in NON_RETRYABLE_ERROR_CODES:
+                logger.error(
+                    "poster_generation_non_retryable_failure | code={} | error={}",
+                    exc.code,
+                    str(exc),
+                )
+                raise
+
+            last_error = exc
+            logger.warning(
+                "poster_generation_attempt_failed | attempt={} | error={}",
+                attempt_idx + 1,
+                str(exc),
+            )
 
         except Exception as exc:
             last_error = exc
@@ -216,7 +258,7 @@ def _generate_poster_with_retries(
     )
 
 
-def generate_image_ads(
+async def generate_image_ads(
     payload: ImageAdRequest,
     source_image_bytes: bytes,
     seed: Optional[int] = None,
@@ -229,6 +271,7 @@ def generate_image_ads(
     - 전처리 source/mask/poster 이미지를 서버 디스크에 저장하지 않는다.
     - provider는 list[bytes]를 반환한다.
     - API 응답용 이미지는 base64 문자열로 변환한다.
+    - 포스터 생성은 num_images 개수만큼 asyncio.gather로 병렬 실행한다.
     """
 
     started = time.perf_counter()
@@ -264,20 +307,16 @@ def generate_image_ads(
         food_stage_started = time.perf_counter()
 
         if generation_mode == "two_stage":
-            for idx in range(payload.num_images):
+            async def _generate_food_image(idx: int) -> tuple[int, str, bytes]:
+                current_prompt = _build_inpaint_prompt(payload, current_mood)
 
-                current_prompt = _build_inpaint_prompt(payload)
-
-                if not prompt_used:
-                    prompt_used = current_prompt
-
-                iter_images = provider.generate(
+                iter_images = await provider.generate(
                     input_image_bytes=prepared_source_bytes,
                     mask_image_bytes=mask_bytes,
                     prompt=current_prompt,
                     num_images=1,
                 )
-
+                
                 if not iter_images:
                     raise AppException(
                         errors.IMAGE_GENERATION_EMPTY_RESULT,
@@ -288,8 +327,19 @@ def generate_image_ads(
                         },
                     )
 
-                generated_image_bytes.append(iter_images[0])
-                generated_image_base64.append(encode_image_bytes_to_base64(iter_images[0]))
+                return idx, current_mood, iter_images[0]
+
+            food_results = await _gather_fail_fast(
+                [_generate_food_image(idx) for idx in range(payload.num_images)]
+            )
+
+            for idx, current_mood, image_bytes in sorted(food_results, key=lambda item: item[0]):
+                applied_moods.append(current_mood)
+                generated_image_bytes.append(image_bytes)
+                generated_image_base64.append(encode_image_bytes_to_base64(image_bytes))
+
+                if not prompt_used:
+                    prompt_used = _build_inpaint_prompt(payload, current_mood)
 
 
         stage_latencies_ms["food_generation_ms"] = int(
@@ -297,9 +347,8 @@ def generate_image_ads(
         )
 
         poster_stage_started = time.perf_counter()
-        poster_image_bytes: list[bytes] = []
 
-        for idx in range(payload.num_images):
+        async def _generate_poster_image(idx: int) -> tuple[int, bytes, str]:
             source_for_poster = (
                 generated_image_bytes[idx]
                 if generation_mode == "two_stage"
@@ -319,10 +368,7 @@ def generate_image_ads(
                 layout_type=resolved_layout,
             )
 
-            if not prompt_used:
-                prompt_used = poster_prompt
-
-            poster_outputs = _generate_poster_with_retries(
+            poster_outputs = await _generate_poster_with_retries(
                 provider=provider,
                 source_image_bytes=source_for_poster,
                 base_prompt=poster_prompt,
@@ -339,7 +385,18 @@ def generate_image_ads(
                     },
                 )
 
-            poster_image_bytes.append(poster_outputs[0])
+            return idx, poster_outputs[0], poster_prompt
+
+        poster_results = await _gather_fail_fast(
+            [_generate_poster_image(idx) for idx in range(payload.num_images)]
+        )
+
+        poster_image_bytes: list[bytes] = []
+        for idx, poster_bytes, poster_prompt in sorted(poster_results, key=lambda item: item[0]):
+            poster_image_bytes.append(poster_bytes)
+
+            if not prompt_used:
+                prompt_used = poster_prompt
 
         stage_latencies_ms["poster_generation_ms"] = int(
             (time.perf_counter() - poster_stage_started) * 1000

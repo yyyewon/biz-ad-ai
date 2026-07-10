@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from typing import Any
 
 from loguru import logger
+from starlette.concurrency import run_in_threadpool
 
 from app.api.v1.endpoints.image_preprocess import run_remove_background_and_resize
 from app.core import error_constants as errors
@@ -19,7 +21,6 @@ from app.services.pipelines.image_pipeline import generate_image_ads
 from app.services.pipelines.text_pipeline import run_text_pipeline
 from app.utils.image_bytes import encode_image_bytes_to_base64
 from app.utils.performance_logger import measure_stage, record_performance_metric
-
 
 
 
@@ -204,7 +205,7 @@ def _record_total_pipeline_metric(
     )
 
 
-def run_generate_pipeline(
+async def run_generate_pipeline(
     store_name: str,
     menu_name: str,
     purpose: str,
@@ -218,14 +219,13 @@ def run_generate_pipeline(
     통합 광고 생성 파이프라인.
 
     전체 흐름:
-    1. 광고 문구 생성
-    2. 이미지가 있으면 배경 제거 및 리사이즈
+    1. 이미지가 있으면 광고 문구 생성 + 이미지 전처리를 병렬 실행
+    2. 이미지가 없으면 광고 문구만 생성
     3. 전처리된 이미지 bytes를 image_pipeline에 직접 전달
-    4. 광고 이미지 생성
+    4. 광고 이미지 3장을 병렬 생성
     5. 생성 이미지 base64를 응답에 포함
     6. 텍스트 + 이미지 결과를 통합 응답으로 반환
     7. 단계별/전체 소요 시간을 performance.jsonl에 기록
-
     이미지 생성 실패 시:
     - 광고 문구는 유지한다.
     - fallback 이미지를 반환한다.
@@ -248,9 +248,6 @@ def run_generate_pipeline(
     )
 
     try:
-        # ========================================================
-        # 1. 광고 문구 생성
-        # ========================================================
         text_model_info = _safe_model_info("text_generation")
 
         with measure_stage(
@@ -282,19 +279,35 @@ def run_generate_pipeline(
         warnings: list[dict[str, Any]] = []
         partial_success = False
         image_generation_success: bool | None = None
+        processed_bytes: bytes | None = None
 
-        # ========================================================
-        # 3. 이미지가 있는 경우 이미지 생성 파이프라인 실행
-        # ========================================================
         if image_bytes:
-            processed_bytes: bytes | None = None
+            preprocess_info = _safe_image_preprocess_info()
 
-            try:
-                # ====================================================
-                # 3-1. 이미지 배경 제거 및 리사이즈
-                # ====================================================
-                preprocess_info = _safe_image_preprocess_info()
+            async def _run_text_stage() -> str:
+                with measure_stage(
+                    pipeline="ad_generate",
+                    stage="text_generation",
+                    request_id=pipeline_request_id,
+                    profile=profile_name,
+                    provider=text_model_info["provider"],
+                    model=text_model_info["model"],
+                    extra={
+                        "store_name": store_name,
+                        "menu_name": menu_name,
+                        "has_image": True,
+                    },
+                ):
+                    return await run_text_pipeline(
+                        store_name=store_name,
+                        menu_name=menu_name,
+                        purpose=purpose,
+                        request_note=request_note,
+                        moods=moods,
+                        tone=tone,
+                    )
 
+            async def _run_preprocess_stage() -> bytes:
                 with measure_stage(
                     pipeline="ad_generate",
                     stage="image_preprocess",
@@ -306,9 +319,12 @@ def run_generate_pipeline(
                         "input_bytes": len(image_bytes),
                     },
                 ):
-                    processed_bytes = run_remove_background_and_resize(image_bytes)
+                    result = await run_in_threadpool(
+                        run_remove_background_and_resize,
+                        image_bytes,
+                    )
 
-                if not processed_bytes:
+                if not result:
                     raise AppException(
                         errors.IMAGE_GENERATION_EMPTY_RESULT,
                         detail={
@@ -317,9 +333,14 @@ def run_generate_pipeline(
                         },
                     )
 
-                # ====================================================
-                # 3-2. 이미지 생성용 payload 생성
-                # ====================================================
+                return result
+
+            caption, processed_bytes = await asyncio.gather(
+                _run_text_stage(),
+                _run_preprocess_stage(),
+            )
+
+            try:
                 image_payload = _build_image_payload(
                     store_name=store_name,
                     menu_name=menu_name,
@@ -329,9 +350,6 @@ def run_generate_pipeline(
                     tone=tone,
                 )
 
-                # ====================================================
-                # 3-3. 광고 이미지 생성
-                # ====================================================
                 image_model_info = _safe_model_info("image_generation")
 
                 with measure_stage(
@@ -346,12 +364,11 @@ def run_generate_pipeline(
                         "generation_mode": image_payload.generation_mode,
                     },
                 ):
-                    image_result = generate_image_ads(
+                    image_result = await generate_image_ads(
                         payload=image_payload,
                         source_image_bytes=processed_bytes,
                     )
 
-                # image_pipeline 내부 stage latency도 분석용 로그로 저장한다.
                 _record_image_pipeline_stage_metrics(
                     pipeline_request_id=pipeline_request_id,
                     profile_name=profile_name,
@@ -360,13 +377,8 @@ def run_generate_pipeline(
                     image_request_id=image_result.request_id,
                 )
 
-                # ====================================================
-                # 3-4. 생성된 포스터 이미지 base64 응답 구성
-                # ====================================================
                 images = list(image_result.images or [])
 
-                # 방어 로직:
-                # image_result.images가 비어 있고 bytes만 있는 경우 base64로 변환한다.
                 if not images and image_result.image_bytes_list:
                     images = [
                         encode_image_bytes_to_base64(image_data)
@@ -382,7 +394,6 @@ def run_generate_pipeline(
                         },
                     )
 
-                # 프론트가 3장 기준으로 동작하는 경우를 고려해 부족하면 마지막 이미지를 복제한다.
                 while len(images) < 3:
                     images.append(images[-1])
 
@@ -390,9 +401,6 @@ def run_generate_pipeline(
                 image_generation_success = True
 
             except Exception as exc:
-                # ====================================================
-                # 3-5. 이미지 생성 실패 처리
-                # ====================================================
                 logger.exception(
                     "image_generation_failed_in_generate_pipeline | request_id={} | error={}",
                     pipeline_request_id,
@@ -419,10 +427,29 @@ def run_generate_pipeline(
                         },
                     }
                 )
+        else:
+            with measure_stage(
+                pipeline="ad_generate",
+                stage="text_generation",
+                request_id=pipeline_request_id,
+                profile=profile_name,
+                provider=text_model_info["provider"],
+                model=text_model_info["model"],
+                extra={
+                    "store_name": store_name,
+                    "menu_name": menu_name,
+                    "has_image": False,
+                },
+            ):
+                caption = await run_text_pipeline(
+                    store_name=store_name,
+                    menu_name=menu_name,
+                    purpose=purpose,
+                    request_note=request_note,
+                    moods=moods,
+                    tone=tone,
+                )
 
-        # ========================================================
-        # 4. 통합 응답 생성
-        # ========================================================
         response: dict[str, Any] = {
             "caption": caption,
             "images": images,

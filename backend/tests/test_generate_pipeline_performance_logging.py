@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import asyncio
 
 from PIL import Image
 
@@ -54,10 +55,13 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
         fake_record_performance_metric,
     )
 
+    async def fake_run_text_pipeline(**kwargs):
+        return "생성된 광고 문구"
+
     monkeypatch.setattr(
         generate_pipeline,
         "run_text_pipeline",
-        lambda **kwargs: "생성된 광고 문구",
+        fake_run_text_pipeline,
     )
 
     monkeypatch.setattr(
@@ -66,7 +70,7 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
         lambda image_bytes: processed_bytes,
     )
 
-    def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
+    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
         assert source_image_bytes == processed_bytes
 
         return ImageAdResponse(
@@ -93,14 +97,16 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
         fake_generate_image_ads,
     )
 
-    result = run_generate_pipeline(
-        store_name="만월",
-        menu_name="데몬헌터스 케이크",
-        purpose="신메뉴 홍보",
-        request_note="",
-        moods=["cozy"],
-        tone="감성적인",
-        image_bytes=source_bytes,
+    result = asyncio.run(
+        run_generate_pipeline(
+            store_name="만월",
+            menu_name="데몬헌터스 케이크",
+            purpose="신메뉴 홍보",
+            request_note="",
+            moods=["cozy"],
+            tone="감성적인",
+            image_bytes=source_bytes,
+        )
     )
 
     assert result["image_generation_success"] is True
@@ -165,10 +171,13 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
         fake_record_performance_metric,
     )
 
+    async def fake_run_text_pipeline(**kwargs):
+        return "생성된 광고 문구"
+
     monkeypatch.setattr(
         generate_pipeline,
         "run_text_pipeline",
-        lambda **kwargs: "생성된 광고 문구",
+        fake_run_text_pipeline,
     )
 
     monkeypatch.setattr(
@@ -177,7 +186,7 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
         lambda image_bytes: processed_bytes,
     )
 
-    def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
+    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
         raise RuntimeError("image generation failed")
 
     monkeypatch.setattr(
@@ -186,14 +195,16 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
         fake_generate_image_ads,
     )
 
-    result = run_generate_pipeline(
-        store_name="만월",
-        menu_name="데몬헌터스 케이크",
-        purpose="신메뉴 홍보",
-        request_note="",
-        moods=["cozy"],
-        tone="감성적인",
-        image_bytes=source_bytes,
+    result = asyncio.run(
+        run_generate_pipeline(
+            store_name="만월",
+            menu_name="데몬헌터스 케이크",
+            purpose="신메뉴 홍보",
+            request_note="",
+            moods=["cozy"],
+            tone="감성적인",
+            image_bytes=source_bytes,
+        )
     )
 
     assert result["partial_success"] is True

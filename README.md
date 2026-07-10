@@ -15,11 +15,20 @@
 |---|---|
 | Frontend | Streamlit |
 | Backend | FastAPI |
-| AI (텍스트) | OpenAI `gpt-5-mini` / HuggingFace `Qwen3-4B-Instruct` |
-| AI (이미지) | OpenAI `gpt-image-1-mini` / HuggingFace `stable-diffusion-xl-base-1.0` |
+| AI (텍스트) | OpenAI `gpt-5.4-mini` / HuggingFace `Qwen/Qwen3-4B-Instruct-2507` |
+| AI (이미지) | OpenAI `gpt-image-1-mini` / HuggingFace `stable-diffusion-3.5-medium` |
 | Infra | Docker, Docker Compose, GCP, GitHub Actions |
 
 Provider는 `config/model.yaml`의 `active_profile`로 OpenAI / HuggingFace / Hybrid 조합을 선택합니다.
+
+## 모델 라이선스 고지
+
+**Powered by Stability AI**
+
+이 프로젝트는 이미지 생성 기능 중 일부에 Stability AI의
+`stable-diffusion-3.5-medium` 모델을 사용합니다.
+해당 모델은 [Stability AI Community License](https://stability.ai/community-license-agreement)
+를 따르며, 자세한 고지 사항은 [`NOTICE`](./NOTICE) 파일을 참고하세요.
 
 ## 프로젝트 구조
 

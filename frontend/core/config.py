@@ -29,7 +29,7 @@ REQUEST_TIMEOUT_AUTH = 10      # 초
 # 목업(Mock) 모드
 # --------------------------------------------------------------
 MOCK_MODE_DEFAULT = os.getenv("RG_MOCK_MODE", "false").lower() == "true"
-DEV_GUEST_MODE_DEFAULT = os.getenv("RG_DEV_GUEST_MODE", "true").lower() == "true"
+DEV_GUEST_MODE_DEFAULT = os.getenv("RG_DEV_GUEST_MODE", "false").lower() == "true"
 
 # --------------------------------------------------------------
 # 선택 옵션

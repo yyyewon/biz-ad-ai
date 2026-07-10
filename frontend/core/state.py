@@ -3,7 +3,7 @@
 """
 from __future__ import annotations
 import streamlit as st
-from core.config import MOCK_MODE_DEFAULT
+from core.config import DEV_GUEST_MODE_DEFAULT, MOCK_MODE_DEFAULT
 
 TOTAL_STEPS = 3
 STEP_LABELS = ["가게 & 메뉴 정보", "사진 업로드 & 무드 선택", "생성 결과 확인"]
@@ -32,7 +32,10 @@ def init_state() -> None:
             "error_code": None,     # 예: DAILY_LIMIT_EXCEEDED, GENERATION_BUSY 등
         },
         "mock_mode": MOCK_MODE_DEFAULT,
-        "auth": {"access_token": None, "user": None},
+
+        # 💡 초기 세션 스키마에 refresh_token을 명시해 줍니다.
+        "dev_guest_mode": DEV_GUEST_MODE_DEFAULT,
+        "auth": {"access_token": None, "refresh_token": None, "user": None},
     }
     for key, value in defaults.items():
         if key not in st.session_state:

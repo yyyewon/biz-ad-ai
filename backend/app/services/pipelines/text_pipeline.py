@@ -15,8 +15,7 @@ from loguru import logger
 from app.services.providers.factory import get_text_provider
 from app.utils.text_sanitizer import sanitize_generated_caption
 
-
-def run_text_pipeline(
+async def run_text_pipeline(
     store_name: str,
     menu_name: str,
     purpose: str,
@@ -57,7 +56,7 @@ def run_text_pipeline(
 
     provider = get_text_provider()
 
-    raw_result = provider.generate_text(
+    raw_result = await provider.generate_text(
         prompt=prompt,
         system_instruction=system_instruction,
     )

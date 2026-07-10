@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 from PIL import Image
@@ -13,7 +14,7 @@ class FakeImagesClient:
         self.edit_calls = []
         self.generate_calls = []
 
-    def edit(self, **kwargs):
+    async def edit(self, **kwargs):
         self.edit_calls.append(kwargs)
         return SimpleNamespace(
             data=[
@@ -23,7 +24,7 @@ class FakeImagesClient:
             ]
         )
 
-    def generate(self, **kwargs):
+    async def generate(self, **kwargs):
         self.generate_calls.append(kwargs)
         return SimpleNamespace(
             data=[
@@ -34,7 +35,7 @@ class FakeImagesClient:
         )
 
 
-class FakeOpenAI:
+class FakeAsyncOpenAI:
     images_client: FakeImagesClient | None = None
 
     def __init__(self, api_key: str):
@@ -51,16 +52,18 @@ def test_openai_image_provider_generate_returns_bytes(monkeypatch):
     image_bytes = _sample_png_bytes()
     fake_images_client = FakeImagesClient(image_bytes=image_bytes)
 
-    FakeOpenAI.images_client = fake_images_client
-    monkeypatch.setattr(openai_image_provider, "OpenAI", FakeOpenAI)
+    FakeAsyncOpenAI.images_client = fake_images_client
+    monkeypatch.setattr(openai_image_provider, "AsyncOpenAI", FakeAsyncOpenAI)
 
     provider = OpenAIImageProvider(api_key="test-api-key")
 
-    result = provider.generate(
-        input_image_bytes=image_bytes,
-        mask_image_bytes=None,
-        prompt="테스트 프롬프트",
-        num_images=2,
+    result = asyncio.run(
+        provider.generate(
+            input_image_bytes=image_bytes,
+            mask_image_bytes=None,
+            prompt="테스트 프롬프트",
+            num_images=2,
+        )
     )
 
     assert result == [image_bytes, image_bytes]
@@ -74,16 +77,18 @@ def test_openai_image_provider_generate_with_mask(monkeypatch):
     mask_bytes = _sample_png_bytes()
     fake_images_client = FakeImagesClient(image_bytes=image_bytes)
 
-    FakeOpenAI.images_client = fake_images_client
-    monkeypatch.setattr(openai_image_provider, "OpenAI", FakeOpenAI)
+    FakeAsyncOpenAI.images_client = fake_images_client
+    monkeypatch.setattr(openai_image_provider, "AsyncOpenAI", FakeAsyncOpenAI)
 
     provider = OpenAIImageProvider(api_key="test-api-key")
 
-    result = provider.generate(
-        input_image_bytes=image_bytes,
-        mask_image_bytes=mask_bytes,
-        prompt="테스트 프롬프트",
-        num_images=1,
+    result = asyncio.run(
+        provider.generate(
+            input_image_bytes=image_bytes,
+            mask_image_bytes=mask_bytes,
+            prompt="테스트 프롬프트",
+            num_images=1,
+        )
     )
 
     assert result == [image_bytes]
@@ -96,14 +101,16 @@ def test_openai_image_provider_generate_backgrounds_returns_bytes(monkeypatch):
     image_bytes = _sample_png_bytes()
     fake_images_client = FakeImagesClient(image_bytes=image_bytes)
 
-    FakeOpenAI.images_client = fake_images_client
-    monkeypatch.setattr(openai_image_provider, "OpenAI", FakeOpenAI)
+    FakeAsyncOpenAI.images_client = fake_images_client
+    monkeypatch.setattr(openai_image_provider, "AsyncOpenAI", FakeAsyncOpenAI)
 
     provider = OpenAIImageProvider(api_key="test-api-key")
 
-    result = provider.generate_backgrounds(
-        prompt="배경 생성 프롬프트",
-        num_images=2,
+    result = asyncio.run(
+        provider.generate_backgrounds(
+            prompt="배경 생성 프롬프트",
+            num_images=2,
+        )
     )
 
     assert result == [image_bytes, image_bytes]
