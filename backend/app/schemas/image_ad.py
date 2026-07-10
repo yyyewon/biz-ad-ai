@@ -3,25 +3,9 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-MoodType = Literal["cozy", "minimal", "luxury", "fresh", "vintage"]
 GenerationMode = Literal["direct_poster", "two_stage"]
 
-MOOD_ALIAS_MAP: dict[str, MoodType] = {
-    "cozy": "cozy",
-    "감성카페": "cozy",
-    "카페감성": "cozy",
-    "minimal": "minimal",
-    "모던미니멀": "minimal",
-    "모던 미니멀": "minimal",
-    "luxury": "luxury",
-    "고급스러운": "luxury",
-    "fresh": "fresh",
-    "화사한브런치": "fresh",
-    "화사한 브런치": "fresh",
-    "vintage": "vintage",
-    "빈티지레트로": "vintage",
-    "빈티지 레트로": "vintage",
-}
+
 
 
 class ImageAdRequest(BaseModel):
@@ -49,11 +33,10 @@ class ImageAdRequest(BaseModel):
         description="단독 이미지 생성 API에서 사용할 수 있는 입력 이미지 base64 문자열",
     )
 
-    mood: str = Field(default="cozy", description="인스타 무드 프리셋")
-    mood_list: Optional[List[str]] = Field(
-        default=None,
-        description="여러 무드를 순서대로 적용할 때 사용하는 목록(선택)",
-    )
+    food: Optional[str] = Field(default=None, description="2페이지: 음식 형태 (국, 찌개 등 단일 선택)")
+    image_request: Optional[str] = Field(default="", description="2페이지: 배경 및 이미지 추가 요청사항")
+    poster_type: Optional[str] = Field(default="단일 메뉴형", description="2페이지: 광고 레이아웃 유형")
+
     prompt: Optional[str] = Field(default=None, description="추가 프롬프트 문구(선택)")
     num_images: int = Field(default=3, ge=1, le=6, description="생성할 이미지 개수")
     seed: Optional[int] = Field(default=None, description="재현성을 위한 시드값(선택)")
@@ -62,7 +45,8 @@ class ImageAdRequest(BaseModel):
     menu_name: Optional[str] = Field(default=None, description="메뉴명 메타데이터")
     promotion_goal: Optional[str] = Field(default=None, description="홍보 목적 메타데이터")
     tone: Optional[str] = Field(default=None, description="문체/톤 메타데이터")
-    extra_notes: Optional[str] = Field(default=None, description="추가 요청사항 메타데이터")
+    llm_request: Optional[str] = Field(default=None, description="문구 요청사항 메타데이터")
+    image_request: Optional[str] = Field(default=None, description="이미지 요청사항 메타데이터")
     headline: Optional[str] = Field(default=None, description="포스터 상단 문구")
     price_text: Optional[str] = Field(default=None, description="포스터 가격 문구")
     layout_type: Optional[str] = Field(
@@ -70,7 +54,7 @@ class ImageAdRequest(BaseModel):
         description="포스터 레이아웃 타입(예: auto, classic, focus, left)",
     )
     generation_mode: GenerationMode = Field(
-        default="direct_poster",
+        default="two_stage",
         description="생성 모드(direct_poster: 누끼에서 바로 포스터, two_stage: 중간 음식 이미지 후 포스터)",
     )
 
@@ -78,25 +62,6 @@ class ImageAdRequest(BaseModel):
     def normalize_values(self) -> "ImageAdRequest":
         if not self.input_image_path and self.image_path:
             self.input_image_path = self.image_path
-
-        normalized = MOOD_ALIAS_MAP.get(
-            self.mood.replace(" ", ""),
-            MOOD_ALIAS_MAP.get(self.mood),
-        )
-        if not normalized:
-            raise ValueError("지원하지 않는 mood 값입니다.")
-
-        self.mood = normalized
-
-        if self.mood_list:
-            normalized_list: list[MoodType] = []
-            for mood_value in self.mood_list:
-                mood_key = mood_value.replace(" ", "")
-                mapped = MOOD_ALIAS_MAP.get(mood_key, MOOD_ALIAS_MAP.get(mood_value))
-                if not mapped:
-                    raise ValueError(f"지원하지 않는 mood_list 값입니다: {mood_value}")
-                normalized_list.append(mapped)
-            self.mood_list = normalized_list
 
         return self
 
@@ -123,11 +88,10 @@ class ImageAdResponse(BaseModel):
     """
 
     request_id: str
-    mood: MoodType
     prompt_used: str
     num_images: int
     latency_ms: int
-    generation_mode: GenerationMode = "direct_poster"
+    generation_mode: GenerationMode = "two_stage"
     stage_latencies_ms: dict[str, int] = Field(default_factory=dict)
 
     images: List[str] = Field(default_factory=list, description="최종 포스터 이미지 base64 목록")
@@ -137,6 +101,5 @@ class ImageAdResponse(BaseModel):
 
     image_bytes_list: List[bytes] = Field(default_factory=list, exclude=True)
 
-    applied_moods: List[MoodType] = Field(default_factory=list)
     seed: Optional[int] = None
     message: str = "ok"

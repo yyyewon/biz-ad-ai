@@ -19,8 +19,7 @@ async def run_text_pipeline(
     store_name: str,
     menu_name: str,
     purpose: str,
-    request_note: str,
-    moods: list,
+    llm_request: str,
     tone: str,
 ) -> str:
     """
@@ -30,22 +29,30 @@ async def run_text_pipeline(
     따라서 추후 HF text provider가 추가되어도 동일한 후처리 규칙이 적용된다.
     """
 
-    mood_str = ", ".join(moods) if moods else "일반적인"
+    conditions = [
+        "문구 중간중간 적절한 이모지를 섞어 주세요.",
+        "마지막 줄에는 관련 해시태그를 5개 이하 작성해 주세요.",
+        "과장되거나 허위로 보일 수 있는 표현은 피해주세요."
+    ]
+
+    # 추가 요청사항이 있을 경우 '작성 조건'에 강력한 명령어로 주입
+    if llm_request and llm_request.strip():
+        conditions.append(f"다음 요구사항을 문구에 빠뜨리지 말고 반영해 주세요: {llm_request.strip()}")
+
+    # 조건들을 번호 매긴 문자열로 변환
+    conditions_str = "\n".join(f"{i+1}. {cond}" for i, cond in enumerate(conditions))
 
     prompt = f"""
 아래 정보를 바탕으로 SNS(인스타그램)용 광고 문구를 작성해 주세요.
 
+[기본 정보]
 - 가게 이름: {store_name}
 - 메뉴/상품: {menu_name}
 - 광고 목적: {purpose}
-- 분위기: {mood_str}
 - 말투/톤: {tone}
-- 추가 요청사항: {request_note}
 
-작성 조건:
-1. 문구 중간중간 적절한 이모지를 섞어 주세요.
-2. 마지막 줄에는 관련 해시태그를 5개 이상 작성해 주세요.
-3. 과장되거나 허위로 보일 수 있는 표현은 피해주세요.
+[작성 조건]
+{conditions_str}
 """.strip()
 
     system_instruction = (
@@ -53,10 +60,10 @@ async def run_text_pipeline(
     )
 
     logger.info(
-        "text_pipeline_started | store_name={} | menu_name={} | mood_count={}",
+        "text_pipeline_started | store_name={} | menu_name={}, llm_request={}",
         store_name,
         menu_name,
-        len(moods or []),
+        llm_request,
     )
 
     provider = get_text_provider()

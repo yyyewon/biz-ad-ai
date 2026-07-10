@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Literal
+
+
+ImageRenderMode = Literal["photo_restyle", "background_swap"]
 
 
 class TextGenerationProvider(ABC):
@@ -35,6 +39,7 @@ class ImageGenerationProvider(ABC):
         prompt: str,
         num_images: int,
         mask_image_bytes: bytes | None = None,
+        render_mode: ImageRenderMode = "photo_restyle",
     ) -> list[bytes]:
         """
         입력 이미지 bytes를 기반으로 광고 이미지 bytes 목록을 생성한다.

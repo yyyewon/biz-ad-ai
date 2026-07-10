@@ -29,11 +29,11 @@ NON_RETRYABLE_ERROR_CODES: set[str] = {
 }
 
 MOOD_INPAINT_STYLE_MAP: dict[str, str] = {
-    "cozy": "따뜻한 베이지/우드 계열 색감, 부드러운 자연광, 아늑한 카페 무드",
-    "minimal": "밝은 아이보리/그레이 계열 색감, 단순한 배경, 정돈된 미니멀 무드",
-    "luxury": "딥 브라운/차콜 계열 색감, 대비가 강한 조명, 고급스러운 럭셔리 무드",
-    "fresh": "민트/크림 계열 색감, 밝고 산뜻한 자연광, 청량한 브런치 무드",
-    "vintage": "채도 낮은 베이지/브라운 계열 색감, 은은한 필름 질감, 빈티지 레트로 무드",
+    "cozy": "warm beige and wood tones, soft natural light, cozy cafe mood",
+    "minimal": "bright ivory and gray tones, clean plain background, tidy minimal mood",
+    "luxury": "deep brown and charcoal tones, high-contrast lighting, luxurious upscale mood",
+    "fresh": "mint and cream tones, bright airy natural light, fresh brunch mood",
+    "vintage": "muted beige and brown tones, soft film grain texture, vintage retro mood",
 }
 
 LAYOUT_ALIAS_MAP: dict[str, str] = {
@@ -50,23 +50,23 @@ LAYOUT_ALIAS_MAP: dict[str, str] = {
 }
 
 LAYOUT_POSTER_GUIDE_MAP: dict[str, str] = {
-    "classic": "상단 텍스트, 중앙 가격 포인트, 하단 음식 히어로 이미지의 균형 잡힌 정석형 구도",
-    "focus": "타이포를 간결하게 두고 음식을 더 크게 강조하는 집중형 구도",
-    "left": "음식을 좌측 또는 좌중앙에 배치하고 텍스트를 우측/상단으로 분산한 비대칭 구도",
+    "classic": "balanced layout: headline on top, price in the middle, hero food shot at the bottom",
+    "focus": "minimal typography, food enlarged as the main focal point",
+    "left": "food placed left or left-center, text distributed to the right/top for asymmetry",
 }
 
 POSTER_PROMPT_HARD_CONSTRAINTS: list[str] = [
-    "반드시 1080x1350 비율의 세로 포스터 디자인으로 생성해줘.",
-    "텍스트는 오직 한국어만 사용하고, 임의 영문 문구는 절대 넣지 마.",
-    "가독성이 낮은 배경 위에 텍스트를 두지 말고, 텍스트 영역은 대비를 충분히 확보해줘.",
-    "잘린 텍스트, 깨진 글자, 오탈자, 반복 글자, 의미 없는 문자는 절대 넣지 마.",
-    "로고, 워터마크, 브랜드명, 서명, 불필요한 장식 문구를 넣지 마.",
+    "all rendered text must be Korean only, no English words in the image",
+    "place text over high-contrast areas for readability",
+    "no cropped text, broken glyphs, typos, repeated characters, or gibberish",
+    "no logo, watermark, brand name, signature, or extra decorative text",
+    "no humans, people, hands, or body parts in the image",
 ]
 
 POSTER_RETRY_SUFFIXES: list[str] = [
     "",
-    "재시도 지시: 텍스트 정확도와 가독성을 최우선으로 다시 생성해줘. 레이아웃은 단순하고 안정적으로 구성해줘.",
-    "최종 재시도 지시: 텍스트 3개를 상단/중앙에 명확히 분리 배치하고, 음식은 하단 히어로 컷으로 크게 배치해줘.",
+    "Retry: prioritize text accuracy and readability, keep the layout simple and stable.",
+    "Final retry: clearly separate the 3 text elements at top/center, and place the food as a large hero shot at the bottom.",
 ]
 
 async def _gather_fail_fast(coros: list) -> list:
@@ -87,45 +87,28 @@ async def _gather_fail_fast(coros: list) -> list:
     return [task.result() for task in tasks]
 
 
-def _build_inpaint_prompt(payload: ImageAdRequest, mood: str) -> str:
-    base_style = MOOD_INPAINT_STYLE_MAP.get(mood, MOOD_INPAINT_STYLE_MAP["cozy"])
+def _build_photo_restyle_prompt(payload: ImageAdRequest, mood: str) -> str:
+    food_context = getattr(payload, "food", "") or payload.menu_name or "음식"
 
     prompt_chunks = [
-        "투명한 배경 영역만 자연스럽게 채워서 광고용 음식 이미지를 만들어줘.",
-        base_style,
-        "업로드된 음식과 접시는 최대한 유지해줘.",
-        "실사 기반의 상업용 푸드 포토그래피 느낌으로 생성해줘.",
-        "문구를 넣을 수 있도록 여백이 있는 깔끔한 구도로 만들어줘.",
-        "최종 색감/조명 분위기는 반드시 위의 무드 스타일과 일치시켜줘.",
-        "이미지 안에 글자, 영문 단어, 메뉴명, 로고, 워터마크를 절대 넣지 마.",
-        "추가 음식, 중복 접시, 잘린 접시를 만들지 마.",
+        "Professional restaurant editorial food photography",
+        f"food_context : {food_context}"
+        "re-photograph the same dish shown in the reference image",
+        "preserve the dish identity, portion, garnish, and plate",
+        "same tabletop close-up perspective",
+        "realistic natural contact shadows and coherent lighting",
+        "appetizing food texture, premium commercial food photo",
+        "not a cutout, not a collage, not a floating product",
+        "no duplicate food, no extra plate, no text, no logo, no watermark",
     ]
 
-    if payload.promotion_goal:
-        prompt_chunks.append(f"홍보 목적 맥락: {payload.promotion_goal}")
-
-    if payload.tone:
-        prompt_chunks.append(f"전반적인 무드 톤: {payload.tone}")
-
     if payload.extra_notes:
-        prompt_chunks.append(f"추가 요청사항: {payload.extra_notes}")
+        parts.append(f"creative direction: {payload.extra_notes}")
 
-    if payload.prompt:
-        prompt_chunks.append(f"사용자 직접 프롬프트: {payload.prompt}")
-
-    return ", ".join(prompt_chunks)
+    return ", ".join(parts)
 
 
 def _build_inpaint_mask_bytes(source_rgba: Image.Image) -> bytes:
-    """
-    이미지 편집용 RGBA 마스크를 PNG bytes로 생성한다.
-
-    - 주제 영역: 불투명 알파
-    - 배경 영역: 투명 알파
-
-    서버 디스크에 mask 파일을 저장하지 않는다.
-    """
-
     alpha = source_rgba.split()[-1]
     mask = Image.new("RGBA", source_rgba.size, (0, 0, 0, 255))
     mask.putalpha(alpha)
@@ -146,11 +129,6 @@ def _resolve_layout_type(layout_type: Optional[str], index: int) -> str:
     return ordered[index % len(ordered)]
 
 
-def _resolve_mood_for_index(payload: ImageAdRequest, index: int) -> str:
-    if payload.mood_list:
-        return payload.mood_list[index % len(payload.mood_list)]
-
-    return payload.mood
 
 
 def _resolve_generation_mode(mode: GenerationMode | str | None) -> GenerationMode:
@@ -160,60 +138,52 @@ def _resolve_generation_mode(mode: GenerationMode | str | None) -> GenerationMod
     return "direct_poster"
 
 
-def _build_poster_prompt(payload: ImageAdRequest, mood: str, layout_type: str) -> str:
-    mood_style = MOOD_INPAINT_STYLE_MAP.get(mood, MOOD_INPAINT_STYLE_MAP["cozy"])
-    layout_guide = LAYOUT_POSTER_GUIDE_MAP.get(
-        layout_type,
-        LAYOUT_POSTER_GUIDE_MAP["classic"],
-    )
-
+def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
+    food = (payload.food or "국")
     headline = (payload.headline or "").strip()
     menu_name = payload.menu_name or "오늘의 메뉴"
     price_text = (payload.price_text or "").strip()
 
     prompt_chunks = [
-        "입력된 음식 사진을 기반으로 인스타그램용 세로 광고 포스터를 실사 스타일로 만들어줘.",
-        f"포스터 무드: {mood_style}",
-        f"레이아웃 가이드: {layout_guide}",
-        "음식과 접시의 형태/재질은 유지하고 배경, 조명, 구도는 포스터 디자인에 맞게 새롭게 구성해줘.",
-        "세련된 브랜드 광고 느낌으로 전체 레이아웃을 새로 디자인해줘. 기존 템플릿처럼 보이지 않게 다양성을 확보해줘.",
-        "텍스트를 포스터 안에 직접 넣어줘. 글자 오탈자 없이 정확히 표기해줘.",
+        "Create a realistic vertical Instagram ad poster based on the input food photo.",
+        f"food: {food}"
+        "keep the food and plate shape/texture, redesign background, lighting, and composition for the poster",
+        "sleek brand advertisement look, avoid a generic template feel",
+        "render the text directly in the poster, spelled exactly and correctly",
     ]
 
     if headline:
-        prompt_chunks.append(f"표기 텍스트1(상단 카피): {headline}")
+        prompt_chunks.append(f"text 1 (top headline): {headline}")
     else:
-        prompt_chunks.append("표기 텍스트1(상단 카피)은 가게/목적 맥락에 맞게 자연스럽게 작성해줘.")
+        prompt_chunks.append(
+            "text 1 (top headline): write something natural for the store/promotion context"
+        )
 
     prompt_chunks.extend(
         [
-            f"표기 텍스트2(메뉴명, 가장 크게): {menu_name}",
+            f"text 2 (menu name, largest): {menu_name}",
             *POSTER_PROMPT_HARD_CONSTRAINTS,
-            "텍스트는 가독성이 높아야 하고 음식을 과도하게 가리지 않게 배치해줘.",
-            "로고/워터마크/불필요한 영문 문구는 넣지 마.",
         ]
     )
 
     if price_text:
-        prompt_chunks.append(f"표기 텍스트3(가격): {price_text}")
-        prompt_chunks.append("위에 지정한 텍스트는 띄어쓰기/문장부호/숫자/통화기호까지 정확히 동일하게 표기해줘.")
+        prompt_chunks.append(f"text 3 (price): {price_text}")
+        prompt_chunks.append(
+            "reproduce the text above exactly, including spacing, punctuation, numbers, and currency symbols"
+        )
     else:
-        prompt_chunks.append("가격 문구는 반드시 생략해줘.")
+        prompt_chunks.append("omit any price text")
 
     if payload.promotion_goal:
-        prompt_chunks.append(f"홍보 목적 맥락: {payload.promotion_goal}")
+        prompt_chunks.append(f"promotion goal: {payload.promotion_goal}")
 
     if payload.tone:
-        prompt_chunks.append(f"전반적인 문체/분위기: {payload.tone}")
+        prompt_chunks.append(f"tone: {payload.tone}")
 
     if payload.extra_notes:
-        prompt_chunks.append(f"추가 요청사항: {payload.extra_notes}")
-
-    if payload.prompt:
-        prompt_chunks.append(f"사용자 직접 프롬프트: {payload.prompt}")
+        prompt_chunks.append(f"image request: {payload.image_request}")
 
     return ", ".join(prompt_chunks)
-
 
 async def _generate_poster_with_retries(
     *,
@@ -221,6 +191,7 @@ async def _generate_poster_with_retries(
     source_image_bytes: bytes,
     base_prompt: str,
     mask_image_bytes: bytes | None = None,
+    render_mode: str = "photo_restyle",
 ) -> list[bytes]:
     last_error: Exception | None = None
 
@@ -233,6 +204,7 @@ async def _generate_poster_with_retries(
                 mask_image_bytes=mask_image_bytes,
                 prompt=retry_prompt,
                 num_images=1,
+                render_mode=render_mode,
             )
 
             if image_bytes_list:
@@ -273,24 +245,18 @@ async def _generate_poster_with_retries(
 
 async def generate_image_ads(
     payload: ImageAdRequest,
-    source_image_bytes: bytes,
+    original_image_bytes: bytes,
+    subject_cutout_bytes: bytes | None,
     seed: Optional[int] = None,
 ) -> ImageAdResponse:
     """
     이미지 광고 생성 파이프라인.
-
-    메모리 기반 처리 기준:
-    - 입력 이미지는 bytes로 받는다.
-    - 전처리 source/mask/poster 이미지를 서버 디스크에 저장하지 않는다.
-    - provider는 list[bytes]를 반환한다.
-    - API 응답용 이미지는 base64 문자열로 변환한다.
-    - 포스터 생성은 num_images 개수만큼 asyncio.gather로 병렬 실행한다.
     """
 
     started = time.perf_counter()
     request_id = f"img-{uuid.uuid4().hex[:10]}"
 
-    if not source_image_bytes:
+    if not original_image_bytes:
         raise AppException(
             errors.EMPTY_IMAGE_FILE,
             detail={"request_id": request_id},
@@ -301,13 +267,20 @@ async def generate_image_ads(
         request_id,
         payload.generation_mode,
         payload.num_images,
-        len(source_image_bytes),
+        len(original_image_bytes),
     )
 
     try:
-        source_rgba = image_bytes_to_pil(source_image_bytes).convert("RGBA")
-        prepared_source_bytes = pil_image_to_png_bytes(source_rgba)
-        mask_bytes = _build_inpaint_mask_bytes(source_rgba)
+        original_photo_bytes = pil_image_to_png_bytes(
+            image_bytes_to_pil(original_image_bytes).convert("RGB")
+        )
+
+        cutout_rgba = image_bytes_to_pil(
+            subject_cutout_bytes or original_image_bytes
+        ).convert("RGBA")
+
+        cutout_bytes = pil_image_to_png_bytes(cutout_rgba)
+        mask_bytes = _build_inpaint_mask_bytes(cutout_rgba)
 
         provider = get_image_provider()
         generation_mode = _resolve_generation_mode(payload.generation_mode)
@@ -315,7 +288,6 @@ async def generate_image_ads(
         prompt_used = ""
         generated_image_bytes: list[bytes] = []
         generated_image_base64: list[str] = []
-        applied_moods: list[str] = []
         stage_latencies_ms: dict[str, int] = {}
 
         food_stage_started = time.perf_counter()
@@ -323,13 +295,14 @@ async def generate_image_ads(
         if generation_mode == "two_stage":
             async def _generate_food_image(idx: int) -> tuple[int, str, bytes]:
                 current_mood = _resolve_mood_for_index(payload, idx)
-                current_prompt = _build_inpaint_prompt(payload, current_mood)
+                current_prompt = _build_photo_restyle_prompt(payload, current_mood)
 
                 iter_images = await provider.generate(
-                    input_image_bytes=prepared_source_bytes,
-                    mask_image_bytes=mask_bytes,
+                    input_image_bytes=original_photo_bytes,
+                    mask_image_bytes=None,
                     prompt=current_prompt,
                     num_images=1,
+                    render_mode="photo_restyle",
                 )
                 
                 if not iter_images:
@@ -342,25 +315,19 @@ async def generate_image_ads(
                         },
                     )
 
-                return idx, current_mood, iter_images[0]
+                return idx, iter_images[0]
 
             food_results = await _gather_fail_fast(
                 [_generate_food_image(idx) for idx in range(payload.num_images)]
             )
 
-            for idx, current_mood, image_bytes in sorted(food_results, key=lambda item: item[0]):
-                applied_moods.append(current_mood)
+            for idx, image_bytes in sorted(food_results, key=lambda item: item[0]):
                 generated_image_bytes.append(image_bytes)
                 generated_image_base64.append(encode_image_bytes_to_base64(image_bytes))
 
-                if not prompt_used:
-                    prompt_used = _build_inpaint_prompt(payload, current_mood)
+            if applied_moods:
+                prompt_used = _build_photo_restyle_prompt(payload, applied_moods[0])
 
-        else:
-            applied_moods = [
-                _resolve_mood_for_index(payload, idx)
-                for idx in range(payload.num_images)
-            ]
 
         stage_latencies_ms["food_generation_ms"] = int(
             (time.perf_counter() - food_stage_started) * 1000
@@ -372,21 +339,22 @@ async def generate_image_ads(
             source_for_poster = (
                 generated_image_bytes[idx]
                 if generation_mode == "two_stage"
-                else prepared_source_bytes
+                else cutout_bytes
             )
+
+            if generation_mode == "two_stage":
+                return idx, source_for_poster, "photo_restyle"
 
             resolved_layout = _resolve_layout_type(payload.layout_type, idx)
 
             poster_payload = ImageAdRequest(
                 **{
                     **payload.model_dump(),
-                    "mood": applied_moods[idx],
                 }
             )
 
             poster_prompt = _build_poster_prompt(
                 payload=poster_payload,
-                mood=applied_moods[idx],
                 layout_type=resolved_layout,
             )
 
@@ -395,6 +363,7 @@ async def generate_image_ads(
                 source_image_bytes=source_for_poster,
                 base_prompt=poster_prompt,
                 mask_image_bytes=mask_bytes if generation_mode == "direct_poster" else None,
+                render_mode="background_swap",
             )
 
             if not poster_outputs:
@@ -441,7 +410,6 @@ async def generate_image_ads(
 
         return ImageAdResponse(
             request_id=request_id,
-            mood=payload.mood,
             prompt_used=prompt_used,
             num_images=payload.num_images,
             latency_ms=latency_ms,
@@ -452,7 +420,6 @@ async def generate_image_ads(
             composite_images=generated_image_base64,
             poster_images=poster_images_base64,
             image_bytes_list=poster_image_bytes,
-            applied_moods=applied_moods,
             seed=seed or payload.seed,
         )
 

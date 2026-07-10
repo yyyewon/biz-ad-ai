@@ -128,29 +128,30 @@ async def generate_text_only_endpoint(
     store_name: str = Form(..., description="가게 이름"),
     menu_name: str = Form(..., description="메뉴/상품 이름"),
     purpose: str | None = Form(None, description="광고 목적"),
-    request_note: str = Form("", description="추가 요청사항"),
-    moods: str = Form("", description="분위기 키워드 (콤마 구분)"),
+    food: str = Form("", description="음식 종류"),
     tone: str = Form("", description="말투/톤"),
+    llm_request: str = Form("", description="광고 문구 생성 요구사항"),
 ):
     """
-    개발/테스트용 텍스트 광고 문구 생성 API
+    텍스트 광고 문구만 생성하는 API.
 
-    최종 경로:
-    POST /api/v1/dev/ad/text
-
-    기능:
-    - 문구 생성 파이프라인 단독 테스트
-    - Form 데이터 기반으로 문구 생성
+    공통 응답 형식:
+    {
+      "success": true,
+      "data": {
+        "caption": "..."
+      },
+      "error": null
+    }
     """
+
     try:
-        # 콤마로 구분된 분위기 문자열을 리스트로 변환
-        mood_list = [m.strip() for m in moods.split(",") if m.strip()] if moods else []
 
         logger.info(
-            "text_ad_endpoint_started | store_name={} | menu_name={} | mood_count={}",
+            "text_ad_endpoint_started | store_name={} | menu_name={} | food={}",
             store_name,
             menu_name,
-            len(mood_list),
+            food,
         )
 
         # 광고 문구 생성
@@ -158,8 +159,8 @@ async def generate_text_only_endpoint(
             store_name=store_name,
             menu_name=menu_name,
             purpose=purpose or "홍보",
-            request_note=request_note,
-            moods=mood_list,
+            llm_request=llm_request,
+            food=food,
             tone=tone,
         )
 

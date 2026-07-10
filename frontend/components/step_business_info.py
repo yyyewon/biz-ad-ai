@@ -27,8 +27,8 @@ def render() -> None:
         business = st.session_state.business
 
         with st.form("business_info_form", border=False):
-            col1, col2 = st.columns(2, gap="small")
-            with col1:
+            row1_col1, row1_col2 = st.columns(2, gap="small")
+            with row1_col1:
                 store_name = st.text_input(
                     "가게 이름",
                     value=business["store_name"],
@@ -36,7 +36,7 @@ def render() -> None:
                     max_chars=30,
                     help="영수증이나 간판에 적힌 상호명을 적어주세요."
                 )
-            with col2:
+            with row1_col2:
                 menu_name = st.text_input(
                     "대표 메뉴 이름",
                     value=business["menu_name"],
@@ -45,6 +45,23 @@ def render() -> None:
                     help="이번에 홍보하고 싶으신 핵심 메뉴를 적어주세요."
                 )
             
+            row2_col1, row2_col2 = st.columns(2, gap="small")
+            with row2_col1:
+                store_location = st.text_input(
+                    "가게 이름",
+                    value=business["store_location"],
+                    placeholder="예) 서울시 강서구",
+                    max_chars=30,
+                    help="가게 위치를 적어주세요"
+                )
+            with row2_col2:
+                price = st.text_input(
+                    "가격",
+                    value=business["price"],
+                    placeholder="예) 10000원",
+                    max_chars=30,
+                )
+
             # 홍보 목적 선택 구역
             st.markdown('<div style="margin-top: 0.5rem;"></div>', unsafe_allow_html=True)
             purpose = st.pills(
@@ -54,15 +71,7 @@ def render() -> None:
                 default=business["purpose"],
                 key="business_purpose_pills",
             )
-            
-            # 요청사항 입력 구역
-            request_note = st.text_area(
-                "요청사항 (선택)",
-                value=business["request_note"],
-                placeholder="예) 매장 인테리어보다는 음식 자체가 부각되면 좋겠어요.",
-                height=90,
-                max_chars=200,
-            )
+
             submitted = st.form_submit_button(
                 "다음 단계로 →",
                 type="primary",
@@ -72,8 +81,8 @@ def render() -> None:
 
     if submitted:
         if not store_name.strip() or not menu_name.strip() or purpose is None:
-            st.warning("가게 이름, 메뉴 이름, 홍보 목적을 모두 입력해 주세요. (요청사항은 선택 입력이에요)")
+            st.warning("가게 이름, 메뉴 이름, 홍보 목적을 모두 입력해 주세요.")
             return
-        set_business_info(store_name, menu_name, purpose, request_note)
+        set_business_info(store_name, menu_name, store_location, price, purpose)
         next_step()
         st.rerun()

@@ -523,7 +523,7 @@ hf:
 
         # 생성 이미지 크기
         width: 1024
-        height: 1024
+        height: 1280 
 
         # 모델 카드
         num_inference_steps: 40
@@ -534,7 +534,14 @@ hf:
 
         # image-to-image(배경 교체)에 사용할 강도.
         # 0.0=원본과 거의 동일, 1.0=원본을 거의 무시
-        img2img_strength: 0.65
+        img2img_restyle_strength: 0.54
+        seam_blend_strength: 0.18
+        seam_ring_px: 12
+        composite_feather_px: 3
+        color_harmonize_strength: 0.55
+        drop_shadow_opacity: 0.3
+        drop_shadow_blur_px: 16
+        drop_shadow_offset_y: 14
 
         num_images_per_prompt: 1
 

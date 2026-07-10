@@ -3,7 +3,7 @@ Step 2: 사진 업로드 & 무드/톤 선택
 """
 from __future__ import annotations
 import streamlit as st
-from core.config import MOOD_OPTIONS, TONE_OPTIONS, MAX_UPLOAD_MB, ALLOWED_IMAGE_TYPES
+from core.config import FOOD_OPTIONS, TONE_OPTIONS, MAX_UPLOAD_MB, ALLOWED_IMAGE_TYPES
 from core.upload_validation import validate_upload_image_file
 from core.auth import get_daily_usage, is_quota_exceeded
 from core.state import set_upload, set_style, is_upload_step_valid, next_step, prev_step
@@ -19,14 +19,16 @@ def render() -> None:
         with st.container(border=True):
             st.markdown(
                 '<span class="rg-eyebrow">STEP 2</span>'
-                '<div class="rg-card-title">음식 사진과 원하는 무드를 알려주세요</div>'
-                '<div class="rg-card-desc">배경은 AI가 새 배경으로 자연스럽게 바꿔드려요. 원본 음식은 그대로 유지됩니다.</div>',
+                '<div class="rg-card-title">음식 사진과 원하는 광고 형식, 음식 유형을 알려주세요.</div>'
+                '<div class="rg-card-desc">배경은 AI가 새 배경으로 자연스럽게 바꿔드려요.</div>',
                 unsafe_allow_html=True,
             )
 
             if quota_exceeded:
                 usage = get_daily_usage() or {}
                 quota_exceeded_banner(limit=usage.get("limit"))
+
+
 
             uploaded_file = st.file_uploader(
                 "음식 사진 업로드",
@@ -43,13 +45,15 @@ def render() -> None:
                     set_upload(None, None)
                 else:
                     set_upload(image_bytes, uploaded_file.name)
+            else:
+                set_upload(None, "")
 
-            moods = st.pills(
-                "원하는 인스타 무드 (복수 선택 가능)",
-                options=MOOD_OPTIONS,
-                selection_mode="multi",
-                default=st.session_state.upload["moods"],
-                key="upload_moods_pills",
+            food = st.pills(
+                "음식 형태",
+                options=FOOD_OPTIONS,
+                selection_mode="single",
+                default=st.session_state.upload["food"],
+                key="upload_food_type",
             )
 
             tone = st.segmented_control(
@@ -60,7 +64,21 @@ def render() -> None:
                 key="upload_tone_select",
             )
 
-            set_style(moods or [], tone)
+            image_request = st.text_area(
+                "배경 및 이미지 요청사항 (선택)",
+                placeholder="예) 따뜻한 햇살이 드는 우드 테이블 느낌으로 해주세요.",
+                value=st.session_state.upload["image_request"],
+                key="upload_image_request"
+            )
+
+            llm_request = st.text_area(
+                "광고 문구 생성에 대한 요청사항(선택)",
+                placeholder="예)현재 1주일간 이벤트 중인데 해당 사항을 포함하게 해주세요.",
+                value=st.session_state.upload["llm_request"],
+                key="upload_llm_request"
+            )
+
+            set_style(food, tone, image_request, llm_request)
 
             nav_left, nav_right = st.columns(2)
             with nav_left:
