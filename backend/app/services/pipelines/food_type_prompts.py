@@ -80,6 +80,46 @@ _REALISM_RULES = """
 - 인위적으로 매끄럽거나 왁스처럼 보이는 가짜 음식 질감 금지
 """.strip()
 
+_VISUAL_OVERRIDE_KEYWORDS: tuple[str, ...] = (
+    "배경",
+    "테이블",
+    "조명",
+    "분위기",
+    "색감",
+    "톤",
+    "연출",
+    "느낌",
+    "스타일",
+    "밝",
+    "어둡",
+    "따뜻",
+    "차분",
+    "미니멀",
+    "나무",
+    "우드",
+    "베이지",
+)
+
+
+def _user_requests_visual_override(extra_notes: str) -> bool:
+    text = (extra_notes or "").strip().lower()
+    if not text:
+        return False
+    return any(keyword in text for keyword in _VISUAL_OVERRIDE_KEYWORDS)
+
+
+def _build_user_priority_block(extra_notes: str) -> str:
+    note = (extra_notes or "").strip()
+    if not note:
+        return ""
+
+    return f"""
+[최우선 — 사용자 이미지 요청]
+아래 사용자 요청을 **음식 유형 기본 규칙·배경 규칙보다 우선** 적용하세요.
+충돌할 때는 사용자 요청을 따르되, 음식 형태·메뉴 구성·한국어 텍스트 규칙·로고·워터마크 금지는 유지하세요.
+- 사용자 요청: {note}
+""".strip()
+
 
 # =============================================================================
 # 1. 스튜디오 (1번 이미지)
@@ -93,6 +133,8 @@ _STUDIO_PHOTO_TEMPLATE = """
 당신은 배달앱·SNS 전문 푸드 포토그래퍼입니다.
 첨부된 [{menu_name}] 사진을 **상업용 에디토리얼 푸드 사진**으로 재촬영한 것처럼 재생성하세요.
 가게명: {store_name} | 음식 유형: {food_type_label}
+
+{user_priority_block}
 
 {food_subject_rules}
 
@@ -111,7 +153,6 @@ _STUDIO_VARIANT_OUTPUT = """
 [톤 & 맥락]
 - 홍보 목적: {promotion_goal}
 - 말투/분위기: {tone}
-{extra_notes_line}
 """.strip()
 
 
@@ -362,6 +403,8 @@ _POSTER_PHOTO_TEMPLATE = """
 첨부 **원본 [{menu_name}] 사진**을 기반으로, 배달앱·식당 SNS에 올릴 **완성형 상업 포스터** 1장을 만드세요.
 가게명: {store_name} | 음식 유형: {food_type_label}
 
+{user_priority_block}
+
 {poster_layout_rules}
 
 [표기할 한국어 텍스트 — 정확히]
@@ -385,7 +428,6 @@ _POSTER_PHOTO_TEMPLATE = """
 [톤 & 맥락]
 - 홍보 목적: {promotion_goal}
 - 말투/분위기: {tone}
-{extra_notes_line}
 
 [명시적 금지]
 - 단색·플랫 배경만 있는 포스터
@@ -432,56 +474,142 @@ _POSTER_SOUP_STEW_BACKGROUND = """
 """.strip()
 
 # -----------------------------------------------------------------------------
-# 2-2. 튀김 (fried) — 미작성 · 아래 dict에 추가 후 FOOD_VARIANT_PROMPT_TEMPLATES 등록
+# 2-2. 튀김 (fried)
 # -----------------------------------------------------------------------------
-# _POSTER_FRIED_FOOD = """...""".strip()
-# _POSTER_FRIED_BACKGROUND = """...""".strip()
+
+_POSTER_FRIED_FOOD = """
+[음식 — 포스터 히어로 컷 · 튀김]
+- 첨부 **원본 사진**의 메인 튀김/치킨을 하단 히어로에 크게 배치
+- **바삭한 튀김옷·황금빛 겉면**이 선명하게 보이도록
+- 원본 음식·소스·가니쉬 구성 유지, 원본에 없는 음식 추가 금지
+- 눅눅하거나 과한 기름기·플라스틱 질감 금지
+""".strip()
+
+_POSTER_FRIED_BACKGROUND = """
+[배경·디자인 — 튀김 포스터]
+- 단색·플랫 배경만 금지 — **캐주얼 다이닝 포스터** 느낌의 디자인 배경
+- 크래프트 페이퍼·나무 질감·따뜻한 오렌지·골드 계열 패턴
+- 바삭함을 연상시키는 밝고 식욕 자극적인 톤
+- 스튜디오 식당 테이블 실사 배경 그대로 쓰지 말 것
+""".strip()
 
 # -----------------------------------------------------------------------------
-# 2-3. 구이·바베큐 (grilled_bbq) — 미작성
+# 2-3. 구이·바베큐 (grilled_bbq)
 # -----------------------------------------------------------------------------
-# _POSTER_GRILLED_BBQ_FOOD = """...""".strip()
-# _POSTER_GRILLED_BBQ_BACKGROUND = """...""".strip()
+
+_POSTER_GRILLED_BBQ_FOOD = """
+[음식 — 포스터 히어로 컷 · 구이·바베큐]
+- 첨부 **원본 사진**의 메인 고기/구이를 하단 히어로에 크게 배치
+- **그릴 마크·윤기·구운 결**이 선명한 실사 컷
+- 원본 음식·토핑·곁들임 구성 유지, 원본에 없는 음식 추가 금지
+""".strip()
+
+_POSTER_GRILLED_BBQ_BACKGROUND = """
+[배경·디자인 — 구이·바베큐 포스터]
+- 단색·플랫 배경만 금지 — **다크무드 바베큐 포스터** 디자인 배경
+- 숯·불꽃·스모크·딥 브라운·차콜 계열 질감·패턴
+- 고기 색감과 대비되면서 고급스러운 톤
+- 스튜디오 식당 테이블 실사 배경 그대로 쓰지 말 것
+""".strip()
 
 # -----------------------------------------------------------------------------
-# 2-4. 덮밥·볶음·비빔 (rice_dish) — 미작성
+# 2-4. 덮밥·볶음·비빔 (rice_dish)
 # -----------------------------------------------------------------------------
-# _POSTER_RICE_DISH_FOOD = """...""".strip()
-# _POSTER_RICE_DISH_BACKGROUND = """...""".strip()
+
+_POSTER_RICE_DISH_FOOD = """
+[음식 — 포스터 히어로 컷 · 덮밥·볶음·비빔]
+- 첨부 **원본 사진**의 메인 그릇을 하단 히어로에 크게 배치
+- **밥/면·토핑·소스의 층감**이 보이도록
+- 원본 구성 유지, 원본에 없는 재료 추가 금지
+""".strip()
+
+_POSTER_RICE_DISH_BACKGROUND = """
+[배경·디자인 — 덮밥·볶음·비빔 포스터]
+- 단색·플랫 배경만 금지 — 밝고 깔끔한 **한 끼 식사 포스터** 배경
+- 우드·라이트 베이지·소프트 패턴, 식욕 자극하는 warm tone
+- 음식 색감과 조화되는 밝은 상업 포스터 톤
+- 스튜디오 식당 테이블 실사 배경 그대로 쓰지 말 것
+""".strip()
 
 # -----------------------------------------------------------------------------
-# 2-5. 빵·디저트·케이크 (bread_dessert) — 미작성
+# 2-5. 빵·디저트·케이크 (bread_dessert)
 # -----------------------------------------------------------------------------
-# _POSTER_BREAD_DESSERT_FOOD = """...""".strip()
-# _POSTER_BREAD_DESSERT_BACKGROUND = """...""".strip()
+
+_POSTER_BREAD_DESSERT_FOOD = """
+[음식 — 포스터 히어로 컷 · 빵·디저트]
+- 첨부 **원본 사진**의 메인 디저트/빵을 하단 히어로에 크게 배치
+- **크럼·크림·결이·토핑 디테일**이 선명하게
+- 원본 구성 유지, 원본에 없는 장식 추가 금지
+""".strip()
+
+_POSTER_BREAD_DESSERT_BACKGROUND = """
+[배경·디자인 — 디저트 포스터]
+- 단색·플랫 배경만 금지 — **카페 디저트 포스터** 감성 배경
+- 파스텔·크림·라떼 베이지·부드러운 패턴
+- 달콤하고 세련된 카페 브랜드 느낌
+- 스튜디오 식당 테이블 실사 배경 그대로 쓰지 말 것
+""".strip()
 
 # -----------------------------------------------------------------------------
-# 2-6. 버거·샌드위치 (burger_sandwich) — 미작성
+# 2-6. 버거·샌드위치 (burger_sandwich)
 # -----------------------------------------------------------------------------
-# _POSTER_BURGER_SANDWICH_FOOD = """...""".strip()
-# _POSTER_BURGER_SANDWICH_BACKGROUND = """...""".strip()
+
+_POSTER_BURGER_SANDWICH_FOOD = """
+[음식 — 포스터 히어로 컷 · 버거·샌드위치]
+- 첨부 **원본 사진**의 메인 버거/샌드위치를 하단 히어로에 크게 배치
+- **재료 층·번·패티·치즈·소스**가 식욕 자극적으로 보이게
+- 원본 구성 유지, 원본에 없는 재료 추가 금지
+""".strip()
+
+_POSTER_BURGER_SANDWICH_BACKGROUND = """
+[배경·디자인 — 버거·샌드위치 포스터]
+- 단색·플랫 배경만 금지 — **캐주얼 다이너·브런치 포스터** 배경
+- 볼드한 컬러 포인트·모던 패턴·따뜻한 레드·머스타드 계열 포인트 가능
+- 패스트푸드·브런치 메뉴판 느낌의 상업 포스터
+- 스튜디오 식당 테이블 실사 배경 그대로 쓰지 말 것
+""".strip()
 
 # -----------------------------------------------------------------------------
-# 2-7. 커피·음료 (coffee_drink) — 미작성
+# 2-7. 커피·음료 (coffee_drink)
 # -----------------------------------------------------------------------------
-# _POSTER_COFFEE_DRINK_FOOD = """...""".strip()
-# _POSTER_COFFEE_DRINK_BACKGROUND = """...""".strip()
+
+_POSTER_COFFEE_DRINK_FOOD = """
+[음식 — 포스터 히어로 컷 · 커피·음료]
+- 첨부 **원본 사진**의 메인 컵/음료를 하단 히어로에 크게 배치
+- **음료 겹·거품·얼음·잔 형태**가 선명하게
+- 원본 컵·음료 구성 유지, 원본에 없는 소품 추가 금지
+""".strip()
+
+_POSTER_COFFEE_DRINK_BACKGROUND = """
+[배경·디자인 — 커피·음료 포스터]
+- 단색·플랫 배경만 금지 — **미니멀 카페 음료 포스터** 배경
+- 화이트·오크·소프트 그린·클린 패턴, 차분하고 세련된 톤
+- 음료 색감이 돋보이는 깔끔한 상업 포스터
+- 스튜디오 식당 테이블 실사 배경 그대로 쓰지 말 것
+""".strip()
 
 # -----------------------------------------------------------------------------
-# 2-x. 포스터 레지스트리 (UI 선택 순서 · 작성된 유형만)
+# 2-x. 포스터 레지스트리 (UI 선택 순서)
 # -----------------------------------------------------------------------------
 
 FOOD_POSTER_FOOD_RULES: dict[FoodType, str] = {
     "soup_stew": _POSTER_SOUP_STEW_FOOD,
-    # "fried": _POSTER_FRIED_FOOD,
-    # "rice_dish": _POSTER_RICE_DISH_FOOD,
-    # ...
+    "fried": _POSTER_FRIED_FOOD,
+    "grilled_bbq": _POSTER_GRILLED_BBQ_FOOD,
+    "rice_dish": _POSTER_RICE_DISH_FOOD,
+    "bread_dessert": _POSTER_BREAD_DESSERT_FOOD,
+    "burger_sandwich": _POSTER_BURGER_SANDWICH_FOOD,
+    "coffee_drink": _POSTER_COFFEE_DRINK_FOOD,
 }
 
 FOOD_POSTER_BACKGROUND_RULES: dict[FoodType, str] = {
     "soup_stew": _POSTER_SOUP_STEW_BACKGROUND,
-    # "fried": _POSTER_FRIED_BACKGROUND,
-    # ...
+    "fried": _POSTER_FRIED_BACKGROUND,
+    "grilled_bbq": _POSTER_GRILLED_BBQ_BACKGROUND,
+    "rice_dish": _POSTER_RICE_DISH_BACKGROUND,
+    "bread_dessert": _POSTER_BREAD_DESSERT_BACKGROUND,
+    "burger_sandwich": _POSTER_BURGER_SANDWICH_BACKGROUND,
+    "coffee_drink": _POSTER_COFFEE_DRINK_BACKGROUND,
 }
 
 
@@ -498,6 +626,8 @@ _REELS_PHOTO_TEMPLATE = """
 첨부 **매장에서 찍은 [{menu_name}] 사진**을, 릴스에 올릴 **음식 클로즈업 컷** 1장으로 다듬으세요.
 가게명: {store_name} | 음식 유형: {food_type_label}
 
+{user_priority_block}
+
 {reels_food_rules}
 
 {reels_scene_rules}
@@ -509,7 +639,6 @@ _REELS_PHOTO_TEMPLATE = """
 [톤 & 맥락]
 - 홍보 목적: {promotion_goal}
 - 말투/분위기: {tone}
-{extra_notes_line}
 """.strip()
 
 _REELS_VARIANT_OUTPUT = """
@@ -545,6 +674,22 @@ _REELS_SCENE_RULES = """
 - **화면 왼쪽 하단 20%는 자막용 여백** — 한국어 후킹 문구는 후처리(PIL)로 합성, 이미지에 글자 넣지 말 것
 """.strip()
 
+_REELS_SCENE_RULES_FLEXIBLE = """
+[릴스 촬영 — 사용자 배경·연출 요청 반영]
+- **원본 음식·재료·토핑·그릇/용기 형태**는 유지
+- 상단 **최우선 사용자 요청**에 맞게 배경·조명·분위기·색감·테이블 연출을 조정할 수 있음
+- 메인 음식 **극단적 클로즈업**(화면 70~85%), 인물 없음
+- 밝고 선명한 실사 톤, 재생 버튼·UI·워터마크·이미지 내 글자 금지
+- **화면 왼쪽 하단 20%는 자막용 여백** — 후킹 문구는 후처리(PIL)로 합성
+""".strip()
+
+
+def _build_reels_scene_rules(extra_notes: str) -> str:
+    if _user_requests_visual_override(extra_notes):
+        return _REELS_SCENE_RULES_FLEXIBLE
+    return _REELS_SCENE_RULES
+
+
 _REELS_REALISM_EXTRA = """
 [리얼리즘 — 릴스 추가 강조 (위 공통 규칙 + 아래를 더 엄격히)]
 - **실제 맛집에서 스마트폰·카메라로 찍은 한 컷**처럼 보일 것 — 스튜디오 재촬영·합성·AI 리터치 티 금지
@@ -573,9 +718,11 @@ FOOD_VARIANT_PROMPT_TEMPLATES: dict[tuple[FoodType, ImageVariantType], str] = {
     ("bread_dessert", "studio"): _STUDIO_TEMPLATE,
     ("burger_sandwich", "studio"): _STUDIO_TEMPLATE,
     ("coffee_drink", "studio"): _STUDIO_TEMPLATE,
-    # --- 포스터 (유형별 규칙 · 작성된 유형만) ---
-    ("soup_stew", "poster"): _POSTER_TEMPLATE,
-    # ("fried", "poster"): _POSTER_TEMPLATE,
+    # --- 포스터 (유형별 규칙) ---
+    **{
+        (food_type, "poster"): _POSTER_TEMPLATE
+        for food_type in FOOD_STUDIO_SUBJECT_RULES
+    },
     # --- 릴스 (전 유형 공통 템플릿) ---
     **{
         (food_type, "instagram_feed"): _REELS_TEMPLATE
@@ -679,6 +826,7 @@ def build_template_context(
         "tone": payload.tone or "",
         "promotion_goal": payload.promotion_goal or "",
         "extra_notes": extra_notes,
+        "user_priority_block": _build_user_priority_block(extra_notes),
         "food_type_label": FOOD_TYPE_LABELS[food_type],
         "variant_label": VARIANT_LABELS[variant],
         "scene_hint": get_food_type_scene_hint(food_type),
@@ -689,9 +837,7 @@ def build_template_context(
         ),
         "price_line": price_line,
         "price_accuracy_line": price_accuracy_line,
-        "extra_notes_line": (
-            f"- 추가 요청: {extra_notes}" if extra_notes else ""
-        ),
+        "extra_notes_line": "",
         # 스튜디오
         "food_subject_rules": FOOD_STUDIO_SUBJECT_RULES[food_type],
         "studio_scene_rules": FOOD_STUDIO_SCENE_RULES[food_type],
@@ -708,7 +854,7 @@ def build_template_context(
         ),
         # 릴스 (전 유형 공통)
         "reels_food_rules": _REELS_FOOD_RULES,
-        "reels_scene_rules": _REELS_SCENE_RULES,
+        "reels_scene_rules": _build_reels_scene_rules(extra_notes),
         "reels_realism_extra": _REELS_REALISM_EXTRA,
         "reels_hook_line": _build_reels_hook_line(
             store_name=store_name,

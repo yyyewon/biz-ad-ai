@@ -16,8 +16,12 @@ from app.schemas.image_ad import (
     ImageAdResponse,
     ImageVariantType,
 )
-from app.services.pipelines.food_type_prompts import build_food_context_line, uses_custom_template
 from app.core.model_config import get_variant_image_size
+from app.services.pipelines.food_type_prompts import (
+    _build_user_priority_block,
+    build_food_context_line,
+    uses_custom_template,
+)
 from app.services.pipelines.image_variant_prompts import build_variant_prompt
 from app.services.providers.factory import get_image_provider
 from app.utils.image_processor import shrink_and_pad_for_wider_framing, zoom_center_crop
@@ -90,16 +94,24 @@ POSTER_RETRY_SUFFIXES: list[str] = [
 
 
 def _build_inpaint_prompt(payload: ImageAdRequest) -> str:
-    prompt_chunks = [
-        "업로드된 음식 사진을 기반으로 광고용 푸드 이미지를 자연스럽게 개선해줘.",
-        DEFAULT_IMAGE_STYLE,
-        "메인 메뉴와 함께 보이는 반찬, 접시, 테이블 구성은 최대한 유지해줘.",
-        "실사 기반의 상업용 푸드 포토그래피 느낌으로 생성해줘.",
-        "문구를 넣을 수 있도록 여백이 있는 깔끔한 구도로 만들어줘.",
-        "최종 색감/조명 분위기는 반드시 위의 스타일과 일치시켜줘.",
-        "이미지 안에 글자, 영문 단어, 메뉴명, 로고, 워터마크를 절대 넣지 마.",
-        "추가 음식, 중복 접시, 잘린 접시를 만들지 마.",
-    ]
+    prompt_chunks: list[str] = []
+
+    priority_block = _build_user_priority_block(payload.extra_notes or "")
+    if priority_block:
+        prompt_chunks.append(priority_block)
+
+    prompt_chunks.extend(
+        [
+            "업로드된 음식 사진을 기반으로 광고용 푸드 이미지를 자연스럽게 개선해줘.",
+            DEFAULT_IMAGE_STYLE,
+            "메인 메뉴와 함께 보이는 반찬, 접시, 테이블 구성은 최대한 유지해줘.",
+            "실사 기반의 상업용 푸드 포토그래피 느낌으로 생성해줘.",
+            "문구를 넣을 수 있도록 여백이 있는 깔끔한 구도로 만들어줘.",
+            "최종 색감/조명 분위기는 반드시 위의 스타일과 일치시켜줘.",
+            "이미지 안에 글자, 영문 단어, 메뉴명, 로고, 워터마크를 절대 넣지 마.",
+            "추가 음식, 중복 접시, 잘린 접시를 만들지 마.",
+        ]
+    )
 
     if payload.food_type:
         prompt_chunks.append(build_food_context_line(payload.food_type))
@@ -109,9 +121,6 @@ def _build_inpaint_prompt(payload: ImageAdRequest) -> str:
 
     if payload.tone:
         prompt_chunks.append(f"전반적인 문체/분위기: {payload.tone}")
-
-    if payload.extra_notes:
-        prompt_chunks.append(f"추가 요청사항: {payload.extra_notes}")
 
     if payload.prompt:
         prompt_chunks.append(f"사용자 직접 프롬프트: {payload.prompt}")
@@ -140,14 +149,22 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
     menu_name = payload.menu_name or "오늘의 메뉴"
     price_text = (payload.price_text or "").strip()
 
-    prompt_chunks = [
-        "입력된 음식 사진을 기반으로 인스타그램용 세로 광고 포스터를 실사 스타일로 만들어줘.",
-        f"포스터 스타일: {DEFAULT_IMAGE_STYLE}",
-        f"레이아웃 가이드: {layout_guide}",
-        "음식과 접시의 형태/재질은 유지하고 배경, 조명, 구도는 포스터 디자인에 맞게 새롭게 구성해줘.",
-        "세련된 브랜드 광고 느낌으로 전체 레이아웃을 새로 디자인해줘. 기존 템플릿처럼 보이지 않게 다양성을 확보해줘.",
-        "텍스트를 포스터 안에 직접 넣어줘. 글자 오탈자 없이 정확히 표기해줘.",
-    ]
+    prompt_chunks: list[str] = []
+
+    priority_block = _build_user_priority_block(payload.extra_notes or "")
+    if priority_block:
+        prompt_chunks.append(priority_block)
+
+    prompt_chunks.extend(
+        [
+            "입력된 음식 사진을 기반으로 인스타그램용 세로 광고 포스터를 실사 스타일로 만들어줘.",
+            f"포스터 스타일: {DEFAULT_IMAGE_STYLE}",
+            f"레이아웃 가이드: {layout_guide}",
+            "음식과 접시의 형태/재질은 유지하고 배경, 조명, 구도는 포스터 디자인에 맞게 새롭게 구성해줘.",
+            "세련된 브랜드 광고 느낌으로 전체 레이아웃을 새로 디자인해줘. 기존 템플릿처럼 보이지 않게 다양성을 확보해줘.",
+            "텍스트를 포스터 안에 직접 넣어줘. 글자 오탈자 없이 정확히 표기해줘.",
+        ]
+    )
 
     if headline:
         prompt_chunks.append(f"표기 텍스트1(상단 카피): {headline}")
@@ -174,9 +191,6 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
 
     if payload.tone:
         prompt_chunks.append(f"전반적인 문체/분위기: {payload.tone}")
-
-    if payload.extra_notes:
-        prompt_chunks.append(f"추가 요청사항: {payload.extra_notes}")
 
     if payload.prompt:
         prompt_chunks.append(f"사용자 직접 프롬프트: {payload.prompt}")
