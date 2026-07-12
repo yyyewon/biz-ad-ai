@@ -415,7 +415,7 @@ _POSTER_PHOTO_TEMPLATE = """
 
 [텍스트 스타일]
 - 한국어만, 임의 영문·로고·워터마크·해시태그 금지
-- **모든 텍스트 상단 가운데 정렬**
+- **상단 카피·메뉴명·가격은 상단 가운데 정렬**
 - 메뉴명 > 상단 카피 > 가격 순으로 크기·굵기 차이
 - 포스터 디자인 일부처럼 자연스럽게 배치 (단순 텍스트 박스 금지)
 
@@ -782,10 +782,10 @@ def _build_poster_store_footer_line(
     location = (store_location or "").strip()
     name = (store_name or "").strip()
 
-    if location:
-        lines.append(f"- **위치 (작게, 가운데 정렬)**: {location}")
     if name:
-        lines.append(f"- **하단 가게명 (작게, 가운데 정렬, 선택)**: {name}")
+        lines.append(f"- **하단 가게명 (작게, 우측 하단 정렬)**: {name}")
+    if location:
+        lines.append(f"- 배경 톤 참고: 매장 위치 맥락 {location}")
     return "\n".join(lines)
 
 

@@ -12,6 +12,15 @@ from core.config import KAKAO_LOGIN_ENDPOINT
 from components.ui_kit import phone_preview, feed_grid, alert, quota_exceeded_banner
 
 
+def _preview_feed_image(images: list[bytes]) -> bytes | None:
+    """게시물 미리보기용 — 3번(릴스) 이미지 우선."""
+    if not images:
+        return None
+    if len(images) >= 3:
+        return images[2]
+    return images[0]
+
+
 def _input_signature() -> tuple:
     b = st.session_state.business
     u = st.session_state.upload
@@ -148,7 +157,7 @@ def render() -> None:
     with left:
         with st.container(border=True):
             st.markdown('<div class="rg-card-title">📱 게시물 미리보기</div>', unsafe_allow_html=True)
-            hero_image = gen["images"][0] if gen["images"] else None
+            hero_image = _preview_feed_image(gen["images"])
             phone_preview(
                 store_name=st.session_state.business["store_name"],
                 caption=st.session_state.get("edited_caption", gen["caption"]),

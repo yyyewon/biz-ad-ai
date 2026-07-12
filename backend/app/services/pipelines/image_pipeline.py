@@ -148,6 +148,7 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
     headline = (payload.headline or "").strip()
     menu_name = payload.menu_name or "오늘의 메뉴"
     price_text = (payload.price_text or "").strip()
+    store_name = (payload.store_name or "").strip()
 
     prompt_chunks: list[str] = []
 
@@ -161,30 +162,34 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
             f"포스터 스타일: {DEFAULT_IMAGE_STYLE}",
             f"레이아웃 가이드: {layout_guide}",
             "음식과 접시의 형태/재질은 유지하고 배경, 조명, 구도는 포스터 디자인에 맞게 새롭게 구성해줘.",
-            "세련된 브랜드 광고 느낌으로 전체 레이아웃을 새로 디자인해줘. 기존 템플릿처럼 보이지 않게 다양성을 확보해줘.",
-            "텍스트를 포스터 안에 직접 넣어줘. 글자 오탈자 없이 정확히 표기해줘.",
+            "텍스트를 포스터 안에 직접 넣어줘. 글자 깨짐 없이 정확히 그려줘.",
         ]
     )
 
     if headline:
-        prompt_chunks.append(f"표기 텍스트1(상단 카피): {headline}")
+        prompt_chunks.append(f"쓰기 텍스트(상단 카피): {headline}")
     else:
-        prompt_chunks.append("표기 텍스트1(상단 카피)은 가게/목적 맥락에 맞게 자연스럽게 작성해줘.")
+        prompt_chunks.append("쓰기 텍스트(상단 카피)는 가게/목적 맥락에 맞게 자연스럽게 작성해줘.")
 
     prompt_chunks.extend(
         [
-            f"표기 텍스트2(메뉴명, 가장 크게): {menu_name}",
+            f"쓰기 텍스트(메뉴명, 가장 크게): {menu_name}",
             *POSTER_PROMPT_HARD_CONSTRAINTS,
             "텍스트는 가독성이 높아야 하고 음식을 과도하게 가리지 않게 배치해줘.",
-            "로고/워터마크/불필요한 영문 문구는 넣지 마.",
+            "로고, 워터마크, 불필요한 장식 문구를 넣지 마.",
         ]
     )
 
     if price_text:
-        prompt_chunks.append(f"표기 텍스트3(가격): {price_text}")
-        prompt_chunks.append("위에 지정한 텍스트는 띄어쓰기/문장부호/숫자/통화기호까지 정확히 동일하게 표기해줘.")
+        prompt_chunks.append(f"쓰기 텍스트(가격): {price_text}")
+        prompt_chunks.append(
+            "앞에 지정된 텍스트는 띄어쓰기, 문장부호, 숫자, 통화기호까지 정확히 동일하게 쓰기해줘."
+        )
     else:
         prompt_chunks.append("가격 문구는 반드시 생략해줘.")
+
+    if store_name:
+        prompt_chunks.append(f"쓰기 텍스트(하단 가게명, 우측 하단): {store_name}")
 
     if payload.promotion_goal:
         prompt_chunks.append(f"홍보 목적 맥락: {payload.promotion_goal}")

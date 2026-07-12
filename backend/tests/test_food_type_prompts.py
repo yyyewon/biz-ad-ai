@@ -4,6 +4,7 @@ from app.services.pipelines.food_type_prompts import (
     uses_custom_template,
 )
 from app.services.pipelines.image_pipeline import _build_poster_prompt
+from app.utils.image_text_overlay import variant_uses_pil_text_overlay
 
 
 def _payload(**kwargs) -> ImageAdRequest:
@@ -35,6 +36,7 @@ def test_user_image_request_is_priority_block_in_studio_prompt():
 
 def test_fried_poster_uses_custom_template_with_food_rules():
     assert uses_custom_template("fried", "poster") is True
+    assert variant_uses_pil_text_overlay("fried", "poster") is False
 
     prompt = build_food_variant_prompt(
         _payload(food_type="fried"),
@@ -45,6 +47,8 @@ def test_fried_poster_uses_custom_template_with_food_rules():
 
     assert "포스터 히어로 컷 · 튀김" in prompt
     assert "배경·디자인 — 튀김 포스터" in prompt
+    assert "메뉴명 (가장 크고 굵게)" in prompt
+    assert "PIL" not in prompt
 
 
 def test_reels_uses_flexible_scene_rules_when_background_requested():
@@ -57,3 +61,7 @@ def test_reels_uses_flexible_scene_rules_when_background_requested():
 
     assert "사용자 배경·연출 요청 반영" in prompt
     assert "매장 배경 유지" not in prompt
+
+
+def test_reels_variant_uses_pil_overlay():
+    assert variant_uses_pil_text_overlay("fried", "instagram_feed") is True

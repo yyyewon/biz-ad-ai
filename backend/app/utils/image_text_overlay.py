@@ -199,16 +199,15 @@ def apply_variant_text_overlay(
     payload: ImageAdRequest,
     variant: ImageVariantType,
 ) -> bytes:
-    if variant != "instagram_feed":
-        return image_bytes
-
     food_type = payload.food_type
     try:
-        return composite_reels_hook_text(
-            image_bytes,
-            build_reels_overlay_copy(payload),
-            food_type=food_type,
-        )
+        if variant == "instagram_feed":
+            return composite_reels_hook_text(
+                image_bytes,
+                build_reels_overlay_copy(payload),
+                food_type=food_type,
+            )
+        return image_bytes
     except Exception as exc:
         logger.exception(
             "image_text_overlay_failed | variant={} | food_type={} | error={}",
