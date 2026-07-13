@@ -35,9 +35,9 @@ def test_user_image_request_is_priority_block_in_studio_prompt():
     assert prompt.index("[최우선 — 사용자 이미지 요청]") < prompt.index("[음식 유지 — 튀김")
 
 
-def test_fried_poster_uses_custom_template_with_food_rules():
+def test_fried_poster_uses_custom_template_with_pil_rules():
     assert uses_custom_template("fried", "poster") is True
-    assert variant_uses_pil_text_overlay("fried", "poster") is False
+    assert variant_uses_pil_text_overlay("fried", "poster") is True
 
     prompt = build_food_variant_prompt(
         _payload(food_type="fried"),
@@ -48,25 +48,11 @@ def test_fried_poster_uses_custom_template_with_food_rules():
 
     assert "포스터 히어로 컷 · 튀김" in prompt
     assert "배경·디자인 — 튀김 포스터" in prompt
-    assert "[반드시 그대로 표기 — 최우선]" in prompt
-    assert '"고추장 찌개" — 메뉴명 (가장 크고 굵게)' in prompt
-    assert '"신메뉴 출시" — 상단 카피 (작게)' in prompt
-    assert prompt.rstrip().endswith("— 하단 우측 가게명 (작게)")
-    assert "PIL" not in prompt
+    assert "PIL" in prompt
+    assert "반드시 그대로 표기" not in prompt
 
 
-def test_poster_exact_text_block_omits_price_when_empty():
-    block = build_poster_exact_text_block(
-        headline="신메뉴 출시",
-        menu_name="고추장 찌개",
-        price_text="",
-        store_name="온기식당",
-    )
-    assert '"고추장 찌개"' in block
-    assert "가격" not in block
-
-
-def test_poster_exact_text_block_includes_price_when_set():
+def test_poster_exact_text_block_still_available_for_helpers():
     block = build_poster_exact_text_block(
         headline="신메뉴 출시",
         menu_name="고추장 찌개",

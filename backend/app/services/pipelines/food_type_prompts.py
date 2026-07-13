@@ -389,13 +389,11 @@ FOOD_STUDIO_SCENE_RULES: dict[FoodType, str] = {
 _POSTER_LAYOUT_RULES = """
 [포스터 구성 — 상업용 메뉴 홍보 레이아웃]
 - 비율 4:5 세로 (1024×1536)
-- **위에서 아래 순서**, 텍스트는 **상단 가운데 정렬**:
-  1. **상단 카피** 1줄 (작은 문구)
-  2. **메뉴명** 가장 크고 굵게 (시각적 중심)
-  3. **가격** (있을 때만) — 둥근 뱃지·테두리 등 포스터용 디자인
-  4. **하단** 메인 음식 실사 히어로 컷 (화면 하단 50~60%)
-- 글자색은 배경 톤과 조화되게 (배경보다 약간 진한 같은 계열)
-- 텍스트 블록과 음식 영역이 겹치지 않게, 여백·계층 명확히
+- **상단 38%**: 디자인 배경 (**글자·숫자·가격·로고 없음** — PIL 후처리 합성)
+- **하단 55~60%**: 메인 음식 실사 히어로 컷
+- **우측 상단~중앙**: 가격 pill 뱃지 합성 여유
+- **하단 우측**: 가게명 합성 여유
+- 상단과 하단 음식 영역이 한 장의 포스터로 자연스럽게 이어지게
 {store_footer_line}
 """.strip()
 
@@ -408,10 +406,10 @@ _POSTER_PHOTO_TEMPLATE = """
 
 {poster_layout_rules}
 
-[텍스트 배치]
-- 상단 가운데: 카피(작게) → 메뉴명(가장 크게) → 가격(있을 때, 뱃지)
-- 가게명은 하단 우측(있을 때)
-- 깔끔한 한국어 고딕체, 음식과 겹치지 않게
+[텍스트 규칙 — 중요]
+- **이미지 안에 글자·메뉴명·가격·가게명·숫자·로고·워터마크를 절대 넣지 말 것**
+- 카피·메뉴명·가격 pill·가게명은 생성 후 **PIL 후처리**로 합성됨
+- 상단·우측·하단 우측 여백은 비워 둘 것
 
 {poster_food_rules}
 
@@ -426,25 +424,20 @@ _POSTER_PHOTO_TEMPLATE = """
 [명시적 금지]
 - 단색·플랫 배경만 있는 포스터
 - 스튜디오 식당 테이블 실사 배경 그대로 사용
-- 텍스트를 음식 위에 겹치기
+- **어떤 형태의 텍스트·글자·숫자도 이미지에 넣지 말 것**
 - 특정 브랜드 포스터를 그대로 복제
-- 위 [반드시 그대로 표기]에 없는 글자·문구 추가
 """.strip()
 
 _POSTER_VARIANT_OUTPUT = """
 [출력 유형: 포스터]
 - 4:5 세로 메뉴 홍보 포스터 비율 (1024×1536)
-- 상단 카피·메뉴명·가격·가게명을 포스터 디자인에 포함해 한국어로 직접 표기
+- 상단 디자인 배경 + 하단 음식 히어로 컷
+- **글자 없음** — 텍스트·가격 pill은 후처리(PIL)로 합성
 """.strip()
 
 
 def _build_poster_photo_template() -> str:
-    return (
-        _POSTER_PHOTO_TEMPLATE
-        + "\n\n"
-        + _POSTER_VARIANT_OUTPUT
-        + "\n\n{poster_exact_text_block}"
-    )
+    return _POSTER_PHOTO_TEMPLATE + "\n\n" + _POSTER_VARIANT_OUTPUT
 
 
 # -----------------------------------------------------------------------------
@@ -816,7 +809,7 @@ def _build_poster_store_footer_line(
     name = (store_name or "").strip()
 
     if name:
-        lines.append(f"- **하단 가게명 (작게, 우측 하단 정렬)**: {name}")
+        lines.append("- **하단 우측 모서리**: 가게명 PIL 합성용 — 글자 없이 여유 있게")
     if location:
         lines.append(f"- 배경 톤 참고: 매장 위치 맥락 {location}")
     return "\n".join(lines)
@@ -887,12 +880,6 @@ def build_template_context(
                 store_name,
                 store_location,
             ),
-        ),
-        "poster_exact_text_block": build_poster_exact_text_block(
-            headline=headline,
-            menu_name=menu_name,
-            price_text=price_text,
-            store_name=store_name,
         ),
         # 릴스 (전 유형 공통)
         "reels_food_rules": _REELS_FOOD_RULES,

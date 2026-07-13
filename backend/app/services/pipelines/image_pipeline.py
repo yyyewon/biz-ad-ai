@@ -20,7 +20,6 @@ from app.core.model_config import get_variant_image_size
 from app.services.pipelines.food_type_prompts import (
     _build_user_priority_block,
     build_food_context_line,
-    build_poster_exact_text_block,
     uses_custom_template,
 )
 from app.services.pipelines.image_variant_prompts import build_variant_prompt
@@ -89,8 +88,8 @@ POSTER_PROMPT_HARD_CONSTRAINTS: list[str] = [
 
 POSTER_RETRY_SUFFIXES: list[str] = [
     "",
-    "재시도: 맨 아래 [반드시 그대로 표기] 문구를 오타·깨짐 없이 정확히 다시 렌더링. 레이아웃은 단순하게.",
-    "최종 재시도: [반드시 그대로 표기]의 각 문구를 상단 가운데·하단 우측에 분리 배치. 음식은 하단 히어로 컷.",
+    "재시도: 글자·숫자·가격·가게명 없이 배경과 음식만. 상단·우측·하단 우측 여백 유지.",
+    "최종 재시도: 텍스트 없는 포스터. 하단 음식 히어로 컷 크게, 상단 디자인 배경만.",
 ]
 
 
@@ -146,13 +145,6 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
         LAYOUT_POSTER_GUIDE_MAP["classic"],
     )
 
-    headline = (payload.headline or "").strip()
-    if not headline:
-        headline = resolve_poster_headline_from_purpose(payload.promotion_goal or "")
-    menu_name = payload.menu_name or "오늘의 메뉴"
-    price_text = (payload.price_text or "").strip()
-    store_name = (payload.store_name or "").strip()
-
     prompt_chunks: list[str] = []
 
     priority_block = _build_user_priority_block(payload.extra_notes or "")
@@ -164,11 +156,11 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
             "입력된 음식 사진을 기반으로 인스타그램용 세로 광고 포스터를 실사 스타일로 만들어줘.",
             f"포스터 스타일: {DEFAULT_IMAGE_STYLE}",
             f"레이아웃 가이드: {layout_guide}",
+            "상단 38%는 디자인 배경, 하단에 음식 히어로 컷.",
             "음식과 접시의 형태/재질은 유지하고 배경, 조명, 구도는 포스터 디자인에 맞게 새롭게 구성해줘.",
-            "상단 가운데에 카피·메뉴명·가격, 하단 우측에 가게명을 포스터 디자인에 포함해 한국어로 직접 그려줘.",
+            "이미지 안에 글자·메뉴명·가격·가게명·로고·워터마크를 절대 넣지 마.",
+            "카피·메뉴명·가격·가게명은 후처리로 합성되니 상단·우측·하단 우측 여백을 비워 둬.",
             *POSTER_PROMPT_HARD_CONSTRAINTS,
-            "텍스트는 가독성이 높아야 하고 음식을 과도하게 가리지 않게 배치해줘.",
-            "로고, 워터마크, 불필요한 장식 문구를 넣지 마.",
         ]
     )
 
@@ -181,14 +173,7 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
     if payload.prompt:
         prompt_chunks.append(f"사용자 직접 프롬프트: {payload.prompt}")
 
-    exact_block = build_poster_exact_text_block(
-        headline=headline,
-        menu_name=menu_name,
-        price_text=price_text,
-        store_name=store_name,
-    )
-
-    return ", ".join(prompt_chunks) + "\n\n" + exact_block
+    return ", ".join(prompt_chunks)
 
 
 async def _generate_poster_with_retries(
