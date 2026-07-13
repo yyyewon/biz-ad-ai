@@ -19,6 +19,7 @@ from typing import Callable
 
 from app.schemas.food_type import FOOD_TYPE_LABELS, FoodType
 from app.schemas.image_ad import ImageAdRequest, ImageVariantType
+from app.utils.poster_taglines import resolve_poster_headline_from_purpose
 from app.utils.reels_hooks import resolve_reels_hook_from_purpose
 
 # =============================================================================
@@ -407,17 +408,10 @@ _POSTER_PHOTO_TEMPLATE = """
 
 {poster_layout_rules}
 
-[표기할 한국어 텍스트 — 정확히]
-{headline_line}
-- **메뉴명 (가장 크고 굵게)**: {menu_name}
-{price_line}
-{price_accuracy_line}
-
-[텍스트 스타일]
-- 한국어만, 임의 영문·로고·워터마크·해시태그 금지
-- **상단 카피·메뉴명·가격은 상단 가운데 정렬**
-- 메뉴명 > 상단 카피 > 가격 순으로 크기·굵기 차이
-- 포스터 디자인 일부처럼 자연스럽게 배치 (단순 텍스트 박스 금지)
+[텍스트 배치]
+- 상단 가운데: 카피(작게) → 메뉴명(가장 크게) → 가격(있을 때, 뱃지)
+- 가게명은 하단 우측(있을 때)
+- 깔끔한 한국어 고딕체, 음식과 겹치지 않게
 
 {poster_food_rules}
 
@@ -434,19 +428,23 @@ _POSTER_PHOTO_TEMPLATE = """
 - 스튜디오 식당 테이블 실사 배경 그대로 사용
 - 텍스트를 음식 위에 겹치기
 - 특정 브랜드 포스터를 그대로 복제
+- 위 [반드시 그대로 표기]에 없는 글자·문구 추가
 """.strip()
 
 _POSTER_VARIANT_OUTPUT = """
 [출력 유형: 포스터]
 - 4:5 세로 메뉴 홍보 포스터 비율 (1024×1536)
-- 상단 카피·메뉴명·가격을 **포스터 디자인에 포함**해 한국어로 직접 표기
-- 상단 텍스트는 **가운데 정렬**, 하단 음식 히어로 컷
-- 배경 톤과 어울리는 글자색·타이포로 완성형 상업 포스터처럼 보이게
+- 상단 카피·메뉴명·가격·가게명을 포스터 디자인에 포함해 한국어로 직접 표기
 """.strip()
 
 
 def _build_poster_photo_template() -> str:
-    return _POSTER_PHOTO_TEMPLATE + "\n\n" + _POSTER_VARIANT_OUTPUT
+    return (
+        _POSTER_PHOTO_TEMPLATE
+        + "\n\n"
+        + _POSTER_VARIANT_OUTPUT
+        + "\n\n{poster_exact_text_block}"
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -754,15 +752,50 @@ def _build_reels_hook_line(
     return f"- **후킹 문구 (하단 자막으로 표기)**: {hook}"
 
 
+def build_poster_exact_text_block(
+    *,
+    headline: str,
+    menu_name: str,
+    price_text: str = "",
+    store_name: str = "",
+) -> str:
+    """포스터 프롬프트 맨 끝에 붙이는 정확 표기 문구 블록."""
+
+    menu = (menu_name or "").strip() or "오늘의 메뉴"
+    items: list[str] = []
+    index = 1
+
+    head = (headline or "").strip()
+    if head:
+        items.append(f'{index}. "{head}" — 상단 카피 (작게)')
+        index += 1
+
+    items.append(f'{index}. "{menu}" — 메뉴명 (가장 크고 굵게)')
+    index += 1
+
+    price = (price_text or "").strip()
+    if price:
+        items.append(f'{index}. "{price}" — 가격 (뱃지/테두리 안)')
+        index += 1
+
+    store = (store_name or "").strip()
+    if store:
+        items.append(f'{index}. "{store}" — 하단 우측 가게명 (작게)')
+
+    numbered = "\n".join(items)
+    return f"""
+[반드시 그대로 표기 — 최우선]
+아래 문구만 이미지에 넣을 것. 오타·누락·추가 글자·영문·해시태그·로고 금지.
+띄어쓰기·숫자·₩/원 기호까지 아래와 **완전히 동일**하게.
+{numbered}
+""".strip()
+
+
 def _build_poster_headline_line(*, headline: str, store_name: str) -> str:
+    _ = store_name
     if headline:
         return f"- **상단 카피**: {headline}"
-    if store_name:
-        return (
-            f"- **상단 카피**: [{store_name}]과 홍보 목적에 맞는 "
-            "짧은 한국어 카피 1줄 (8~18자, 해시태그 없음)"
-        )
-    return "- **상단 카피**: 홍보 목적에 맞는 짧은 한국어 카피 1줄 (8~18자, 해시태그 없음)"
+    return ""
 
 
 def _build_poster_price_lines(price_text: str) -> tuple[str, str]:
@@ -815,14 +848,17 @@ def build_template_context(
     store_name = payload.store_name or ""
     store_location = (payload.store_location or "").strip()
     headline = (payload.headline or "").strip()
+    if not headline and variant == "poster":
+        headline = resolve_poster_headline_from_purpose(payload.promotion_goal or "")
     price_text = (payload.price_text or "").strip()
     extra_notes = (payload.extra_notes or "").strip()
     price_line, price_accuracy_line = _build_poster_price_lines(price_text)
+    menu_name = payload.menu_name or "오늘의 메뉴"
 
     return {
         "store_name": store_name,
         "store_location": store_location,
-        "menu_name": payload.menu_name or "오늘의 메뉴",
+        "menu_name": menu_name,
         "tone": payload.tone or "",
         "promotion_goal": payload.promotion_goal or "",
         "extra_notes": extra_notes,
@@ -851,6 +887,12 @@ def build_template_context(
                 store_name,
                 store_location,
             ),
+        ),
+        "poster_exact_text_block": build_poster_exact_text_block(
+            headline=headline,
+            menu_name=menu_name,
+            price_text=price_text,
+            store_name=store_name,
         ),
         # 릴스 (전 유형 공통)
         "reels_food_rules": _REELS_FOOD_RULES,

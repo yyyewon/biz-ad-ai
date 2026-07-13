@@ -20,6 +20,7 @@ from app.core.model_config import get_variant_image_size
 from app.services.pipelines.food_type_prompts import (
     _build_user_priority_block,
     build_food_context_line,
+    build_poster_exact_text_block,
     uses_custom_template,
 )
 from app.services.pipelines.image_variant_prompts import build_variant_prompt
@@ -88,8 +89,8 @@ POSTER_PROMPT_HARD_CONSTRAINTS: list[str] = [
 
 POSTER_RETRY_SUFFIXES: list[str] = [
     "",
-    "재시도 지시: 텍스트 정확도와 가독성을 최우선으로 다시 생성해줘. 레이아웃은 단순하고 안정적으로 구성해줘.",
-    "최종 재시도 지시: 텍스트 3개를 상단/중앙에 명확히 분리 배치하고, 음식은 하단 히어로 컷으로 크게 배치해줘.",
+    "재시도: 맨 아래 [반드시 그대로 표기] 문구를 오타·깨짐 없이 정확히 다시 렌더링. 레이아웃은 단순하게.",
+    "최종 재시도: [반드시 그대로 표기]의 각 문구를 상단 가운데·하단 우측에 분리 배치. 음식은 하단 히어로 컷.",
 ]
 
 
@@ -146,6 +147,8 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
     )
 
     headline = (payload.headline or "").strip()
+    if not headline:
+        headline = resolve_poster_headline_from_purpose(payload.promotion_goal or "")
     menu_name = payload.menu_name or "오늘의 메뉴"
     price_text = (payload.price_text or "").strip()
     store_name = (payload.store_name or "").strip()
@@ -162,34 +165,12 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
             f"포스터 스타일: {DEFAULT_IMAGE_STYLE}",
             f"레이아웃 가이드: {layout_guide}",
             "음식과 접시의 형태/재질은 유지하고 배경, 조명, 구도는 포스터 디자인에 맞게 새롭게 구성해줘.",
-            "텍스트를 포스터 안에 직접 넣어줘. 글자 깨짐 없이 정확히 그려줘.",
-        ]
-    )
-
-    if headline:
-        prompt_chunks.append(f"쓰기 텍스트(상단 카피): {headline}")
-    else:
-        prompt_chunks.append("쓰기 텍스트(상단 카피)는 가게/목적 맥락에 맞게 자연스럽게 작성해줘.")
-
-    prompt_chunks.extend(
-        [
-            f"쓰기 텍스트(메뉴명, 가장 크게): {menu_name}",
+            "상단 가운데에 카피·메뉴명·가격, 하단 우측에 가게명을 포스터 디자인에 포함해 한국어로 직접 그려줘.",
             *POSTER_PROMPT_HARD_CONSTRAINTS,
             "텍스트는 가독성이 높아야 하고 음식을 과도하게 가리지 않게 배치해줘.",
             "로고, 워터마크, 불필요한 장식 문구를 넣지 마.",
         ]
     )
-
-    if price_text:
-        prompt_chunks.append(f"쓰기 텍스트(가격): {price_text}")
-        prompt_chunks.append(
-            "앞에 지정된 텍스트는 띄어쓰기, 문장부호, 숫자, 통화기호까지 정확히 동일하게 쓰기해줘."
-        )
-    else:
-        prompt_chunks.append("가격 문구는 반드시 생략해줘.")
-
-    if store_name:
-        prompt_chunks.append(f"쓰기 텍스트(하단 가게명, 우측 하단): {store_name}")
 
     if payload.promotion_goal:
         prompt_chunks.append(f"홍보 목적 맥락: {payload.promotion_goal}")
@@ -200,7 +181,14 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
     if payload.prompt:
         prompt_chunks.append(f"사용자 직접 프롬프트: {payload.prompt}")
 
-    return ", ".join(prompt_chunks)
+    exact_block = build_poster_exact_text_block(
+        headline=headline,
+        menu_name=menu_name,
+        price_text=price_text,
+        store_name=store_name,
+    )
+
+    return ", ".join(prompt_chunks) + "\n\n" + exact_block
 
 
 async def _generate_poster_with_retries(

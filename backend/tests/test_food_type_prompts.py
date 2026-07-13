@@ -1,6 +1,7 @@
 from app.schemas.image_ad import ImageAdRequest
 from app.services.pipelines.food_type_prompts import (
     build_food_variant_prompt,
+    build_poster_exact_text_block,
     uses_custom_template,
 )
 from app.services.pipelines.image_pipeline import _build_poster_prompt
@@ -47,8 +48,32 @@ def test_fried_poster_uses_custom_template_with_food_rules():
 
     assert "포스터 히어로 컷 · 튀김" in prompt
     assert "배경·디자인 — 튀김 포스터" in prompt
-    assert "메뉴명 (가장 크고 굵게)" in prompt
+    assert "[반드시 그대로 표기 — 최우선]" in prompt
+    assert '"고추장 찌개" — 메뉴명 (가장 크고 굵게)' in prompt
+    assert '"신메뉴 출시" — 상단 카피 (작게)' in prompt
+    assert prompt.rstrip().endswith("— 하단 우측 가게명 (작게)")
     assert "PIL" not in prompt
+
+
+def test_poster_exact_text_block_omits_price_when_empty():
+    block = build_poster_exact_text_block(
+        headline="신메뉴 출시",
+        menu_name="고추장 찌개",
+        price_text="",
+        store_name="온기식당",
+    )
+    assert '"고추장 찌개"' in block
+    assert "가격" not in block
+
+
+def test_poster_exact_text_block_includes_price_when_set():
+    block = build_poster_exact_text_block(
+        headline="신메뉴 출시",
+        menu_name="고추장 찌개",
+        price_text="8000원",
+        store_name="온기식당",
+    )
+    assert '"8000원" — 가격' in block
 
 
 def test_reels_uses_flexible_scene_rules_when_background_requested():
