@@ -3,22 +3,39 @@
 """
 from __future__ import annotations
 
-from fastapi import Header
+from fastapi import Header, Request
 
 from app.core.exceptions import AppException
 from app.core.security import decode_access_token
 from app.core.user_repository import get_user_by_id
 
 
-async def get_current_user(authorization: str | None = Header(default=None)) -> dict:
-    if not authorization or not authorization.lower().startswith("bearer "):
+def _extract_token(request: Request, authorization: str | None) -> str | None:
+    """
+    쿠키를 먼저 보고, 없으면 Authorization 헤더에서 Bearer 토큰을 꺼낸다
+    """
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        return cookie_token.strip()
+
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization.split(" ", 1)[1].strip()
+
+    return None
+
+
+async def get_current_user(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    token = _extract_token(request, authorization)
+    if not token:
         raise AppException(
             code="UNAUTHORIZED",
             message="로그인이 필요해요.",
             status_code=401,
         )
 
-    token = authorization.split(" ", 1)[1].strip()
     payload = decode_access_token(token)
 
     try:
@@ -40,12 +57,13 @@ async def get_current_user(authorization: str | None = Header(default=None)) -> 
     return user
 
 
-async def get_current_user_optional(authorization: str | None = Header(default=None)) -> dict | None:
+async def get_current_user_optional(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict | None:
     """
-    개발/실험 환경에서 비로그인 요청을 허용하기 위한 optional 사용자 조회입니다.
-    - Authorization 헤더가 없으면 None 반환
-    - 헤더가 있으면 기존 로직으로 검증 후 사용자 반환
+    개발/실험 환경에서 비로그인 요청을 허용하기 위한 optional 사용자 조회
     """
-    if not authorization:
+    if not _extract_token(request, authorization):
         return None
-    return await get_current_user(authorization=authorization)
+    return await get_current_user(request=request, authorization=authorization)
