@@ -245,33 +245,23 @@ def render() -> None:
                 unsafe_allow_html=True,
             )
             if gen["images"]:
-                idx_key = "selected_image_idx"
-                if idx_key not in st.session_state:
-                    st.session_state[idx_key] = 0
-                idx = st.session_state[idx_key] % len(gen["images"])
-
-                st.image(gen["images"][idx], width="stretch")
-                dots = " ".join("●" if i == idx else "○" for i in range(len(gen["images"])))
-                st.markdown(f'<div style="text-align:center;color:var(--rg-ink-faint);">{dots}</div>', unsafe_allow_html=True)
-
-                nav1, nav2, nav3 = st.columns([1, 1, 2])
-                with nav1:
-                    if st.button("← 이전", width="stretch"):
-                        st.session_state[idx_key] = (idx - 1) % len(gen["images"])
-                        st.rerun()
-                with nav2:
-                    if st.button("다음 →", width="stretch"):
-                        st.session_state[idx_key] = (idx + 1) % len(gen["images"])
-                        st.rerun()
-                with nav3:
-                    st.download_button(
-                        "이 이미지 다운로드",
-                        data=gen["images"][idx],
-                        file_name=f"{st.session_state.business['store_name']}_ad_{idx+1}.png",
-                        mime="image/png",
-                        type="primary",
-                        width="stretch",
-                    )
+                # 이미지 개수만큼 탭 생성 (예: 이미지 1, 이미지 2, 이미지 3)
+                tabs = st.tabs([f"이미지 {i+1}" for i in range(len(gen["images"]))])
+                
+                for idx, tab in enumerate(tabs):
+                    with tab:
+                        # 각 탭 안에 이미지와 다운로드 버튼을 매핑
+                        st.image(gen["images"][idx], width="stretch")
+                        
+                        st.download_button(
+                            f"{idx+1}번 이미지 다운로드",
+                            data=gen["images"][idx],
+                            file_name=f"{st.session_state.business['store_name']}_ad_{idx+1}.png",
+                            mime="image/png",
+                            type="primary",
+                            width="stretch",
+                            key=f"download_btn_{idx}"  # 고유 키 필수
+                        )
 
     footer_left, footer_right = st.columns(2)
     with footer_left:
