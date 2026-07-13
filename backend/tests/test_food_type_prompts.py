@@ -30,9 +30,9 @@ def test_user_image_request_is_priority_block_in_studio_prompt():
         build_poster_prompt=_build_poster_prompt,
     )
 
-    assert "[최우선 — 사용자 이미지 요청]" in prompt
+    assert "PRIORITY USER REQUEST" in prompt
     assert "따뜻한 나무 테이블 배경" in prompt
-    assert prompt.index("[최우선 — 사용자 이미지 요청]") < prompt.index("[음식 유지 — 튀김")
+    assert prompt.index("PRIORITY USER REQUEST") < prompt.index("SUBJECT:")
 
 
 def test_fried_poster_uses_custom_template_with_pil_rules():
@@ -46,10 +46,10 @@ def test_fried_poster_uses_custom_template_with_pil_rules():
         build_poster_prompt=_build_poster_prompt,
     )
 
-    assert "포스터 히어로 컷 · 튀김" in prompt
-    assert "배경·디자인 — 튀김 포스터" in prompt
+    assert "crispy golden fried" in prompt
+    assert "casual dining poster" in prompt
     assert "PIL" in prompt
-    assert "반드시 그대로 표기" not in prompt
+    assert "EXACT TEXT" not in prompt
 
 
 def test_poster_exact_text_block_still_available_for_helpers():
@@ -59,7 +59,7 @@ def test_poster_exact_text_block_still_available_for_helpers():
         price_text="8000원",
         store_name="온기식당",
     )
-    assert '"8000원" — 가격' in block
+    assert '"8000원" — price' in block
 
 
 def test_reels_uses_flexible_scene_rules_when_background_requested():
@@ -70,8 +70,8 @@ def test_reels_uses_flexible_scene_rules_when_background_requested():
         build_poster_prompt=_build_poster_prompt,
     )
 
-    assert "사용자 배경·연출 요청 반영" in prompt
-    assert "매장 배경 유지" not in prompt
+    assert "user scene override" in prompt
+    assert "preserve original restaurant/store interior" not in prompt
 
 
 def test_reels_variant_uses_pil_overlay():
