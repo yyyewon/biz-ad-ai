@@ -220,16 +220,11 @@ Form Data Parameters:
 | `store_name` | string | O | 가게 이름 |
 | `menu_name` | string | O | 메뉴 또는 상품 이름 |
 | `purpose` | string | X | 광고 목적 |
-| `request_note` | string | X | 추가 요청사항 |
-| `moods` | string | X | 분위기 값. 쉼표로 구분 |
+| `food` | string | X | 음식 유형 (예: 국, 찌개) |
 | `tone` | string | X | 광고 문구 말투 |
+| `image_request` | string | X | 이미지 생성 요청사항 |
+| `llm_request` | string | X | 광고 문구 생성 요청사항 |
 | `image` | file | X | 업로드 이미지 |
-
-moods 전달 예:
-
-```text
-moods=cozy,fresh
-```
 
 이미지 포함 호출 예:
 
@@ -239,9 +234,10 @@ curl -X POST http://127.0.0.1:8010/api/v1/ad/generate \
   -F "store_name=만월" \
   -F "menu_name=데몬헌터스 케이크" \
   -F "purpose=신메뉴 홍보" \
-  -F "request_note=캐릭터 컨셉과 디저트 분위기를 살려줘" \
-  -F "moods=cozy,fresh" \
-  -F "tone=감성적인" \
+  -F "food=빵, 디저트, 케이크" \
+  -F "image_request=따뜻한 우드 테이블 배경으로 해주세요" \
+  -F "llm_request=이번 주 이벤트 내용을 포함해 주세요" \
+  -F "tone=친근한" \
   -F "image=@sample_food.png"
 ```
 
@@ -253,9 +249,8 @@ curl -X POST http://127.0.0.1:8010/api/v1/ad/generate \
   -F "store_name=만월" \
   -F "menu_name=데몬헌터스 케이크" \
   -F "purpose=신메뉴 홍보" \
-  -F "request_note=캐릭터 컨셉과 디저트 분위기를 살려줘" \
-  -F "moods=cozy,fresh" \
-  -F "tone=감성적인"
+  -F "llm_request=캐릭터 컨셉과 디저트 분위기를 살려줘" \
+  -F "tone=친근한"
 ```
 
 ### 5.2 통합 광고 생성 성공 응답
@@ -285,8 +280,7 @@ curl -X POST http://127.0.0.1:8010/api/v1/ad/generate \
         "total_ms": 98569
       },
       "num_images": 3,
-      "poster_image_count": 3,
-      "applied_moods": ["cozy", "fresh", "cozy"]
+      "poster_image_count": 3
     }
   },
   "error": null

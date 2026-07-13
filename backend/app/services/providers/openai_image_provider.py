@@ -62,6 +62,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
         self._size = str(size or self._settings.get("size") or get_settings().openai_image_size)
         self._quality = quality or self._settings.get("quality")
         self._output_format = str(output_format or self._settings.get("output_format", "png"))
+        self._input_fidelity = self._settings.get("input_fidelity")
 
         self._api_key = api_key or self._resolve_api_key()
 
@@ -115,6 +116,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
         prompt: str,
         num_images: int,
         mask_image_bytes: bytes | None = None,
+        size: str | None = None,
         render_mode: ImageRenderMode = "photo_restyle",
     ) -> list[bytes]:
         """
@@ -135,12 +137,14 @@ class OpenAIImageProvider(ImageGenerationProvider):
             )
 
         output_images: list[bytes] = []
+        effective_size = size or self._size
 
         logger.info(
-            "openai_image_generation_started | model={} | size={} | quality={} | num_images={} | has_mask={}",
+            "openai_image_generation_started | model={} | size={} | quality={} | input_fidelity={} | num_images={} | has_mask={}",
             self._model,
-            self._size,
+            effective_size,
             self._quality,
+            self._input_fidelity,
             num_images,
             bool(mask_image_bytes),
         )
@@ -163,6 +167,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
                             image=image_file,
                             prompt=prompt,
                             mask=mask_file,
+                            size=effective_size,
                         )
                     )
                 else:
@@ -170,6 +175,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
                         **self._build_image_edit_kwargs(
                             image=image_file,
                             prompt=prompt,
+                            size=effective_size,
                         )
                     )
 
@@ -269,12 +275,13 @@ class OpenAIImageProvider(ImageGenerationProvider):
         image: Any,
         prompt: str,
         mask: Any | None = None,
+        size: str | None = None,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "model": self._model,
             "image": image,
             "prompt": prompt,
-            "size": self._size,
+            "size": size or self._size,
         }
 
         if mask is not None:
@@ -285,6 +292,9 @@ class OpenAIImageProvider(ImageGenerationProvider):
 
         if self._output_format:
             kwargs["output_format"] = self._output_format
+
+        if self._input_fidelity:
+            kwargs["input_fidelity"] = self._input_fidelity
 
         return kwargs
 

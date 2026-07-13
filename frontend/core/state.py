@@ -6,7 +6,7 @@ import streamlit as st
 from core.config import DEV_GUEST_MODE_DEFAULT, MOCK_MODE_DEFAULT
 
 TOTAL_STEPS = 3
-STEP_LABELS = ["가게 & 메뉴 정보", "사진 업로드 & 무드 선택", "생성 결과 확인"]
+STEP_LABELS = ["가게 & 메뉴 정보", "사진 업로드 & 옵션 선택", "생성 결과 확인"]
 
 
 def init_state() -> None:

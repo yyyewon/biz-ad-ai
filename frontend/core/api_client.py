@@ -11,14 +11,9 @@ import streamlit as st
 # 💡 토큰 재발급 함수 수입 추가
 from core.auth import request_refresh_token
 from core.config import (
-    TEXT_ENDPOINT,
-    IMAGE_ENDPOINT,
     GENERATE_ENDPOINT,
     HEALTH_ENDPOINT,
-    IMAGE_PREPROCESS_ENDPOINT,
-    REQUEST_TIMEOUT_TEXT,
-    REQUEST_TIMEOUT_IMAGE,
-    REQUEST_TIMEOUT_GENERATE
+    REQUEST_TIMEOUT_GENERATE,
 )
 
 
@@ -62,6 +57,8 @@ def generate_ad(
     tone: str,
     image_request: str,
     llm_request: str,
+    price: str = "",
+    store_location: str = "",
     cookies: dict | None = None, # 토큰 문자열 대신 쿠키 딕셔너리를 전송받음
     mock: bool = False,
 ) -> dict:
@@ -75,8 +72,9 @@ def generate_ad(
         hashtag_purpose = purpose.replace(" ", "").replace("/", "") if purpose else "홍보"
 
         caption = (
-            f"{store_name}의 {menu_name}, 오늘도 한 입이면 반해요 ️\n"
-            f"{tone} 하루엔 {menu_name} 한 그릇 어떠세요?\n\n"
+            f"{store_name}의 {menu_name}, 오늘도 한 입이면 반해요\n"
+            f"{llm_request.strip() + chr(10) if llm_request and llm_request.strip() else ''}"
+            f"{tone} 톤으로 {menu_name} 한 그릇 어떠세요?\n\n"
             f"#{store_name.replace(' ', '')} #{menu_name.replace(' ', '')} "
             f"#{hashtag_food.replace(' ', '')} #{hashtag_purpose} #맛집스타그램 #오늘뭐먹지"
         )
@@ -104,10 +102,10 @@ def generate_ad(
         "llm_request": llm_request,
         "food": food,
         "tone": tone,
+        "price": price,
+        "store_location": store_location,
         "image_request": image_request,
     }
-    print("⚡ [FRONTEND DEBUG] 보내는 페이로드:", payload)
-
     try:
         res = requests.post(
             GENERATE_ENDPOINT,

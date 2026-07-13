@@ -17,7 +17,7 @@ from app.services.pipelines.image_pipeline import generate_image_ads
 from app.services.pipelines.text_pipeline import run_text_pipeline
 from app.utils.image_bytes import decode_base64_to_image_bytes
 from app.utils.upload_image_validator import validate_uploaded_image_bytes
-from app.utils.image_processor import remove_background_and_resize
+from app.utils.image_processor import prepare_upload_image
 
 router = APIRouter()
 
@@ -36,8 +36,7 @@ async def preprocess_image(file: UploadFile = File(...)):
 
     기능:
     - 업로드 이미지 유효성 검증
-    - 배경 제거
-    - 리사이즈
+    - 비율 유지 리사이즈
     - base64 응답 반환
     """
     # 1) content_type 기본 체크
@@ -71,7 +70,7 @@ async def preprocess_image(file: UploadFile = File(...)):
 
     try:
         # 4) 배경 제거 및 리사이즈 수행
-        processed_bytes = remove_background_and_resize(image_bytes)
+        processed_bytes = prepare_upload_image(image_bytes)
 
     except AppException:
         raise
@@ -266,11 +265,11 @@ async def create_image_ad(
         user_id = current_user["id"]
 
         logger.info(
-            "image_ad_endpoint_started | user_id={} | store_name={} | menu_name={} | mood={} | num_images={}",
+            "image_ad_endpoint_started | user_id={} | store_name={} | menu_name={} | food_type={} | num_images={}",
             user_id,
             payload.store_name,
             payload.menu_name,
-            payload.mood,
+            payload.food_type,
             payload.num_images,
         )
 
