@@ -16,7 +16,7 @@ from app.schemas.image_ad import (
     ImageAdResponse,
     ImageVariantType,
 )
-from app.core.model_config import get_provider_name, get_variant_image_size
+from app.core.model_config import get_provider_name, get_variant_image_size, get_model_settings
 from app.services.pipelines.food_type_prompts import (
     _build_user_priority_block,
     build_food_context_line,
@@ -25,6 +25,8 @@ from app.services.pipelines.food_type_prompts import (
 from app.services.pipelines.image_variant_prompts import (
     build_hf_variant_prompts,
     build_variant_prompt,
+    resolve_hf_img2img_strength,
+    resolve_variant_render_mode,
 )
 from app.services.providers.base import ImageRenderMode
 from app.services.providers.factory import get_image_provider
@@ -52,7 +54,7 @@ def _prepare_edit_source_bytes(
     variant: ImageVariantType,
 ) -> bytes:
     """
-    OpenAI images.edit 입력용 소스 이미지를 준비한다.
+    provider 입력용 소스 이미지를 준비한다.
 
     - studio: 축소·패딩으로 미디엄 와이드 구도 유도
     - instagram_feed: 중앙 줌으로 릴스용 음식 클로즈업 유도
@@ -189,6 +191,7 @@ async def _generate_poster_with_retries(
     size: str | None = None,
     render_mode: ImageRenderMode = "photo_restyle",
     negative_prompt: str | None = None,
+    img2img_strength: float | None = None,
 ) -> list[bytes]:
     last_error: Exception | None = None
 
@@ -206,6 +209,8 @@ async def _generate_poster_with_retries(
             }
             if negative_prompt is not None:
                 generate_kwargs["negative_prompt"] = negative_prompt
+            if img2img_strength is not None:
+                generate_kwargs["img2img_strength"] = img2img_strength
 
             image_bytes_list = await provider.generate(**generate_kwargs)
 
@@ -336,7 +341,10 @@ async def generate_image_ads(
 
             variant = _resolve_image_variant(idx)
             variant_size = get_variant_image_size(variant)
-            render_mode: ImageRenderMode = "photo_restyle"
+            render_mode = resolve_variant_render_mode(
+                variant,
+                image_provider=image_provider_name,
+            )
 
             if image_provider_name == "hf":
                 variant_prompt, negative_prompt = build_hf_variant_prompts(
@@ -360,11 +368,26 @@ async def generate_image_ads(
                 variant=variant,
             )
 
+            img2img_strength: float | None = None
+            if image_provider_name == "hf":
+                hf_settings = get_model_settings(
+                    role="image_generation",
+                    provider_name="hf",
+                )["settings"]
+                default_strength = float(
+                    hf_settings.get("img2img_restyle_strength", 0.45)
+                )
+                img2img_strength = resolve_hf_img2img_strength(
+                    variant,
+                    default_strength=default_strength,
+                )
+
             logger.info(
-                "image_variant_generation_started | variant={} | provider={} | render_mode={}",
+                "image_variant_generation_started | variant={} | provider={} | render_mode={} | img2img_strength={}",
                 variant,
                 image_provider_name,
                 render_mode,
+                img2img_strength,
             )
 
             variant_outputs = await _generate_poster_with_retries(
@@ -374,6 +397,7 @@ async def generate_image_ads(
                 size=variant_size,
                 render_mode=render_mode,
                 negative_prompt=negative_prompt,
+                img2img_strength=img2img_strength,
             )
 
             if not variant_outputs:

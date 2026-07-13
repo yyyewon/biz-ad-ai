@@ -32,7 +32,7 @@ version: 1
 # - hybrid_hf_text_openai_image
 #   → 텍스트 생성: HuggingFace
 #   → 이미지 생성: OpenAI
-active_profile: all_openai
+active_profile: hybrid_openai_text_hf_image
 
 # provider 조합 정의.
 #
@@ -400,7 +400,7 @@ hf:
         height: 1536
         num_inference_steps: 28
         guidance_scale: 4.5
-        img2img_restyle_strength: 0.45
+        img2img_restyle_strength: 0.7
 
       sdxl_lightning:
         # HuggingFace model id.

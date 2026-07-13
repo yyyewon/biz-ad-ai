@@ -46,12 +46,29 @@ def resolve_variant_render_mode(
     image_provider: str,
 ) -> ImageRenderMode:
     """
-    OpenAI·HF 공통: 업로드 사진 전체를 variant 프롬프트로 재생성(photo_restyle).
+    OpenAI·HF 공통: 원본 사진 전체를 한 장으로 편집(photo_restyle).
 
-    OpenAI → images.edit, HF → img2img. rembg 누끼·배경 합성(background_swap)은 사용하지 않는다.
-    """
+    OpenAI → images.edit, HF → img2img.
+    누끼 합성(background_swap)은 각도/조명이 어긋나므로 사용하지 않는다.
+  """
     _ = (variant, image_provider)
     return "photo_restyle"
+
+
+# HF img2img — variant별 strength (높을수록 배경·장면 변경 ↑, 음식 보존 ↓)
+_HF_VARIANT_IMG2IMG_STRENGTH: dict[ImageVariantType, float] = {
+    "studio": 0.68,
+    "poster": 0.65,
+    "instagram_feed": 0.45,
+}
+
+
+def resolve_hf_img2img_strength(
+    variant: ImageVariantType,
+    *,
+    default_strength: float,
+) -> float:
+    return _HF_VARIANT_IMG2IMG_STRENGTH.get(variant, default_strength)
 
 
 def build_hf_variant_prompts(

@@ -58,21 +58,41 @@ _REALISM_RULES = (
     "no CGI/plastic/HDR/neon/beauty filter"
 )
 
+_NEGATIVE_CLUTTER = (
+    "no empty plate, no water cup, no water glass, no napkin, no call bell, "
+    "no receipt, no extra unrelated cups or tableware"
+)
+
 _NEGATIVE_COMMON = (
-    "no text, numbers, logo, watermark, UI, dish name, menu title, caption, subtitle in image"
+    "no text, numbers, logo, watermark, UI, dish name, menu title, caption, subtitle in image, "
+    f"{_NEGATIVE_CLUTTER}"
 )
 
 _NEGATIVE_REELS = f"{_NEGATIVE_COMMON}, hook via PIL only"
 
 _PRESERVE_FOOD_BASE = (
-    "preserve original food/toppings/containers, no add/remove props, no floating/cropped vessels"
+    "preserve original main-menu food/toppings and its serving vessel, "
+    "no add/remove food items, no floating/cropped vessels"
+)
+
+_EXCLUDE_TABLE_CLUTTER = (
+    "remove empty plates, water cups/glasses, napkins, call bell, menus, "
+    "unrelated drinks and table clutter"
+)
+
+_SUBJECT_HERO_COMMON = (
+    f"{_PRESERVE_FOOD_BASE}, hero focus on ordered menu item, {_EXCLUDE_TABLE_CLUTTER}"
 )
 
 _STUDIO_SCENE_BASE = (
-    "clear table clutter, medium wide 50mm, food 55-65% frame, 45deg, no people"
+    "clean table surface, no loose clutter props, medium wide 50mm, food 55-65% frame, "
+    "45deg, no people"
 )
 
-_POSTER_FOOD_BASE = "preserve original main dish, no added food"
+_POSTER_FOOD_BASE = (
+    f"preserve original main dish, hero focus on ordered menu item, "
+    f"no added food, {_EXCLUDE_TABLE_CLUTTER}"
+)
 
 _POSTER_BG_BASE = "designed commercial poster bg, cohesive top+bottom flow"
 
@@ -143,33 +163,34 @@ NEG: {_NEGATIVE_COMMON}
 # --- studio subject tags per food type ---
 
 _STUDIO_SOUP_STEW_SUBJECT = (
-    f"{_PRESERVE_FOOD_BASE}, keep main pot + all side dish plates, "
+    f"{_SUBJECT_HERO_COMMON}, keep main pot + all side dish plates with food, "
     "vivid broth, tofu/kimchi/pottery detail"
 )
 
 _STUDIO_FRIED_SUBJECT = (
-    f"{_PRESERVE_FOOD_BASE}, crispy golden crust, sharp fry texture, not soggy/oily"
+    f"{_SUBJECT_HERO_COMMON}, crispy golden crust, sharp fry texture, not soggy/oily"
 )
 
 _STUDIO_GRILLED_BBQ_SUBJECT = (
-    f"{_PRESERVE_FOOD_BASE}, grill marks, sear gloss, juicy meat surface, "
+    f"{_SUBJECT_HERO_COMMON}, grill marks, sear gloss, juicy meat surface, "
     "natural plate smoke not CG smoke"
 )
 
 _STUDIO_RICE_DISH_SUBJECT = (
-    f"{_PRESERVE_FOOD_BASE}, visible rice/noodle+topping layers, strong color contrast"
+    f"{_SUBJECT_HERO_COMMON}, visible rice/noodle+topping layers, strong color contrast"
 )
 
 _STUDIO_BREAD_DESSERT_SUBJECT = (
-    f"{_PRESERVE_FOOD_BASE}, crisp crumb, cream/glaze/layer detail"
+    f"{_SUBJECT_HERO_COMMON}, crisp crumb, cream/glaze/layer detail"
 )
 
 _STUDIO_BURGER_SANDWICH_SUBJECT = (
-    f"{_PRESERVE_FOOD_BASE}, visible bun/patty/veg/sauce layers, not collapsed/soggy"
+    f"{_SUBJECT_HERO_COMMON}, visible bun/patty/veg/sauce layers, not collapsed/soggy"
 )
 
 _STUDIO_COFFEE_DRINK_SUBJECT = (
-    f"{_PRESERVE_FOOD_BASE}, cup condensation, beverage layers, foam/cream texture"
+    f"{_SUBJECT_HERO_COMMON}, single hero cup only, cup condensation, "
+    "beverage layers, foam/cream texture"
 )
 
 # --- studio scene tags per food type ---
@@ -342,7 +363,7 @@ _POSTER_TEMPLATE = _POSTER_PHOTO_TEMPLATE.replace("{_NEGATIVE_COMMON}", _NEGATIV
 # =============================================================================
 
 _REELS_FOOD_RULES = (
-    f"{_PRESERVE_FOOD_BASE}, extreme closeup 70-85%, main dominant, sides at edges only"
+    f"{_SUBJECT_HERO_COMMON}, extreme closeup 70-85%, main dominant, sides at edges only"
 )
 
 _REELS_SCENE_RULES = (

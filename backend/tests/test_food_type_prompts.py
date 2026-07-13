@@ -89,3 +89,33 @@ def test_reels_prompt_excludes_menu_name_from_image_model():
 
 def test_reels_variant_uses_pil_overlay():
     assert variant_uses_pil_text_overlay("fried", "instagram_feed") is True
+
+
+def test_common_clutter_exclusion_in_all_food_types_and_variants():
+    clutter_markers = (
+        "empty plates",
+        "water cups",
+        "hero focus on ordered menu item",
+    )
+    negative_markers = ("no empty plate", "no water cup", "no napkin")
+
+    for food_type in (
+        "soup_stew",
+        "fried",
+        "grilled_bbq",
+        "rice_dish",
+        "bread_dessert",
+        "burger_sandwich",
+        "coffee_drink",
+    ):
+        for variant in ("studio", "poster", "instagram_feed"):
+            prompt = build_food_variant_prompt(
+                _payload(food_type=food_type),
+                variant,
+                food_type=food_type,
+                build_poster_prompt=_build_poster_prompt,
+            )
+            for marker in clutter_markers:
+                assert marker in prompt, f"{food_type}/{variant} missing {marker}"
+            for marker in negative_markers:
+                assert marker in prompt, f"{food_type}/{variant} missing {marker}"
