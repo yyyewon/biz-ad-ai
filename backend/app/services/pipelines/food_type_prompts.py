@@ -595,6 +595,18 @@ def append_food_and_variant_context(
     )
 
 
+def build_variant_negative_prompt(variant: ImageVariantType) -> str:
+    if variant == "instagram_feed":
+        return _NEGATIVE_REELS
+    return _NEGATIVE_COMMON
+
+
+def strip_prompt_neg_line(prompt: str) -> str:
+    """HF negative_prompt 파라미터로 분리할 때 positive prompt에서 NEG 줄을 제거한다."""
+    lines = [line for line in prompt.splitlines() if not line.strip().startswith("NEG:")]
+    return "\n".join(lines).strip()
+
+
 def build_food_variant_prompt(
     payload: ImageAdRequest,
     variant: ImageVariantType,

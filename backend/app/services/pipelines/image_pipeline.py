@@ -16,13 +16,17 @@ from app.schemas.image_ad import (
     ImageAdResponse,
     ImageVariantType,
 )
-from app.core.model_config import get_variant_image_size
+from app.core.model_config import get_provider_name, get_variant_image_size
 from app.services.pipelines.food_type_prompts import (
     _build_user_priority_block,
     build_food_context_line,
     uses_custom_template,
 )
-from app.services.pipelines.image_variant_prompts import build_variant_prompt
+from app.services.pipelines.image_variant_prompts import (
+    build_hf_variant_prompts,
+    build_variant_prompt,
+)
+from app.services.providers.base import ImageRenderMode
 from app.services.providers.factory import get_image_provider
 from app.utils.image_processor import shrink_and_pad_for_wider_framing, zoom_center_crop
 from app.utils.image_bytes import (
@@ -183,6 +187,8 @@ async def _generate_poster_with_retries(
     base_prompt: str,
     mask_image_bytes: bytes | None = None,
     size: str | None = None,
+    render_mode: ImageRenderMode = "photo_restyle",
+    negative_prompt: str | None = None,
 ) -> list[bytes]:
     last_error: Exception | None = None
 
@@ -190,13 +196,18 @@ async def _generate_poster_with_retries(
         retry_prompt = f"{base_prompt}, {suffix}" if suffix else base_prompt
 
         try:
-            image_bytes_list = await provider.generate(
-                input_image_bytes=source_image_bytes,
-                mask_image_bytes=mask_image_bytes,
-                prompt=retry_prompt,
-                num_images=1,
-                size=size,
-            )
+            generate_kwargs = {
+                "input_image_bytes": source_image_bytes,
+                "mask_image_bytes": mask_image_bytes,
+                "prompt": retry_prompt,
+                "num_images": 1,
+                "size": size,
+                "render_mode": render_mode,
+            }
+            if negative_prompt is not None:
+                generate_kwargs["negative_prompt"] = negative_prompt
+
+            image_bytes_list = await provider.generate(**generate_kwargs)
 
             if image_bytes_list:
                 return image_bytes_list
@@ -204,8 +215,9 @@ async def _generate_poster_with_retries(
         except Exception as exc:
             last_error = exc
             logger.warning(
-                "poster_generation_attempt_failed | attempt={} | error={}",
+                "poster_generation_attempt_failed | attempt={} | render_mode={} | error={}",
                 attempt_idx + 1,
+                render_mode,
                 str(exc),
             )
 
@@ -263,6 +275,7 @@ async def generate_image_ads(
         prepared_source_bytes = pil_image_to_png_bytes(source_rgb)
 
         provider = get_image_provider()
+        image_provider_name = get_provider_name("image_generation")
         generation_mode = _resolve_generation_mode(payload.generation_mode)
 
         prompt_used = ""
@@ -323,16 +336,35 @@ async def generate_image_ads(
 
             variant = _resolve_image_variant(idx)
             variant_size = get_variant_image_size(variant)
-            variant_prompt = build_variant_prompt(
-                payload,
-                variant,
-                food_type=payload.food_type,
-                build_poster_prompt=_build_poster_prompt,
-            )
+            render_mode: ImageRenderMode = "photo_restyle"
+
+            if image_provider_name == "hf":
+                variant_prompt, negative_prompt = build_hf_variant_prompts(
+                    payload,
+                    variant,
+                    food_type=payload.food_type,
+                    build_poster_prompt=_build_poster_prompt,
+                )
+            else:
+                variant_prompt = build_variant_prompt(
+                    payload,
+                    variant,
+                    food_type=payload.food_type,
+                    build_poster_prompt=_build_poster_prompt,
+                )
+                negative_prompt = None
+
             edit_source_bytes = _prepare_edit_source_bytes(
                 source_for_variant,
                 food_type=payload.food_type,
                 variant=variant,
+            )
+
+            logger.info(
+                "image_variant_generation_started | variant={} | provider={} | render_mode={}",
+                variant,
+                image_provider_name,
+                render_mode,
             )
 
             variant_outputs = await _generate_poster_with_retries(
@@ -340,6 +372,8 @@ async def generate_image_ads(
                 source_image_bytes=edit_source_bytes,
                 base_prompt=variant_prompt,
                 size=variant_size,
+                render_mode=render_mode,
+                negative_prompt=negative_prompt,
             )
 
             if not variant_outputs:
