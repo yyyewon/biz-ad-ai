@@ -32,7 +32,7 @@ version: 1
 # - hybrid_hf_text_openai_image
 #   → 텍스트 생성: HuggingFace
 #   → 이미지 생성: OpenAI
-active_profile: all_openai
+active_profile: hybrid_openai_text_hf_image
 
 # provider 조합 정의.
 #
@@ -388,11 +388,20 @@ hf:
     # HuggingFace 광고 이미지 생성 기본 모델.
     #
     # options:
+    # - sd35_medium
     # - sdxl_lightning
     # - sdxl_base
-    default_model: sdxl_lightning
+    default_model: sd35_medium
 
     models:
+      sd35_medium:
+        model_id: stabilityai/stable-diffusion-3.5-medium
+        width: 1024
+        height: 1536
+        num_inference_steps: 28
+        guidance_scale: 4.5
+        img2img_restyle_strength: 0.7
+
       sdxl_lightning:
         # HuggingFace model id.
         model_id: ByteDance/SDXL-Lightning

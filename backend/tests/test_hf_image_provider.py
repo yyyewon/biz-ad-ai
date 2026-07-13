@@ -157,7 +157,11 @@ def test_generate_with_mask_preserves_subject_pixels(monkeypatch, tmp_path):
         def __call__(self, **kwargs):
             return FakeResult()
 
-    monkeypatch.setattr(provider, "_load_inpaint_pipeline", lambda: FakePipe())
+    monkeypatch.setattr(provider, "_load_text2img_pipeline", lambda: FakePipe())
+    provider._seam_blend_enabled = False
+    provider._color_harmonize_strength = 0.0
+    provider._drop_shadow_opacity = 0.0
+    provider._composite_feather_px = 0
 
     # 왼쪽 절반: alpha=255(피사체 보존), 오른쪽 절반: alpha=0(배경 교체)
     mask = Image.new("RGBA", size, (0, 0, 0, 0))
@@ -171,12 +175,14 @@ def test_generate_with_mask_preserves_subject_pixels(monkeypatch, tmp_path):
             prompt="테스트",
             num_images=1,
             mask_image_bytes=pil_image_to_png_bytes(mask),
+            render_mode="background_swap",
         )
     )
 
     output_image = image_bytes_to_pil(result[0]).convert("RGB")
 
-    assert output_image.getpixel((5, 5)) == (255, 255, 255)   # 피사체 보존 영역
-    assert output_image.getpixel((60, 60)) == (0, 0, 255)     # 배경 교체 영역
+    # 배경(상단)은 생성된 backdrop, 하단 히어로 영역은 원본 피사체가 합성된다.
+    assert output_image.getpixel((60, 8)) == (0, 0, 255)
+    assert output_image.getpixel((30, 58)) == (255, 255, 255)
 
     _teardown(monkeypatch)
