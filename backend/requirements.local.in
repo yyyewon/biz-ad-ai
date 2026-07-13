@@ -1,0 +1,67 @@
+# Mac 로컬 Docker / CPU 테스트용 requirements
+# 기준 파일: requirements.in
+# 변경 사항:
+# - rembg[gpu] -> rembg
+# - onnxruntime-gpu -> onnxruntime
+# - cuda-* / nvidia-* / CUDA wheel index 제거
+
+# =========================
+# Backend API
+# =========================
+fastapi
+uvicorn[standard]
+python-multipart
+
+# =========================
+# Config / Environment
+# =========================
+python-dotenv
+pydantic-settings
+PyYAML
+
+# =========================
+# Logging
+# =========================
+loguru
+
+# =========================
+# Image Processing
+# =========================
+pillow
+
+# =========================
+# Testing
+# =========================
+pytest
+httpx
+
+# =========================
+# AI Providers / PyTorch
+# =========================
+
+torch
+torchvision
+torchaudio
+diffusers
+transformers
+accelerate
+sentencepiece
+openai
+
+# pytest traceback / terminal output formatting
+Pygments
+
+# Image background removal
+rembg
+
+# numba/pymatting compatibility for rembg
+numpy<2.5
+
+# TestClient dependency for Starlette/FastAPI tests
+httpx2
+
+# =========================
+# Auth / Social Login
+# =========================
+PyJWT
+onnxruntime

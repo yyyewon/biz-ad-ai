@@ -52,7 +52,7 @@ def render() -> None:
                     value=business["store_location"],
                     placeholder="예) 서울시 강서구",
                     max_chars=30,
-                    help="가게 위치를 적어주세요"
+                    help="가게 위치를 적어주세요",
                 )
             with row2_col2:
                 price = st.text_input(
@@ -80,8 +80,14 @@ def render() -> None:
             )
 
     if submitted:
-        if not store_name.strip() or not menu_name.strip() or purpose is None:
-            st.warning("가게 이름, 메뉴 이름, 홍보 목적을 모두 입력해 주세요.")
+        if (
+            not store_name.strip()
+            or not menu_name.strip()
+            or not store_location.strip()
+            or not price.strip()
+            or purpose is None
+        ):
+            st.warning("가게 이름, 메뉴 이름, 위치, 가격, 홍보 목적을 모두 입력해 주세요.")
             return
         set_business_info(store_name, menu_name, store_location, price, purpose)
         next_step()

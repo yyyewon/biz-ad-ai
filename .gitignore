@@ -207,3 +207,7 @@ tmp_samples/
 # =========================
 docker-compose.dev.proxy.yml
 backend/logs-dev/
+# Local Docker test
+docker-compose.local.yml
+backend/logs-local/
+backend/.hf-cache/

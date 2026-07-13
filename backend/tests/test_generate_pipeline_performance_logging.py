@@ -64,18 +64,11 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
         fake_run_text_pipeline,
     )
 
-    monkeypatch.setattr(
-        generate_pipeline,
-        "run_remove_background_and_resize",
-        lambda image_bytes: processed_bytes,
-    )
-
     async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
-        assert source_image_bytes == processed_bytes
+        assert source_image_bytes == source_bytes
 
         return ImageAdResponse(
             request_id="img-test",
-            mood=payload.mood,
             prompt_used="poster prompt",
             num_images=1,
             latency_ms=130,
@@ -88,7 +81,6 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
             images=[poster_b64],
             poster_images=[poster_b64],
             image_bytes_list=[poster_bytes],
-            applied_moods=[payload.mood],
         )
 
     monkeypatch.setattr(
@@ -102,8 +94,9 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
             store_name="만월",
             menu_name="데몬헌터스 케이크",
             purpose="신메뉴 홍보",
-            request_note="",
-            moods=["cozy"],
+            food="덮밥, 볶음, 비빔",
+            llm_request="",
+            image_request="",
             tone="감성적인",
             image_bytes=source_bytes,
         )
@@ -114,7 +107,6 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
     stages = [call["stage"] for call in metric_calls]
 
     assert "text_generation" in stages
-    assert "image_preprocess" in stages
     assert "image_generation" in stages
     assert "food_generation" in stages
     assert "poster_generation" in stages
@@ -180,12 +172,6 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
         fake_run_text_pipeline,
     )
 
-    monkeypatch.setattr(
-        generate_pipeline,
-        "run_remove_background_and_resize",
-        lambda image_bytes: processed_bytes,
-    )
-
     async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
         raise RuntimeError("image generation failed")
 
@@ -200,8 +186,9 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
             store_name="만월",
             menu_name="데몬헌터스 케이크",
             purpose="신메뉴 홍보",
-            request_note="",
-            moods=["cozy"],
+            food="덮밥, 볶음, 비빔",
+            llm_request="",
+            image_request="",
             tone="감성적인",
             image_bytes=source_bytes,
         )

@@ -97,6 +97,29 @@ def test_openai_image_provider_generate_with_mask(monkeypatch):
     assert fake_images_client.edit_calls[0]["mask"].name == "mask_1.png"
 
 
+def test_openai_image_provider_generate_with_variant_size(monkeypatch):
+    image_bytes = _sample_png_bytes()
+    fake_images_client = FakeImagesClient(image_bytes=image_bytes)
+
+    FakeAsyncOpenAI.images_client = fake_images_client
+    monkeypatch.setattr(openai_image_provider, "AsyncOpenAI", FakeAsyncOpenAI)
+
+    provider = OpenAIImageProvider(api_key="test-api-key")
+
+    result = asyncio.run(
+        provider.generate(
+            input_image_bytes=image_bytes,
+            mask_image_bytes=None,
+            prompt="테스트 프롬프트",
+            num_images=1,
+            size="1024x1024",
+        )
+    )
+
+    assert result == [image_bytes]
+    assert fake_images_client.edit_calls[0]["size"] == "1024x1024"
+
+
 def test_openai_image_provider_generate_backgrounds_returns_bytes(monkeypatch):
     image_bytes = _sample_png_bytes()
     fake_images_client = FakeImagesClient(image_bytes=image_bytes)

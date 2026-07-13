@@ -28,7 +28,6 @@ def test_image_ad_endpoint_returns_common_success_response(monkeypatch):
 
         return ImageAdResponse(
             request_id="img-test",
-            mood=payload.mood,
             prompt_used="poster prompt",
             num_images=1,
             latency_ms=100,
@@ -40,7 +39,6 @@ def test_image_ad_endpoint_returns_common_success_response(monkeypatch):
             },
             images=[output_b64],
             poster_images=[output_b64],
-            applied_moods=[payload.mood],
         )
 
     monkeypatch.setattr(
@@ -55,7 +53,7 @@ def test_image_ad_endpoint_returns_common_success_response(monkeypatch):
             "input_image_base64": input_b64,
             "store_name": "만월",
             "menu_name": "데몬헌터스 케이크",
-            "mood": "cozy",
+            "food_type": "bread_dessert",
             "num_images": 1,
             "generation_mode": "direct_poster",
         },
@@ -83,7 +81,7 @@ def test_image_ad_endpoint_requires_input_image_base64():
         json={
             "store_name": "만월",
             "menu_name": "데몬헌터스 케이크",
-            "mood": "cozy",
+            "food_type": "bread_dessert",
             "num_images": 1,
             "generation_mode": "direct_poster",
         },

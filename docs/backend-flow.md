@@ -60,8 +60,7 @@ POST /api/v1/ad/generate
 3. UploadFile이 있으면 bytes로 읽음
 4. run_generate_pipeline() 호출
 5. text_pipeline에서 광고 문구 생성
-6. 이미지가 있으면 image_preprocess 실행
-7. image_pipeline에서 이미지 생성
+6. 이미지가 있으면 image_pipeline에서 이미지 생성
 8. 결과 이미지를 base64로 변환
 9. success_response(data=...) 반환
 ```
@@ -94,7 +93,7 @@ backend/app/utils/text_sanitizer.py
 흐름:
 
 ```text
-store_name, menu_name, purpose, request_note, moods, tone
+store_name, menu_name, purpose, llm_request, tone
 → prompt 구성
 → active_profile 기준 text provider 선택
 → LLM 호출
@@ -110,9 +109,7 @@ store_name, menu_name, purpose, request_note, moods, tone
 
 ```text
 업로드 이미지 bytes
-→ rembg 전처리 bytes
 → image_pipeline.py
-→ mask bytes 생성
 → OpenAIImageProvider 또는 HFImageProvider
 → 생성 이미지 bytes
 → base64 문자열
@@ -122,7 +119,6 @@ store_name, menu_name, purpose, request_note, moods, tone
 관련 파일:
 
 ```text
-backend/app/api/v1/endpoints/image_preprocess.py
 backend/app/services/pipelines/generate_pipeline.py
 backend/app/services/pipelines/image_pipeline.py
 backend/app/services/providers/factory.py
@@ -133,15 +129,23 @@ backend/app/utils/image_bytes.py
 
 ---
 
-## 6. 이미지 전처리 흐름
+## 6. 이미지 전처리 (개발용)
 
 ```text
 UploadFile.read()
 → image_bytes
-→ run_remove_background_and_resize(image_bytes)
-→ rembg 배경 제거
-→ target size resize
+→ prepare_upload_image(image_bytes)
+→ 비율 유지 리사이즈
 → PNG bytes 반환
+```
+
+배경 제거(rembg)는 사용하지 않는다. 업로드 원본 구도를 유지한다.
+
+관련 파일:
+
+```text
+backend/app/api/v1/endpoints/dev_apis.py
+backend/app/utils/image_processor.py
 ```
 
 결과는 파일로 저장하지 않는다.
@@ -352,7 +356,7 @@ fallback 우선순위:
 API:
 
 ```text
-POST /api/v1/ad/image
+POST /api/v1/dev/ad/image
 ```
 
 흐름:

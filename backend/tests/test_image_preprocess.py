@@ -3,7 +3,7 @@ import base64
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.api.v1.endpoints import image_preprocess
+from app.api.v1.endpoints import dev_apis
 
 
 client = TestClient(app)
@@ -13,8 +13,8 @@ def test_image_preprocess_success(monkeypatch):
     """
     이미지 전처리 API 성공 테스트입니다.
 
-    실제 rembg 모델을 실행하지 않고,
-    run_remove_background_and_resize 함수를 monkeypatch하여
+    실제 전처리를 실행하지 않고,
+    prepare_upload_image 함수를 monkeypatch하여
     API 요청/응답 구조만 검증합니다.
     """
 
@@ -25,13 +25,13 @@ def test_image_preprocess_success(monkeypatch):
         return fake_processed_bytes
 
     monkeypatch.setattr(
-        image_preprocess,
-        "run_remove_background_and_resize",
+        dev_apis,
+        "prepare_upload_image",
         fake_preprocess,
     )
 
     response = client.post(
-        "/api/v1/image/preprocess",
+        "/api/v1/dev/image/preprocess",
         files={
             "file": (
                 "sample.png",
@@ -59,7 +59,7 @@ def test_image_preprocess_invalid_file_type():
     """
 
     response = client.post(
-        "/api/v1/image/preprocess",
+        "/api/v1/dev/image/preprocess",
         files={
             "file": (
                 "sample.txt",
@@ -83,7 +83,7 @@ def test_image_preprocess_empty_file():
     """
 
     response = client.post(
-        "/api/v1/image/preprocess",
+        "/api/v1/dev/image/preprocess",
         files={
             "file": (
                 "empty.png",
