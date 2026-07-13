@@ -70,7 +70,7 @@ def test_get_image_preprocess_settings():
 
     settings = model_config.get_image_preprocess_settings()
 
-    assert settings["provider"] == "rembg"
+    assert settings["provider"] == "pillow"
     assert settings["target_width"] > 0
     assert settings["target_height"] > 0
 
@@ -117,7 +117,7 @@ output_image:
   default_count: 3
   max_count: 4
 image_preprocess:
-  provider: rembg
+  provider: pillow
   target_width: 512
   target_height: 512
   output_format: png

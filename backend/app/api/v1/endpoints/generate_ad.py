@@ -32,6 +32,8 @@ async def generate_ad_endpoint(
     purpose: str | None = Form(None, description="광고 목적"),
     food: str = Form("", description="음식 종류"),
     tone: str = Form("", description="톤앤매너"),
+    price: str = Form("", description="메뉴 가격"),
+    store_location: str = Form("", description="가게 위치/지역"),
     image_request: str = Form("", description="이미지 생성 요구사항"),
     llm_request: str = Form("", description="광고 문구 생성 요구사항"),
     image: UploadFile | None = File(None, description="참고용 이미지"),
@@ -57,11 +59,7 @@ async def generate_ad_endpoint(
     - pipeline은 내부 결과 dict만 반환한다.
     - API 응답 포맷 래핑은 endpoint에서 success_response로 처리한다.
     """
-    logger.info(f"⚡ [BACKEND ROUTER DEBUG] 수신된 llm_request: '{llm_request}' | image_request: '{image_request}'")
-
     try:
-        # 콤마로 구분된 분위기 문자열을 리스트로 변환
-
         # 업로드된 이미지 파일 읽기
         image_bytes = None
 
@@ -93,6 +91,8 @@ async def generate_ad_endpoint(
                 purpose=purpose or "홍보",
                 food=food,
                 tone=tone,
+                price=price,
+                store_location=store_location,
                 image_request=image_request,
                 llm_request=llm_request,
                 image_bytes=image_bytes,

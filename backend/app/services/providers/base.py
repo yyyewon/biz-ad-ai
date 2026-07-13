@@ -39,6 +39,7 @@ class ImageGenerationProvider(ABC):
         prompt: str,
         num_images: int,
         mask_image_bytes: bytes | None = None,
+        size: str | None = None,
         render_mode: ImageRenderMode = "photo_restyle",
     ) -> list[bytes]:
         """

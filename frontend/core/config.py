@@ -2,21 +2,37 @@
 전역 설정 모듈
 """
 import os
+from pathlib import Path
+
+
+def _load_env_file() -> None:
+    """frontend/.env 값을 읽는다. 이미 설정된 환경변수는 덮어쓰지 않는다."""
+
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if not env_path.is_file():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ[key] = value
+
+
+_load_env_file()
 
 # --------------------------------------------------------------
 # 백엔드 연결 정보
 # --------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8010").rstrip("/")
 API_BROWSER_BASE_URL = os.getenv("API_BROWSER_BASE_URL", API_BASE_URL).rstrip("/")
-# 실제 서비스용 통합 생성 API
 GENERATE_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/generate"
-
-# 개발/테스트용 API
 TEXT_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/ad/text"
 IMAGE_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/ad/image"
-IMAGE_PREPROCESS_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/image/preprocess"
-
-# Health Check API
 HEALTH_ENDPOINT = f"{API_BASE_URL}/api/v1/health"
 
 # --------------------------------------------------------------
@@ -40,16 +56,15 @@ DEV_GUEST_MODE_DEFAULT = os.getenv("RG_DEV_GUEST_MODE", "false").lower() == "tru
 
 # --------------------------------------------------------------
 # 선택 옵션
-# -------------------------------------------------------------
-
+# --------------------------------------------------------------
 FOOD_OPTIONS = [
     "국, 찌개",
     "튀김",
+    "구이, 바베큐",
     "덮밥, 볶음, 비빔",
     "빵, 디저트, 케이크",
     "버거, 샌드위치",
     "커피, 음료",
-    "구이, 바베큐"
 ]
 
 TONE_OPTIONS = [

@@ -1,0 +1,26 @@
+{
+  "fonts": {
+    "noto_sans_kr": {
+      "filename": "NotoSansKR-Variable.ttf",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf",
+      "license": "OFL-1.1"
+    }
+  },
+  "roles": {
+    "poster_headline": "noto_sans_kr",
+    "poster_menu": "noto_sans_kr",
+    "poster_price": "noto_sans_kr",
+    "poster_store": "noto_sans_kr",
+    "reels_hook_lead": "noto_sans_kr",
+    "reels_hook": "noto_sans_kr"
+  },
+  "role_styles": {
+    "poster_headline": { "weight": 500 },
+    "poster_menu": { "weight": 800 },
+    "poster_price": { "weight": 700 },
+    "poster_store": { "weight": 400 },
+    "reels_hook_lead": { "weight": 400 },
+    "reels_hook": { "weight": 800 }
+  },
+  "food_type_overrides": {}
+}

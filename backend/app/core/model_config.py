@@ -450,6 +450,33 @@ def get_output_image_settings() -> dict[str, Any]:
     return settings
 
 
+def get_variant_image_size(variant: str) -> str:
+    """
+    model.yaml output_image.variant_sizes에서 유형별 해상도를 반환한다.
+    """
+
+    settings = get_output_image_settings()
+    variant_sizes = settings.get("variant_sizes")
+
+    if not isinstance(variant_sizes, dict):
+        raise AppException(
+            errors.OUTPUT_IMAGE_CONFIG_INVALID,
+            detail={"missing": "output_image.variant_sizes"},
+        )
+
+    size = variant_sizes.get(variant)
+    if not size:
+        raise AppException(
+            errors.OUTPUT_IMAGE_CONFIG_INVALID,
+            detail={
+                "missing_variant": variant,
+                "variant_sizes": variant_sizes,
+            },
+        )
+
+    return str(size)
+
+
 def get_performance_logging_settings() -> dict[str, Any]:
     """
     성능 로그 설정을 반환한다.

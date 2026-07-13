@@ -6,22 +6,21 @@ import uuid
 from typing import Any
 
 from loguru import logger
-from starlette.concurrency import run_in_threadpool
 
-from app.utils.image_processor import remove_background_and_resize
 from app.core import error_constants as errors
 from app.core.exceptions import AppException
 from app.core.model_config import (
     get_active_profile_name,
-    get_image_preprocess_settings,
     get_model_settings,
 )
+from app.schemas.food_type import FoodType
 from app.schemas.image_ad import ImageAdRequest
+from app.services.pipelines.food_type_resolver import require_food_type
 from app.services.pipelines.image_pipeline import generate_image_ads
 from app.services.pipelines.text_pipeline import run_text_pipeline
 from app.utils.image_bytes import encode_image_bytes_to_base64
+from app.utils.poster_taglines import resolve_poster_headline_from_purpose
 from app.utils.performance_logger import measure_stage, record_performance_metric
-
 
 
 def _safe_active_profile_name() -> str:
@@ -60,45 +59,30 @@ def _safe_model_info(role: str) -> dict[str, str]:
         }
 
 
-def _safe_image_preprocess_info() -> dict[str, str]:
-    """
-    image_preprocess provider 정보를 안전하게 반환한다.
-    """
-
-    try:
-        settings = get_image_preprocess_settings()
-        provider = str(settings.get("provider", "rembg"))
-        return {
-            "provider": provider,
-            "model": provider,
-        }
-    except Exception:
-        return {
-            "provider": "rembg",
-            "model": "rembg",
-        }
-
-
 def _build_image_payload(
     *,
     store_name: str,
     menu_name: str,
     purpose: str,
-    food: str,
+    food_type: FoodType,
     tone: str,
     image_request: str,
+    headline: str | None = None,
+    price_text: str | None = None,
+    store_location: str | None = None,
 ) -> ImageAdRequest:
-    normalized_mood, normalized_mood_list = _normalize_image_moods(moods or [])
-
     return ImageAdRequest(
         store_name=store_name,
         menu_name=menu_name,
+        store_location=(store_location or "").strip() or None,
+        food_type=food_type,
         promotion_goal=purpose,
         tone=tone,
-        image_request=image_request,
-        food=food,
+        extra_notes=(image_request or "").strip() or None,
+        headline=(headline or "").strip() or None,
+        price_text=(price_text or "").strip() or None,
         num_images=3,
-        generation_mode="two_stage",
+        generation_mode="direct_poster",
     )
 
 
@@ -118,6 +102,8 @@ def _build_image_generation_response(image_result) -> dict[str, Any]:
         "stage_latencies_ms": image_result.stage_latencies_ms,
         "num_images": image_result.num_images,
         "poster_image_count": len(image_result.poster_images or []),
+        "applied_variants": image_result.applied_variants,
+        "food_type": image_result.food_type,
     }
 
 
@@ -131,9 +117,6 @@ def _record_image_pipeline_stage_metrics(
 ) -> None:
     """
     image_pipeline 내부에서 계산된 stage_latencies_ms를 performance.jsonl에 기록한다.
-
-    image_pipeline.py가 이미 계산하는 값을 재사용해서
-    PPT/보고서용 분석 로그로 남긴다.
     """
 
     stage_key_map = {
@@ -205,25 +188,19 @@ async def run_generate_pipeline(
     llm_request: str,
     image_request: str,
     tone: str,
+    price: str = "",
+    store_location: str = "",
     image_bytes: bytes | None = None,
 ) -> dict[str, Any]:
     """
     통합 광고 생성 파이프라인.
 
     전체 흐름:
-    1. 이미지가 있으면 광고 문구 생성 + 이미지 전처리를 병렬 실행
+    1. 이미지가 있으면 광고 문구 생성과 이미지 생성을 병렬 실행
     2. 이미지가 없으면 광고 문구만 생성
-    3. 전처리된 이미지 bytes를 image_pipeline에 직접 전달
-    4. 광고 이미지 3장을 병렬 생성
+    3. 업로드 이미지 bytes를 image_pipeline에 직접 전달
+    4. 광고 이미지 3장 생성
     5. 생성 이미지 base64를 응답에 포함
-    6. 텍스트 + 이미지 결과를 통합 응답으로 반환
-    7. 단계별/전체 소요 시간을 performance.jsonl에 기록
-    이미지 생성 실패 시:
-    - 광고 문구는 유지한다.
-    - fallback 이미지를 반환한다.
-    - partial_success=true로 표시한다.
-    - warnings에 실패 원인을 남긴다.
-    - image_generation_success=false로 표시한다.
     """
 
     pipeline_request_id = f"gen-{uuid.uuid4().hex[:8]}"
@@ -231,50 +208,39 @@ async def run_generate_pipeline(
     profile_name = _safe_active_profile_name()
 
     logger.info(
-        "generate_pipeline_started | request_id={} | profile={} | store_name={} | menu_name={} | has_image={}",
+        "generate_pipeline_started | request_id={} | profile={} | store_name={} | menu_name={} | has_image={} | food={}",
         pipeline_request_id,
         profile_name,
         store_name,
         menu_name,
         bool(image_bytes),
+        food,
     )
 
     try:
         text_model_info = _safe_model_info("text_generation")
 
-        with measure_stage(
-            pipeline="ad_generate",
-            stage="text_generation",
-            request_id=pipeline_request_id,
-            profile=profile_name,
-            provider=text_model_info["provider"],
-            model=text_model_info["model"],
-            extra={
-                "store_name": store_name,
-                "menu_name": menu_name,
-                "has_image": bool(image_bytes),
-            },
-        ):
-            caption = run_text_pipeline(
-                store_name=store_name,
-                menu_name=menu_name,
-                purpose=purpose,
-                llm_request=llm_request,
-                tone=tone,
-            )
-
-        # ========================================================
-        # 2. 응답 기본값 초기화
-        # ========================================================
         images: list[str] = []
         image_generation: dict[str, Any] = {}
         warnings: list[dict[str, Any]] = []
         partial_success = False
         image_generation_success: bool | None = None
-        processed_bytes: bytes | None = None
 
         if image_bytes:
-            preprocess_info = _safe_image_preprocess_info()
+            resolved_food_type = require_food_type(food)
+            poster_headline = resolve_poster_headline_from_purpose(purpose)
+            image_payload = _build_image_payload(
+                store_name=store_name,
+                menu_name=menu_name,
+                purpose=purpose,
+                image_request=image_request,
+                food_type=resolved_food_type,
+                tone=tone,
+                headline=poster_headline or None,
+                price_text=price,
+                store_location=store_location,
+            )
+            image_model_info = _safe_model_info("image_generation")
 
             async def _run_text_stage() -> str:
                 with measure_stage(
@@ -288,6 +254,7 @@ async def run_generate_pipeline(
                         "store_name": store_name,
                         "menu_name": menu_name,
                         "has_image": True,
+                        "food_type": resolved_food_type,
                     },
                 ):
                     return await run_text_pipeline(
@@ -296,53 +263,14 @@ async def run_generate_pipeline(
                         purpose=purpose,
                         llm_request=llm_request,
                         tone=tone,
+                        food=food,
+                        price=price,
+                        store_location=store_location,
                     )
 
-            async def _run_preprocess_stage() -> bytes:
-                with measure_stage(
-                    pipeline="ad_generate",
-                    stage="image_preprocess",
-                    request_id=pipeline_request_id,
-                    profile=profile_name,
-                    provider=preprocess_info["provider"],
-                    model=preprocess_info["model"],
-                    extra={
-                        "input_bytes": len(image_bytes),
-                    },
-                ):
-                    result = await run_in_threadpool(
-                        remove_background_and_resize,
-                        image_bytes,
-                    )
-
-                if not result:
-                    raise AppException(
-                        errors.IMAGE_GENERATION_EMPTY_RESULT,
-                        detail={
-                            "stage": "image_preprocess",
-                            "request_id": pipeline_request_id,
-                        },
-                    )
-
-                return result
-
-            caption, processed_bytes = await asyncio.gather(
-                _run_text_stage(),
-                _run_preprocess_stage(),
-            )
+            text_task = asyncio.create_task(_run_text_stage())
 
             try:
-                image_payload = _build_image_payload(
-                    store_name=store_name,
-                    menu_name=menu_name,
-                    purpose=purpose,
-                    image_request=image_request,
-                    food=food,
-                    tone=tone,
-                )
-
-                image_model_info = _safe_model_info("image_generation")
-
                 with measure_stage(
                     pipeline="ad_generate",
                     stage="image_generation",
@@ -357,8 +285,7 @@ async def run_generate_pipeline(
                 ):
                     image_result = await generate_image_ads(
                         payload=image_payload,
-                        original_image_bytes=image_bytes,
-                        subject_cutout_bytes=processed_bytes,
+                        source_image_bytes=image_bytes,
                     )
 
                 _record_image_pipeline_stage_metrics(
@@ -399,8 +326,7 @@ async def run_generate_pipeline(
                     str(exc),
                 )
 
-                fallback_bytes = processed_bytes or image_bytes
-                fallback_b64 = encode_image_bytes_to_base64(fallback_bytes)
+                fallback_b64 = encode_image_bytes_to_base64(image_bytes)
                 images = [fallback_b64, fallback_b64, fallback_b64]
 
                 partial_success = True
@@ -419,6 +345,8 @@ async def run_generate_pipeline(
                         },
                     }
                 )
+
+            caption = await text_task
         else:
             with measure_stage(
                 pipeline="ad_generate",
@@ -439,6 +367,9 @@ async def run_generate_pipeline(
                     purpose=purpose,
                     llm_request=llm_request,
                     tone=tone,
+                    food=food,
+                    price=price,
+                    store_location=store_location,
                 )
 
         response: dict[str, Any] = {
@@ -455,9 +386,6 @@ async def run_generate_pipeline(
         if warnings:
             response["image_generation_error"] = warnings[0]["message"]
 
-        # ========================================================
-        # 5. 통합 파이프라인 전체 소요 시간 기록
-        # ========================================================
         total_success = not partial_success
         total_error_code = warnings[0]["code"] if warnings else None
         total_error_type = warnings[0]["detail"]["error_type"] if warnings else None
