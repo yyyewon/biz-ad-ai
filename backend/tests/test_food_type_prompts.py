@@ -30,9 +30,9 @@ def test_user_image_request_is_priority_block_in_studio_prompt():
         build_poster_prompt=_build_poster_prompt,
     )
 
-    assert "PRIORITY USER REQUEST" in prompt
+    assert "PRIORITY:" in prompt
     assert "따뜻한 나무 테이블 배경" in prompt
-    assert prompt.index("PRIORITY USER REQUEST") < prompt.index("SUBJECT:")
+    assert prompt.index("PRIORITY:") < prompt.index("SUBJECT:")
 
 
 def test_fried_poster_uses_custom_template_with_pil_rules():
@@ -70,8 +70,21 @@ def test_reels_uses_flexible_scene_rules_when_background_requested():
         build_poster_prompt=_build_poster_prompt,
     )
 
-    assert "user scene override" in prompt
-    assert "preserve original restaurant/store interior" not in prompt
+    assert "user may override" in prompt
+    assert "keep original restaurant interior" not in prompt
+
+
+def test_reels_prompt_excludes_menu_name_from_image_model():
+    prompt = build_food_variant_prompt(
+        _payload(menu_name="고추장 찌개"),
+        "instagram_feed",
+        food_type="fried",
+        build_poster_prompt=_build_poster_prompt,
+    )
+
+    assert "고추장 찌개" not in prompt
+    assert "menu title" in prompt
+    assert "hook via PIL" in prompt
 
 
 def test_reels_variant_uses_pil_overlay():

@@ -88,8 +88,8 @@ POSTER_PROMPT_HARD_CONSTRAINTS: list[str] = [
 
 POSTER_RETRY_SUFFIXES: list[str] = [
     "",
-    "재시도: 글자·숫자·가격·가게명 없이 배경과 음식만. 상단·우측·하단 우측 여백 유지.",
-    "최종 재시도: 텍스트 없는 포스터. 하단 음식 히어로 컷 크게, 상단 디자인 배경만.",
+    "retry: no text, no dish name, no menu title, no store name, food+bg only, keep layout margins",
+    "final retry: zero text in image pixels, no burned-in caption/subtitle",
 ]
 
 

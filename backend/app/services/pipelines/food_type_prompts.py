@@ -52,37 +52,29 @@ VARIANT_DIRECTION_HINTS: dict[ImageVariantType, str] = {
 # 0. Global shared keyword blocks
 # =============================================================================
 
-_NEGATIVE_COMMON = (
-    "no text, no numbers, no logo, no watermark, no UI overlay, "
-    "no CGI, no 3D render, no illustration, no plastic/wax food texture, "
-    "no extreme HDR, no neon filter, no beauty smoothing"
+# QUALITY line — photoreal look (all variants). Anti-fake rendering lives here only.
+_REALISM_RULES = (
+    "real camera editorial food photo, natural texture/gloss/grain, steam if hot, "
+    "no CGI/plastic/HDR/neon/beauty filter"
 )
 
-_REALISM_RULES = (
-    "real camera editorial food photography, realistic texture gloss grain color, "
-    "natural steam when hot"
+_NEGATIVE_COMMON = (
+    "no text, numbers, logo, watermark, UI, dish name, menu title, caption, subtitle in image"
 )
+
+_NEGATIVE_REELS = f"{_NEGATIVE_COMMON}, hook via PIL only"
 
 _PRESERVE_FOOD_BASE = (
-    "preserve original food ingredients toppings composition, "
-    "same bowl/container count, no added food/props/garnish, "
-    "no removed sides, no floating food, no cropped vessels"
+    "preserve original food/toppings/containers, no add/remove props, no floating/cropped vessels"
 )
 
 _STUDIO_SCENE_BASE = (
-    "remove restaurant clutter cups napkins bells, "
-    "medium wide 50mm 80-100cm, food 55-65% frame, 45deg angle, no people"
+    "clear table clutter, medium wide 50mm, food 55-65% frame, 45deg, no people"
 )
 
-_POSTER_FOOD_BASE = (
-    "editorial food hero bottom 55-60%, preserve original main ingredients, "
-    "no added food, realistic texture"
-)
+_POSTER_FOOD_BASE = "preserve original main dish, no added food"
 
-_POSTER_BG_BASE = (
-    "designed commercial poster background not flat solid only, "
-    "not raw studio restaurant table photo, cohesive top+bottom poster"
-)
+_POSTER_BG_BASE = "designed commercial poster bg, cohesive top+bottom flow"
 
 _VISUAL_OVERRIDE_KEYWORDS: tuple[str, ...] = (
     # Korean
@@ -131,11 +123,7 @@ def _build_user_priority_block(extra_notes: str) -> str:
     if not note:
         return ""
 
-    return (
-        "PRIORITY USER REQUEST (overrides default bg/scene rules): "
-        f"{note}. "
-        "Keep food integrity, no text/logo/watermark."
-    )
+    return f"PRIORITY: {note}. Keep SUBJECT rules."
 
 
 # =============================================================================
@@ -143,21 +131,20 @@ def _build_user_priority_block(extra_notes: str) -> str:
 # =============================================================================
 
 _STUDIO_PHOTO_TEMPLATE = """
-TASK: Recreate attached [{menu_name}] as commercial editorial food photo
-STORE: {store_name} | FOOD TYPE: {food_type_label}
-{user_priority_block}
-SUBJECT: {food_subject_rules}
+TASK: editorial food reshoot from attached photo
+TYPE: {food_type_label}
+{user_priority_block}SUBJECT: {food_subject_rules}
 SCENE: {studio_scene_rules}
 QUALITY: {realism_rules}
-OUTPUT: studio, medium wide, food+table+background, 1:1 square, goal={promotion_goal}, tone={tone}
-NEGATIVE: {_NEGATIVE_COMMON}
+GOAL: {promotion_goal}, TONE: {tone}
+NEG: {_NEGATIVE_COMMON}
 """.strip()
 
 # --- studio subject tags per food type ---
 
 _STUDIO_SOUP_STEW_SUBJECT = (
     f"{_PRESERVE_FOOD_BASE}, keep main pot + all side dish plates, "
-    "natural steam, vivid broth, realistic tofu/kimchi/pottery"
+    "vivid broth, tofu/kimchi/pottery detail"
 )
 
 _STUDIO_FRIED_SUBJECT = (
@@ -250,29 +237,25 @@ _STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_COMMON}", _NEGATIV
 # =============================================================================
 
 _POSTER_LAYOUT_RULES = (
-    "LAYOUT 4:5 vertical 1024x1536, top 38% designed empty bg for PIL text, "
-    "bottom 55-60% food hero, top-right price-pill space, bottom-right store-name space, "
-    "seamless poster flow top to bottom. {store_footer_line}"
+    "LAYOUT 4:5 1024x1536, top 38% empty designed bg (PIL text), bottom 55-60% food hero, "
+    "top-right price-pill space, bottom-right store space. {store_footer_line}"
 )
 
 _POSTER_PHOTO_TEMPLATE = """
-TASK: Commercial menu promo poster from attached [{menu_name}] photo
-STORE: {store_name} | FOOD TYPE: {food_type_label}
-{user_priority_block}
-{poster_layout_rules}
-TEXT: all copy/menu/price/store added via PIL post-process — image must have zero text
+TASK: menu promo poster from attached food photo
+TYPE: {food_type_label}
+{user_priority_block}{poster_layout_rules}
 SUBJECT: {poster_food_rules}
-BACKGROUND: {poster_background_rules}
+BG: {poster_background_rules}
 QUALITY: {realism_rules}
-CONTEXT: goal={promotion_goal}, tone={tone}
-OUTPUT: 4:5 poster, designed top bg + food hero bottom, no text in image
-NEGATIVE: {_NEGATIVE_COMMON}, no flat-only bg, no copied brand poster
+GOAL: {promotion_goal}, TONE: {tone}
+NEG: {_NEGATIVE_COMMON}, no flat-only bg, no brand copy
 """.strip()
 
 # --- poster food tags ---
 
 _POSTER_SOUP_STEW_FOOD = (
-    f"{_POSTER_FOOD_BASE}, main pot only no side plates, natural steam, glossy broth"
+    f"{_POSTER_FOOD_BASE}, main pot only no side plates, glossy broth"
 )
 
 _POSTER_FRIED_FOOD = (
@@ -359,43 +342,36 @@ _POSTER_TEMPLATE = _POSTER_PHOTO_TEMPLATE.replace("{_NEGATIVE_COMMON}", _NEGATIV
 # =============================================================================
 
 _REELS_FOOD_RULES = (
-    f"{_PRESERVE_FOOD_BASE}, extreme food closeup 70-85% frame, main dish dominant, "
-    "sides may peek at edges only, natural steam ok"
+    f"{_PRESERVE_FOOD_BASE}, extreme closeup 70-85%, main dominant, sides at edges only"
 )
 
 _REELS_SCENE_RULES = (
-    "preserve original restaurant/store interior bg table decor lighting signage, "
-    "shallow bokeh ok but no studio table/solid bg replacement, "
-    "smartphone restaurant reels thumbnail look, bright sharp appetizing, "
-    "45deg or slight top-down, no people, "
-    "bottom-left 20% empty for PIL caption, no play button/UI"
+    "keep original restaurant interior/bg/lighting, shallow bokeh ok, no studio/solid bg swap, "
+    "bright appetizing reels thumbnail, 45deg or slight top-down, no people, "
+    "bottom-left 20% empty for PIL caption"
 )
 
 _REELS_SCENE_RULES_FLEXIBLE = (
-    f"{_PRESERVE_FOOD_BASE}, user scene override allowed for bg/lighting/mood/color/table, "
-    "extreme closeup 70-85%, no people, bottom-left 20% PIL caption space, "
-    "no play button/UI/text"
+    "user may override bg/lighting/mood/color/table, extreme closeup 70-85%, "
+    "no people, bottom-left 20% PIL caption space"
 )
 
 _REELS_REALISM_EXTRA = (
-    "authentic in-store smartphone/camera single shot, not studio reshoot/composite, "
-    "micro texture pores grill marks sauce gloss broth surface, "
-    "food+bg same location same shoot, no fake bokeh/over-sharpening/CG ad look"
+    "in-store smartphone single shot, not studio reshoot/composite, "
+    "micro food texture detail, food+bg same location, no fake bokeh/over-sharpen"
 )
 
 _REELS_PHOTO_TEMPLATE = """
-TASK: Reels food thumbnail from in-store [{menu_name}] photo
-STORE: {store_name} | FOOD TYPE: {food_type_label}
-{user_priority_block}
-SUBJECT: {reels_food_rules}
+TASK: reels food thumbnail from in-store photo
+TYPE: {food_type_label}
+{user_priority_block}SUBJECT: {reels_food_rules}
 SCENE: {reels_scene_rules}
 QUALITY: {realism_rules}, {reels_realism_extra}
-CONTEXT: goal={promotion_goal}, tone={tone}
-OUTPUT: 9:16 vertical 1024x1536, extreme food closeup, preserve store bg, PIL caption bottom-left
-NEGATIVE: {_NEGATIVE_COMMON}
+GOAL: {promotion_goal}, TONE: {tone}
+NEG: {_NEGATIVE_REELS}
 """.strip()
 
-_REELS_TEMPLATE = _REELS_PHOTO_TEMPLATE.replace("{_NEGATIVE_COMMON}", _NEGATIVE_COMMON)
+_REELS_TEMPLATE = _REELS_PHOTO_TEMPLATE.replace("{_NEGATIVE_REELS}", _NEGATIVE_REELS)
 
 
 def _build_reels_scene_rules(extra_notes: str) -> str:
@@ -500,7 +476,7 @@ def _build_poster_store_footer_line(
 ) -> str:
     parts: list[str] = []
     if (store_name or "").strip():
-        parts.append("reserve bottom-right for PIL store name")
+        parts.append("reserve bottom-right for PIL store")
     if (store_location or "").strip():
         parts.append(f"location context: {store_location.strip()}")
     return ", ".join(parts)
