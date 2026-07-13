@@ -346,19 +346,12 @@ _REELS_FOOD_RULES = (
 )
 
 _REELS_SCENE_RULES = (
-    "keep original restaurant interior/bg/lighting, shallow bokeh ok, no studio/solid bg swap, "
-    "bright appetizing reels thumbnail, 45deg or slight top-down, no people, "
-    "bottom-left 20% empty for PIL caption"
+    "keep original store interior/bg/lighting, shallow natural bokeh, no studio/solid bg swap, "
+    "smartphone in-store single shot, 45deg or slight top-down, no people, bottom-left 20% empty"
 )
 
 _REELS_SCENE_RULES_FLEXIBLE = (
-    "user may override bg/lighting/mood/color/table, extreme closeup 70-85%, "
-    "no people, bottom-left 20% PIL caption space"
-)
-
-_REELS_REALISM_EXTRA = (
-    "in-store smartphone single shot, not studio reshoot/composite, "
-    "micro food texture detail, food+bg same location, no fake bokeh/over-sharpen"
+    "user may override bg/lighting/mood/color/table, no people, bottom-left 20% empty"
 )
 
 _REELS_PHOTO_TEMPLATE = """
@@ -366,7 +359,7 @@ TASK: reels food thumbnail from in-store photo
 TYPE: {food_type_label}
 {user_priority_block}SUBJECT: {reels_food_rules}
 SCENE: {reels_scene_rules}
-QUALITY: {realism_rules}, {reels_realism_extra}
+QUALITY: {realism_rules}
 GOAL: {promotion_goal}, TONE: {tone}
 NEG: {_NEGATIVE_REELS}
 """.strip()
@@ -552,7 +545,6 @@ def build_template_context(
         ),
         "reels_food_rules": _REELS_FOOD_RULES,
         "reels_scene_rules": _build_reels_scene_rules(extra_notes),
-        "reels_realism_extra": _REELS_REALISM_EXTRA,
         "reels_hook_line": _build_reels_hook_line(
             store_name=store_name,
             menu_name=payload.menu_name or "",

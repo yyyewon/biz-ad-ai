@@ -71,7 +71,7 @@ def test_reels_uses_flexible_scene_rules_when_background_requested():
     )
 
     assert "user may override" in prompt
-    assert "keep original restaurant interior" not in prompt
+    assert "keep original store interior" not in prompt
 
 
 def test_reels_prompt_excludes_menu_name_from_image_model():
