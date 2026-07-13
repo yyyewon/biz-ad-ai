@@ -48,7 +48,7 @@ def render() -> None:
             row2_col1, row2_col2 = st.columns(2, gap="small")
             with row2_col1:
                 store_location = st.text_input(
-                    "가게 이름",
+                    "가게 위치",
                     value=business["store_location"],
                     placeholder="예) 서울시 강서구",
                     max_chars=30,
