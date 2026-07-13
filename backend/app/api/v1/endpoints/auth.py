@@ -21,6 +21,43 @@ router = APIRouter()
 
 ACTIVE_REFRESH_TOKENS: dict[int, str] = {}
 
+REFRESH_COOKIE_MAX_AGE = 14 * 24 * 60 * 60
+
+
+def _is_secure(request: Request) -> bool:
+    """
+    현재 요청이 HTTPS인지 판별
+    """
+    if request.url.scheme == "https":
+        return True
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").lower()
+    return forwarded_proto == "https"
+
+
+def _set_auth_cookies(
+    response: Response,
+    *,
+    access_token: str,
+    refresh_token: str,
+    secure: bool,
+) -> None:
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        max_age=auth_settings.jwt_expires_seconds,
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        max_age=REFRESH_COOKIE_MAX_AGE,
+    )
+
 
 @router.get("/kakao/login")
 async def kakao_login():
@@ -29,11 +66,16 @@ async def kakao_login():
 
 
 @router.get("/kakao/callback")
-async def kakao_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+async def kakao_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
     if error or not code:
         raise AppException(
             code="KAKAO_LOGIN_FAILED",
-            message="카카오 로그인이 취소되었거나 실패했어요.",
+            message="카카오 로그인이 취소되거나 실패했어요.",
             status_code=400,
             detail={"error": error},
         )
@@ -46,30 +88,19 @@ async def kakao_callback(code: str | None = None, state: str | None = None, erro
         email=kakao_account.get("email"),
         nickname=(kakao_account.get("profile") or {}).get("nickname"),
     )
-    
+
     access_token = create_access_token(user_id=user["id"], provider="kakao")
     refresh_token = create_refresh_token(user_id=user["id"], provider="kakao")
-    
+
     ACTIVE_REFRESH_TOKENS[user["id"]] = refresh_token
     logger.info("social_login_success | provider=kakao | user_id={}", user["id"])
 
     response = RedirectResponse(url=auth_settings.frontend_base_url)
-    
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=auth_settings.jwt_expires_seconds
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=14 * 24 * 60 * 60
+    _set_auth_cookies(
+        response,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        secure=_is_secure(request),
     )
     return response
 
@@ -79,47 +110,59 @@ async def refresh_token_endpoint(request: Request, response: Response):
     refresh_token = request.cookies.get("refresh_token")
     if not refresh_token:
         raise AppException(code="REFRESH_TOKEN_MISSING", message="인증 세션이 없습니다.", status_code=401)
-        
+
     payload = decode_refresh_token(refresh_token)
     user_id = int(payload["sub"])
     provider = payload["provider"]
-    
+
     if ACTIVE_REFRESH_TOKENS.get(user_id) != refresh_token:
         raise AppException(code="REVOKED_REFRESH_TOKEN", message="유효하지 않은 인증 세션입니다.", status_code=401)
-        
+
     new_access_token = create_access_token(user_id=user_id, provider=provider)
     new_refresh_token = create_refresh_token(user_id=user_id, provider=provider)
-    
+
     ACTIVE_REFRESH_TOKENS[user_id] = new_refresh_token
     logger.info("token_refresh_success | user_id={}", user_id)
-    
-    response.set_cookie(
-        key="access_token", 
-        value=new_access_token, 
-        httponly=True, 
-        secure=True, 
-        samesite="lax",
-        max_age=auth_settings.jwt_expires_seconds
-    )
-    response.set_cookie(
-        key="refresh_token", 
-        value=new_refresh_token, 
-        httponly=True, 
-        secure=True, 
-        samesite="lax",
-        max_age=14 * 24 * 60 * 60
+
+    _set_auth_cookies(
+        response,
+        access_token=new_access_token,
+        refresh_token=new_refresh_token,
+        secure=_is_secure(request),
     )
     return success_response(data={"status": "refreshed"})
 
 
 @router.post("/logout")
-async def logout_endpoint(response: Response, current_user: dict = Depends(get_current_user)):
+async def logout_endpoint(request: Request, response: Response, current_user: dict = Depends(get_current_user)):
     if current_user["id"] in ACTIVE_REFRESH_TOKENS:
         del ACTIVE_REFRESH_TOKENS[current_user["id"]]
-        
-    response.delete_cookie(key="access_token")
-    response.delete_cookie(key="refresh_token")
+
+    response.delete_cookie(key="access_token", secure=_is_secure(request))
+    response.delete_cookie(key="refresh_token", secure=_is_secure(request))
     return success_response(data={"status": "logged_out"})
+
+
+@router.get("/logout")
+async def logout_redirect(request: Request):
+    """
+    로그아웃 엔드포인트
+    """
+    refresh_token = request.cookies.get("refresh_token")
+    if refresh_token:
+        try:
+            payload = decode_refresh_token(refresh_token)
+            user_id = int(payload["sub"])
+            if ACTIVE_REFRESH_TOKENS.get(user_id) == refresh_token:
+                del ACTIVE_REFRESH_TOKENS[user_id]
+        except Exception:
+            pass
+
+    secure = _is_secure(request)
+    response = RedirectResponse(url=auth_settings.frontend_base_url)
+    response.delete_cookie(key="access_token", secure=secure)
+    response.delete_cookie(key="refresh_token", secure=secure)
+    return response
 
 
 @router.get("/me")

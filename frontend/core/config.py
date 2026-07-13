@@ -40,6 +40,7 @@ HEALTH_ENDPOINT = f"{API_BASE_URL}/api/v1/health"
 # --------------------------------------------------------------
 KAKAO_LOGIN_ENDPOINT = f"{API_BROWSER_BASE_URL}/api/v1/auth/kakao/login"
 ME_ENDPOINT = f"{API_BASE_URL}/api/v1/auth/me"
+LOGOUT_ENDPOINT = f"{API_BROWSER_BASE_URL}/api/v1/auth/logout"
 DEV_RESET_QUOTA_ENDPOINT = f"{API_BASE_URL}/api/v1/auth/dev/reset-quota"
 
 REQUEST_TIMEOUT_TEXT = 60      # 초

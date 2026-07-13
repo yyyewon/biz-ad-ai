@@ -12,12 +12,12 @@ from core.auth import (
     check_auth_status_from_cookies,
     is_logged_in,
     is_dev_guest_mode,
-    logout_session,  
     sync_usage,
     reset_quota_for_testing,
 )
 from components.layout import render_topbar, render_stepper, render_footer
 from components import step_business_info, step_upload, step_result, step_login
+from core.config import LOGOUT_ENDPOINT
 
 st.set_page_config(
     page_title="소상공인 두레 | AI 광고 콘텐츠 생성",
@@ -51,9 +51,10 @@ def _render_login_section() -> None:
 
         st.success(f"{nickname}님 환영해요 👋")
         st.caption(f"오늘 생성 {used}/{limit}회 사용")
-        if st.button("로그아웃", width="stretch"):
-            logout_session()
-            st.rerun()
+        st.markdown(
+            f'<a class="rg-logout-btn" href="{LOGOUT_ENDPOINT}" target="_self">로그아웃</a>',
+            unsafe_allow_html=True,
+        )
     else:
         st.caption("메인 화면에서 카카오 로그인 후 이용할 수 있어요.")
         if st.session_state.mock_mode:

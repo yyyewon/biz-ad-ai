@@ -3,6 +3,8 @@ Step 3: 생성 결과 확인
 """
 from __future__ import annotations
 import hashlib
+import threading
+import time
 import streamlit as st
 
 from core.state import prev_step, reset_all
@@ -60,28 +62,78 @@ def _render_quota_exceeded() -> None:
             st.rerun()
 
 
+def _render_generation_loading_ui() -> tuple[object, object, float, object]:
+    loading_container = st.container(border=True)
+    with loading_container:
+        st.markdown(
+            '<div class="rg-card-title">⏳ 광고 콘텐츠를 생성하는 중이에요</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption("문구와 이미지를 준비하는 동안, 진행 상황을 상단에서 확인할 수 있어요.")
 
-def _run_generation() -> None:
+        message_placeholder = st.empty()
+        progress_bar = st.progress(5)
+        start_time = time.monotonic()
+
+        message_placeholder.markdown("**0초 경과**")
+        return loading_container, message_placeholder, progress_bar, start_time
+
+
+def _run_generation(loading_container=None, message_placeholder=None, progress_bar=None, start_time=None) -> None:
     b = st.session_state.business
     u = st.session_state.upload
     mock = st.session_state.mock_mode
 
-    with st.spinner("AI가 광고 문구와 이미지를 만들고 있어요..."):
-        result = generate_ad(
-            store_name=b["store_name"],
-            menu_name=b["menu_name"],
-            purpose=b["purpose"],
-            price=b["price"],
-            store_location=b["store_location"],
-            image_bytes=u["image_bytes"],
-            image_name=u["image_name"],
-            food=u["food"],
-            tone=u["tone"],
-            image_request=u["image_request"],
-            llm_request=u["llm_request"],
-            cookies=st.context.cookies,
-            mock=mock,
-        )
+    st.session_state.generation.update(status="loading", error_message="")
+    if loading_container is None or message_placeholder is None or progress_bar is None or start_time is None:
+        loading_container, message_placeholder, progress_bar, start_time = _render_generation_loading_ui()
+
+    result_holder: dict[str, object] = {}
+    error_holder: dict[str, Exception] = {}
+
+    def _run_generate_ad() -> None:
+        try:
+            result_holder["result"] = generate_ad(
+                store_name=b["store_name"],
+                menu_name=b["menu_name"],
+                purpose=b["purpose"],
+                price=b["price"],
+                store_location=b["store_location"],
+                image_bytes=u["image_bytes"],
+                image_name=u["image_name"],
+                food=u["food"],
+                tone=u["tone"],
+                image_request=u["image_request"],
+                llm_request=u["llm_request"],
+                cookies=st.context.cookies,
+                mock=mock,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            error_holder["error"] = exc
+
+    generation_thread = threading.Thread(target=_run_generate_ad, daemon=True)
+    generation_thread.start()
+
+    while generation_thread.is_alive():
+        elapsed = max(1, int(time.monotonic() - start_time))
+        progress_value = min(95, max(5, int((elapsed / 80.0) * 95)))
+        message_placeholder.markdown(f"**{elapsed}초 경과**")
+        progress_bar.progress(progress_value)
+        time.sleep(0.2)
+
+    generation_thread.join()
+
+    if "error" in error_holder:
+        raise error_holder["error"]
+
+    result = result_holder.get("result")
+
+    elapsed = max(1, int(time.monotonic() - start_time))
+    message_placeholder.markdown(f"**{elapsed}초 경과**")
+    progress_bar.progress(100)
+
+    if loading_container is not None:
+        loading_container.empty()
 
     if not result["ok"]:
         st.session_state.generation.update(
@@ -91,7 +143,9 @@ def _run_generation() -> None:
         )
         if not mock and result.get("error_code") == "DAILY_LIMIT_EXCEEDED":
             refresh_me(st.context.cookies) 
+        st.rerun()
         return
+    
 
     st.session_state.generation.update(
         status="done",
@@ -105,16 +159,10 @@ def _run_generation() -> None:
     if not mock:
         refresh_me(st.context.cookies)
 
+    st.rerun()
+
 
 def render() -> None:
-    with st.container(border=True):
-        st.markdown(
-            '<span class="rg-eyebrow">STEP 3</span>'
-            '<div class="rg-card-title">완성된 콘텐츠를 확인해 주세요</div>'
-            '<div class="rg-card-desc">마음에 들지 않으면 문구를 직접 수정하거나, 다시 생성할 수 있어요.</div>',
-            unsafe_allow_html=True,
-        )
-
     guest_mode = is_dev_guest_mode()
     if not st.session_state.mock_mode and not guest_mode and not is_logged_in():
         _render_login_required()
@@ -129,8 +177,21 @@ def render() -> None:
         if is_quota_exceeded():
             _render_quota_exceeded()
             return
-        _run_generation()
+
+        loading_container, message_placeholder, progress_bar, start_time = _render_generation_loading_ui()
+        _run_generation(loading_container, message_placeholder, progress_bar, start_time)
         gen = st.session_state.generation
+
+    if gen["status"] == "loading":
+        return
+
+    with st.container(border=True):
+        st.markdown(
+            '<span class="rg-eyebrow">STEP 3</span>'
+            '<div class="rg-card-title">완성된 콘텐츠를 확인해 주세요</div>'
+            '<div class="rg-card-desc">마음에 들지 않으면 문구를 직접 수정하거나, 다시 생성할 수 있어요.</div>',
+            unsafe_allow_html=True,
+        )
 
     if gen["status"] == "error":
         alert(f"⚠️ {gen['error_message']}", kind="error")
@@ -184,33 +245,23 @@ def render() -> None:
                 unsafe_allow_html=True,
             )
             if gen["images"]:
-                idx_key = "selected_image_idx"
-                if idx_key not in st.session_state:
-                    st.session_state[idx_key] = 0
-                idx = st.session_state[idx_key] % len(gen["images"])
-
-                st.image(gen["images"][idx], width="stretch")
-                dots = " ".join("●" if i == idx else "○" for i in range(len(gen["images"])))
-                st.markdown(f'<div style="text-align:center;color:var(--rg-ink-faint);">{dots}</div>', unsafe_allow_html=True)
-
-                nav1, nav2, nav3 = st.columns([1, 1, 2])
-                with nav1:
-                    if st.button("← 이전", width="stretch"):
-                        st.session_state[idx_key] = (idx - 1) % len(gen["images"])
-                        st.rerun()
-                with nav2:
-                    if st.button("다음 →", width="stretch"):
-                        st.session_state[idx_key] = (idx + 1) % len(gen["images"])
-                        st.rerun()
-                with nav3:
-                    st.download_button(
-                        "이 이미지 다운로드",
-                        data=gen["images"][idx],
-                        file_name=f"{st.session_state.business['store_name']}_ad_{idx+1}.png",
-                        mime="image/png",
-                        type="primary",
-                        width="stretch",
-                    )
+                # 이미지 개수만큼 탭 생성 (예: 이미지 1, 이미지 2, 이미지 3)
+                tabs = st.tabs([f"이미지 {i+1}" for i in range(len(gen["images"]))])
+                
+                for idx, tab in enumerate(tabs):
+                    with tab:
+                        # 각 탭 안에 이미지와 다운로드 버튼을 매핑
+                        st.image(gen["images"][idx], width="stretch")
+                        
+                        st.download_button(
+                            f"{idx+1}번 이미지 다운로드",
+                            data=gen["images"][idx],
+                            file_name=f"{st.session_state.business['store_name']}_ad_{idx+1}.png",
+                            mime="image/png",
+                            type="primary",
+                            width="stretch",
+                            key=f"download_btn_{idx}"  # 고유 키 필수
+                        )
 
     footer_left, footer_right = st.columns(2)
     with footer_left:
