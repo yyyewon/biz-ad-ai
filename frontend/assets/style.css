@@ -509,6 +509,29 @@ button[kind*="secondary"]:hover {
   background: #FADA00 !important;
 }
 
+a.rg-logout-btn,
+a.rg-logout-btn:link,
+a.rg-logout-btn:visited,
+a.rg-logout-btn:hover,
+a.rg-logout-btn:active,
+a.rg-logout-btn:focus {
+  display: block;
+  width: 100%;
+  text-align: center;
+  background: #f2f3f5 !important;
+  color: var(--rg-ink) !important;
+  font-weight: 700 !important;
+  font-size: 0.9rem;
+  padding: 0.55rem 1rem;
+  border-radius: 999px !important;
+  text-decoration: none !important;
+  box-sizing: border-box;
+  transition: background 0.15s ease;
+}
+a.rg-logout-btn:hover {
+  background: #e6e8eb !important;
+}
+
 .rg-login-caption {
   font-size: 0.76rem;
   color: var(--rg-ink-faint);

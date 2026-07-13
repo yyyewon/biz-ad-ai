@@ -17,6 +17,11 @@ RUN python3 -m venv /venv
 
 ENV PATH="/venv/bin:$PATH"
 
+# 모델 캐시를 영속 볼륨이 마운트되는 /models 하위로 고정
+ENV HF_HOME=/models/hf-cache
+ENV HF_HUB_CACHE=/models/hf-cache/hub
+ENV U2NET_HOME=/models/u2net
+
 # 의존성 설치
 COPY requirements.txt .
 
@@ -26,9 +31,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 소스 전체 복사
 COPY . .
 
+# 엔트리포인트 스크립트 실행권한 부여
+RUN chmod +x docker-entrypoint.sh
+
 EXPOSE 8010
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=600s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8010/api/v1/health')" || exit 1
 
-ENTRYPOINT ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010"]
+# 시작 시 모델 prefetch -> uvicorn 기동
+ENTRYPOINT ["./docker-entrypoint.sh"]

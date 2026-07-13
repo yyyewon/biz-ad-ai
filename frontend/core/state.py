@@ -33,7 +33,6 @@ def init_state() -> None:
         },
         "mock_mode": MOCK_MODE_DEFAULT,
 
-        # 💡 초기 세션 스키마에 refresh_token을 명시해 줍니다.
         "dev_guest_mode": DEV_GUEST_MODE_DEFAULT,
         "auth": {"access_token": None, "refresh_token": None, "user": None},
     }

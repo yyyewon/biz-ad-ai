@@ -30,6 +30,7 @@ services:
     volumes:
       - backend_data:/app/data
       - ./backend/logs:/app/logs
+      - model_cache:/models
     deploy:
       resources:
         reservations:
@@ -40,3 +41,4 @@ services:
 
 volumes:
   backend_data:
+  model_cache:
