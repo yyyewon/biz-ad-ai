@@ -68,6 +68,12 @@ _NEGATIVE_COMMON = (
     f"{_NEGATIVE_CLUTTER}"
 )
 
+_NEGATIVE_POSTER = (
+    "render ONLY the EXACT TEXT block below, no extra text, no hallucinated numbers or prices, "
+    "no location or address text, no duplicate price badges, no English filler text, "
+    f"{_NEGATIVE_CLUTTER}"
+)
+
 _NEGATIVE_REELS = f"{_NEGATIVE_COMMON}, hook via PIL only"
 
 _PRESERVE_FOOD_BASE = (
@@ -258,19 +264,21 @@ _STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_COMMON}", _NEGATIV
 # =============================================================================
 
 _POSTER_LAYOUT_RULES = (
-    "LAYOUT 4:5 1024x1536, top 38% empty designed bg (PIL text), bottom 55-60% food hero, "
-    "top-right price-pill space, bottom-right store space. {store_footer_line}"
+    "LAYOUT 4:5 1024x1536, top 38% designed bg with headline+menu text, bottom 55-60% food hero, "
+    "price badge top-right, store name bottom-right. Render ONLY the TEXT block below. "
+    "{store_footer_line}"
 )
 
 _POSTER_PHOTO_TEMPLATE = """
 TASK: menu promo poster from attached food photo
 TYPE: {food_type_label}
 {user_priority_block}{poster_layout_rules}
+TEXT: {poster_exact_text_block}
 SUBJECT: {poster_food_rules}
 BG: {poster_background_rules}
 QUALITY: {realism_rules}
 GOAL: {promotion_goal}, TONE: {tone}
-NEG: {_NEGATIVE_COMMON}, no flat-only bg, no brand copy
+NEG: {_NEGATIVE_POSTER}, no flat-only bg, no brand copy
 """.strip()
 
 # --- poster food tags ---
@@ -355,7 +363,7 @@ FOOD_POSTER_BACKGROUND_RULES: dict[FoodType, str] = {
     "coffee_drink": _POSTER_COFFEE_DRINK_BACKGROUND,
 }
 
-_POSTER_TEMPLATE = _POSTER_PHOTO_TEMPLATE.replace("{_NEGATIVE_COMMON}", _NEGATIVE_COMMON)
+_POSTER_TEMPLATE = _POSTER_PHOTO_TEMPLATE.replace("{_NEGATIVE_POSTER}", _NEGATIVE_POSTER)
 
 
 # =============================================================================
@@ -438,7 +446,7 @@ def build_poster_exact_text_block(
     price_text: str = "",
     store_name: str = "",
 ) -> str:
-    """Legacy helper — poster text is applied via PIL, not in the image prompt."""
+    """포스터에 이미지 모델이 그릴 정확한 한국어 문구 블록."""
 
     menu = (menu_name or "").strip() or "오늘의 메뉴"
     items: list[str] = []
@@ -454,7 +462,7 @@ def build_poster_exact_text_block(
 
     price = (price_text or "").strip()
     if price:
-        items.append(f'{index}. "{price}" — price (badge)')
+        items.append(f'{index}. "{price}" — price badge (exact digits only)')
         index += 1
 
     store = (store_name or "").strip()
@@ -463,7 +471,7 @@ def build_poster_exact_text_block(
 
     numbered = "\n".join(items)
     return (
-        "EXACT TEXT (PIL only, not for image model):\n"
+        "EXACT TEXT (render exactly in image, Korean only, no other numbers or text):\n"
         f"{numbered}"
     )
 
@@ -488,12 +496,10 @@ def _build_poster_store_footer_line(
     store_name: str,
     store_location: str = "",
 ) -> str:
-    parts: list[str] = []
+    _ = store_location
     if (store_name or "").strip():
-        parts.append("reserve bottom-right for PIL store")
-    if (store_location or "").strip():
-        parts.append(f"location context: {store_location.strip()}")
-    return ", ".join(parts)
+        return "store name only in TEXT block bottom-right"
+    return "follow TEXT block placement only"
 
 
 def _lookup_food_rules(registry: dict[FoodType, str], food_type: FoodType) -> str:
@@ -564,6 +570,12 @@ def build_template_context(
                 store_location,
             ),
         ),
+        "poster_exact_text_block": build_poster_exact_text_block(
+            headline=headline,
+            menu_name=menu_name,
+            price_text=price_text,
+            store_name=store_name,
+        ),
         "reels_food_rules": _REELS_FOOD_RULES,
         "reels_scene_rules": _build_reels_scene_rules(extra_notes),
         "reels_hook_line": _build_reels_hook_line(
@@ -617,6 +629,8 @@ def append_food_and_variant_context(
 
 
 def build_variant_negative_prompt(variant: ImageVariantType) -> str:
+    if variant == "poster":
+        return _NEGATIVE_POSTER
     if variant == "instagram_feed":
         return _NEGATIVE_REELS
     return _NEGATIVE_COMMON
