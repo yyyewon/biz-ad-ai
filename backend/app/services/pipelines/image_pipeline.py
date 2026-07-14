@@ -86,8 +86,8 @@ LAYOUT_POSTER_GUIDE_MAP: dict[str, str] = {
     "left": "음식을 좌측 또는 좌중앙에 배치하고 텍스트를 우측/상단으로 분산한 비대칭 구도",
 }
 
-# TEMP: PIL 합성 비활성화 — 포스터/릴스 문구는 이미지 모델이 생성한다.
-_USE_PIL_TEXT_OVERLAY = False
+# 포스터: AI EXACT TEXT / 릴스(instagram_feed)만 PIL 후킹 자막 합성
+_PIL_TEXT_OVERLAY_VARIANTS: frozenset[ImageVariantType] = frozenset({"instagram_feed"})
 
 POSTER_PROMPT_HARD_CONSTRAINTS: list[str] = [
     "반드시 1080x1350 비율의 세로 포스터 디자인으로 생성해줘.",
@@ -458,9 +458,9 @@ async def generate_image_ads(
             variant_results,
             key=lambda item: item[0],
         ):
-            # TEMP: PIL 합성 비활성화 — 포스터/릴스 문구는 이미지 모델이 생성한다.
-            if _USE_PIL_TEXT_OVERLAY and variant_uses_pil_text_overlay(
-                payload.food_type, variant
+            if (
+                variant in _PIL_TEXT_OVERLAY_VARIANTS
+                and variant_uses_pil_text_overlay(payload.food_type, variant)
             ):
                 poster_bytes = apply_variant_text_overlay(
                     poster_bytes,
