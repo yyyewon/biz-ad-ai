@@ -4,7 +4,6 @@ from app.services.pipelines.food_type_prompts import (
     build_poster_exact_text_block,
     uses_custom_template,
 )
-from app.services.pipelines.image_pipeline import _build_poster_prompt
 from app.utils.image_text_overlay import variant_uses_pil_text_overlay
 
 
@@ -27,7 +26,6 @@ def test_user_image_request_is_priority_block_in_studio_prompt():
         _payload(),
         "studio",
         food_type="fried",
-        build_poster_prompt=_build_poster_prompt,
     )
 
     assert "PRIORITY:" in prompt
@@ -40,7 +38,6 @@ def test_studio_prompt_polishes_without_food_exaggeration():
         _payload(food_type="coffee_drink"),
         "studio",
         food_type="coffee_drink",
-        build_poster_prompt=_build_poster_prompt,
     )
 
     assert "polish attached casual" in prompt
@@ -57,7 +54,6 @@ def test_studio_prompt_has_no_text_leaks():
         _payload(food_type="soup_stew", promotion_goal="신메뉴 홍보", menu_name="순두부찌개"),
         "studio",
         food_type="soup_stew",
-        build_poster_prompt=_build_poster_prompt,
     )
 
     assert "no readable text" in prompt
@@ -72,7 +68,6 @@ def test_reels_prompt_has_no_text_leaks():
         _payload(food_type="fried", promotion_goal="신메뉴 홍보", menu_name="고추장 찌개"),
         "instagram_feed",
         food_type="fried",
-        build_poster_prompt=_build_poster_prompt,
     )
 
     assert "no readable text" in prompt
@@ -90,7 +85,6 @@ def test_fried_poster_uses_custom_template_with_pil_rules():
         _payload(food_type="fried", price_text="7,000원", store_location="성수동"),
         "poster",
         food_type="fried",
-        build_poster_prompt=_build_poster_prompt,
     )
 
     assert "crispy golden fried" in prompt
@@ -120,7 +114,6 @@ def test_reels_uses_flexible_scene_rules_when_background_requested():
         _payload(extra_notes="배경을 더 밝게"),
         "instagram_feed",
         food_type="fried",
-        build_poster_prompt=_build_poster_prompt,
     )
 
     assert "user may adjust lighting" in prompt
@@ -132,7 +125,6 @@ def test_reels_prompt_preserves_store_background():
         _payload(food_type="coffee_drink", extra_notes=""),
         "instagram_feed",
         food_type="coffee_drink",
-        build_poster_prompt=_build_poster_prompt,
     )
 
     assert "preserve original restaurant/store interior" in prompt
@@ -145,7 +137,6 @@ def test_reels_flexible_scene_still_preserves_store_interior():
         _payload(extra_notes="따뜻한 나무 테이블 배경"),
         "instagram_feed",
         food_type="fried",
-        build_poster_prompt=_build_poster_prompt,
     )
 
     assert "preserve restaurant/store interior" in prompt
@@ -157,7 +148,6 @@ def test_reels_prompt_excludes_menu_name_from_image_model():
         _payload(menu_name="고추장 찌개"),
         "instagram_feed",
         food_type="fried",
-        build_poster_prompt=_build_poster_prompt,
     )
 
     assert "고추장 찌개" not in prompt
@@ -191,7 +181,6 @@ def test_common_clutter_exclusion_in_all_food_types_and_variants():
                 _payload(food_type=food_type),
                 variant,
                 food_type=food_type,
-                build_poster_prompt=_build_poster_prompt,
             )
             for marker in clutter_markers:
                 assert marker in prompt, f"{food_type}/{variant} missing {marker}"

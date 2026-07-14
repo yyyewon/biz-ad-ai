@@ -15,8 +15,6 @@ Preview:
 
 from __future__ import annotations
 
-from typing import Callable
-
 from app.schemas.food_type import FOOD_TYPE_LABELS, FoodType
 from app.schemas.image_ad import ImageAdRequest, ImageVariantType
 from app.utils.poster_taglines import resolve_poster_headline_from_purpose
@@ -625,23 +623,22 @@ def build_food_context_line(food_type: FoodType) -> str:
     return f"food type: {label}, {scene_hint}"
 
 
-def build_variant_context_line(variant: ImageVariantType) -> str:
-    return f"variant: {get_variant_direction_hint(variant)}"
-
-
-def append_food_and_variant_context(
-    base_prompt: str,
+def build_food_variant_prompt(
+    payload: ImageAdRequest,
+    variant: ImageVariantType,
     *,
     food_type: FoodType,
-    variant: ImageVariantType,
 ) -> str:
-    return ", ".join(
-        [
-            base_prompt,
-            build_food_context_line(food_type),
-            build_variant_context_line(variant),
-        ]
+    custom_prompt = render_food_variant_prompt_template(
+        payload,
+        food_type=food_type,
+        variant=variant,
     )
+    if not custom_prompt:
+        raise ValueError(
+            f"No prompt template for food_type={food_type!r}, variant={variant!r}"
+        )
+    return custom_prompt
 
 
 def build_variant_negative_prompt(variant: ImageVariantType) -> str:
@@ -658,32 +655,6 @@ def strip_prompt_neg_line(prompt: str) -> str:
     """HF negative_prompt 파라미터로 분리할 때 positive prompt에서 NEG 줄을 제거한다."""
     lines = [line for line in prompt.splitlines() if not line.strip().startswith("NEG:")]
     return "\n".join(lines).strip()
-
-
-def build_food_variant_prompt(
-    payload: ImageAdRequest,
-    variant: ImageVariantType,
-    *,
-    food_type: FoodType,
-    build_poster_prompt: Callable[[ImageAdRequest, str], str],
-) -> str:
-    custom_prompt = render_food_variant_prompt_template(
-        payload,
-        food_type=food_type,
-        variant=variant,
-    )
-    if custom_prompt:
-        return custom_prompt
-
-    from app.services.pipelines.image_variant_prompts import VARIANT_LAYOUT_MAP
-
-    layout_type = VARIANT_LAYOUT_MAP[variant]
-    base_prompt = build_poster_prompt(payload, layout_type)
-    return append_food_and_variant_context(
-        base_prompt,
-        food_type=food_type,
-        variant=variant,
-    )
 
 
 def build_inpaint_food_prompt(payload: ImageAdRequest, food_type: FoodType) -> str:
