@@ -387,12 +387,21 @@ _REELS_FOOD_RULES = (
 )
 
 _REELS_SCENE_RULES = (
-    "keep original store interior/bg/lighting, shallow natural bokeh, no studio/solid bg swap, "
-    "smartphone in-store single shot, 45deg or slight top-down, no people, bottom-left 20% empty"
+    "preserve original restaurant/store interior, table decor, lighting, signage, "
+    "shallow bokeh ok, no studio table/solid bg replacement, "
+    "smartphone restaurant reels thumbnail, bright sharp appetizing, "
+    "45deg or slight top-down, no people, bottom-left 20% empty for PIL"
 )
 
 _REELS_SCENE_RULES_FLEXIBLE = (
-    "user may override bg/lighting/mood/color/table, no people, bottom-left 20% empty"
+    "preserve restaurant/store interior from photo, user may adjust lighting/mood/color/table "
+    "within same in-store location, no studio/solid bg replacement, extreme closeup 70-85%, "
+    "no people, bottom-left 20% empty for PIL"
+)
+
+_REELS_REALISM_EXTRA = (
+    "authentic in-store smartphone single shot, not studio reshoot/composite, "
+    "food+bg same location same shoot, no fake bokeh/over-sharpen/CG ad look"
 )
 
 _REELS_PHOTO_TEMPLATE = """
@@ -400,10 +409,10 @@ TASK: reels food thumbnail from in-store photo — faithful food, zero typograph
 TYPE: {food_type_label}
 {user_priority_block}SUBJECT: {reels_food_rules}
 SCENE: {reels_scene_rules}
-QUALITY: {realism_rules}
+QUALITY: {realism_rules}, {reels_realism_extra}
 MOOD: appetizing in-store atmosphere, TONE: {tone}
 CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no caption/hook text
-PRESERVE: keep food appearance faithful to photo; hook caption is PIL overlay only
+PRESERVE: keep food appearance and store interior/bg faithful to photo; hook caption is PIL overlay only
 NEG: {_NEGATIVE_REELS}
 """.strip()
 
@@ -584,6 +593,7 @@ def build_template_context(
         ),
         "reels_food_rules": _REELS_FOOD_RULES,
         "reels_scene_rules": _build_reels_scene_rules(extra_notes),
+        "reels_realism_extra": _REELS_REALISM_EXTRA,
         "reels_hook_line": _build_reels_hook_line(
             store_name=store_name,
             menu_name=payload.menu_name or "",

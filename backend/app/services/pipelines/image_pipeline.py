@@ -66,7 +66,7 @@ def _prepare_edit_source_bytes(
         if variant == "studio":
             image = shrink_and_pad_for_wider_framing(image)
         elif variant == "instagram_feed":
-            image = zoom_center_crop(image)
+            image = zoom_center_crop(image, zoom_factor=1.28)
 
         logger.info(
             "image_edit_source_reframed | food_type={} | variant={} | size={}",

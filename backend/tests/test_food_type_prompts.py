@@ -123,8 +123,33 @@ def test_reels_uses_flexible_scene_rules_when_background_requested():
         build_poster_prompt=_build_poster_prompt,
     )
 
-    assert "user may override" in prompt
-    assert "keep original store interior" not in prompt
+    assert "user may adjust lighting" in prompt
+    assert "preserve original restaurant/store interior" not in prompt
+
+
+def test_reels_prompt_preserves_store_background():
+    prompt = build_food_variant_prompt(
+        _payload(food_type="coffee_drink", extra_notes=""),
+        "instagram_feed",
+        food_type="coffee_drink",
+        build_poster_prompt=_build_poster_prompt,
+    )
+
+    assert "preserve original restaurant/store interior" in prompt
+    assert "same location same shoot" in prompt
+    assert "no studio table/solid bg replacement" in prompt
+
+
+def test_reels_flexible_scene_still_preserves_store_interior():
+    prompt = build_food_variant_prompt(
+        _payload(extra_notes="따뜻한 나무 테이블 배경"),
+        "instagram_feed",
+        food_type="fried",
+        build_poster_prompt=_build_poster_prompt,
+    )
+
+    assert "preserve restaurant/store interior" in prompt
+    assert "no studio/solid bg replacement" in prompt
 
 
 def test_reels_prompt_excludes_menu_name_from_image_model():
