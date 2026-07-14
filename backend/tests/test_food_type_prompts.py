@@ -35,6 +35,23 @@ def test_user_image_request_is_priority_block_in_studio_prompt():
     assert prompt.index("PRIORITY:") < prompt.index("SUBJECT:")
 
 
+def test_studio_prompt_polishes_without_food_exaggeration():
+    prompt = build_food_variant_prompt(
+        _payload(food_type="coffee_drink"),
+        "studio",
+        food_type="coffee_drink",
+        build_poster_prompt=_build_poster_prompt,
+    )
+
+    assert "polish attached casual" in prompt
+    assert "editorial food reshoot" not in prompt
+    assert "PRESERVE:" in prompt
+    assert "faithful to photo" in prompt
+    assert "no added foam" in prompt
+    assert "no exaggerated gloss" in prompt
+    assert "foam/cream texture" not in prompt
+
+
 def test_fried_poster_uses_custom_template_with_pil_rules():
     assert uses_custom_template("fried", "poster") is True
     assert variant_uses_pil_text_overlay("fried", "poster") is True

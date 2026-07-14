@@ -43,7 +43,7 @@ FOOD_TYPE_SCENE_HINTS: dict[FoodType, str] = {
 }
 
 VARIANT_DIRECTION_HINTS: dict[ImageVariantType, str] = {
-    "studio": "medium wide editorial food photo, table+background visible, no extreme closeup",
+    "studio": "polish casual food photo into clean studio shot, faithful food, better light/bg",
     "poster": "4:5 menu promo poster, designed top bg + food hero bottom, PIL text overlay",
     "instagram_feed": "reels mood, preserve store bg, extreme food closeup",
 }
@@ -78,6 +78,12 @@ _NEGATIVE_POSTER = (
 
 _NEGATIVE_REELS = f"{_NEGATIVE_COMMON}, hook via PIL only"
 
+# Studio: upgrade framing/light/bg but do not exaggerate the food itself
+_NEGATIVE_STUDIO = (
+    f"{_NEGATIVE_COMMON}, no exaggerated gloss/oil/smoke/steam, "
+    "no added toppings/foam/cream/condensation, no oversaturated food colors"
+)
+
 _PRESERVE_FOOD_BASE = (
     "preserve original main-menu food/toppings and its serving vessel, "
     "no add/remove food items, no floating/cropped vessels"
@@ -93,8 +99,13 @@ _SUBJECT_HERO_COMMON = (
 )
 
 _STUDIO_SCENE_BASE = (
-    "clean table surface, no loose clutter props, medium wide 50mm, food 55-65% frame, "
-    "45deg, no people"
+    "upgrade casual shot to clean studio food photo, tidy table, soft even professional light, "
+    "uncluttered background, medium wide framing, food 55-65% frame, no people"
+)
+
+_STUDIO_FOOD_BASE = (
+    f"{_PRESERVE_FOOD_BASE}, hero focus on ordered menu item, "
+    f"keep food appearance faithful to attached photo, {_EXCLUDE_TABLE_CLUTTER}"
 )
 
 _POSTER_FOOD_BASE = (
@@ -159,83 +170,75 @@ def _build_user_priority_block(extra_notes: str) -> str:
 # =============================================================================
 
 _STUDIO_PHOTO_TEMPLATE = """
-TASK: editorial food reshoot from attached photo
+TASK: polish attached casual food photo into a clean studio commercial shot
 TYPE: {food_type_label}
 {user_priority_block}SUBJECT: {food_subject_rules}
 SCENE: {studio_scene_rules}
 QUALITY: {realism_rules}
 GOAL: {promotion_goal}, TONE: {tone}
-NEG: {_NEGATIVE_COMMON}
+PRESERVE: keep food shape, portions, vessel, layering and color faithful to photo; improve only light/bg/composition
+NEG: {_NEGATIVE_STUDIO}
 """.strip()
 
 # --- studio subject tags per food type ---
 
 _STUDIO_SOUP_STEW_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, keep main pot + all side dish plates with food, "
-    "vivid broth, tofu/kimchi/pottery detail"
+    f"{_STUDIO_FOOD_BASE}, keep main pot + side dishes, natural broth color"
 )
 
 _STUDIO_FRIED_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, crispy golden crust, sharp fry texture, not soggy/oily"
+    f"{_STUDIO_FOOD_BASE}, natural golden crust, not greasy or over-fried"
 )
 
 _STUDIO_GRILLED_BBQ_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, grill marks, sear gloss, juicy meat surface, "
-    "natural plate smoke not CG smoke"
+    f"{_STUDIO_FOOD_BASE}, natural grill marks and sear, no heavy smoke"
 )
 
 _STUDIO_RICE_DISH_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, visible rice/noodle+topping layers, strong color contrast"
+    f"{_STUDIO_FOOD_BASE}, visible rice/noodle+topping layers, natural colors"
 )
 
 _STUDIO_BREAD_DESSERT_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, crisp crumb, cream/glaze/layer detail"
+    f"{_STUDIO_FOOD_BASE}, natural crumb/cream/layer texture"
 )
 
 _STUDIO_BURGER_SANDWICH_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, visible bun/patty/veg/sauce layers, not collapsed/soggy"
+    f"{_STUDIO_FOOD_BASE}, natural bun/patty/veg/sauce layers, not collapsed"
 )
 
 _STUDIO_COFFEE_DRINK_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, single hero cup only, cup condensation, "
-    "beverage layers, foam/cream texture"
+    f"{_STUDIO_FOOD_BASE}, preserve cup shape and drink layers as in photo, "
+    "no added foam/toppings not in original"
 )
 
 # --- studio scene tags per food type ---
 
 _STUDIO_SOUP_STEW_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, walnut/dark oak wood table, warm brown bokeh wood-wall bg, "
-    "warm side light, table 35-45% frame, no crushed blacks"
+    f"{_STUDIO_SCENE_BASE}, warm wood-tone table, soft warm light"
 )
 
 _STUDIO_FRIED_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, rough wood board or craft paper, warm side light, "
-    "highlight crispy surface gloss"
+    f"{_STUDIO_SCENE_BASE}, warm neutral table, soft side light"
 )
 
 _STUDIO_GRILLED_BBQ_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, cast iron grill pan, dark warm charcoal/brown bokeh, "
-    "strong side light, meat+grill in frame, red/brown contrast"
+    f"{_STUDIO_SCENE_BASE}, dark warm table tone, soft side light, natural contrast"
 )
 
 _STUDIO_RICE_DISH_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, bright cream/light gray seamless bg, soft even studio light, "
-    "top-down or slight angle, full bowl in frame"
+    f"{_STUDIO_SCENE_BASE}, bright clean table, soft even light, full bowl in frame"
 )
 
 _STUDIO_BREAD_DESSERT_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, bright marble or linen cloth, soft window/diffused light, "
-    "45deg side angle, full dessert in frame"
+    f"{_STUDIO_SCENE_BASE}, bright cafe table, soft diffused light, full dessert in frame"
 )
 
 _STUDIO_BURGER_SANDWICH_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, craft paper or slate board, warm side light, "
-    "eye-level front/side angle, layer cross-section visible"
+    f"{_STUDIO_SCENE_BASE}, casual dining table, soft side light, full sandwich in frame"
 )
 
 _STUDIO_COFFEE_DRINK_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, bright oak or white table, soft diffused window light, "
-    "center front/slight side, full cup in frame"
+    f"{_STUDIO_SCENE_BASE}, clean cafe table, soft natural window light, full cup in frame"
 )
 
 FOOD_STUDIO_SUBJECT_RULES: dict[FoodType, str] = {
@@ -258,7 +261,7 @@ FOOD_STUDIO_SCENE_RULES: dict[FoodType, str] = {
     "coffee_drink": _STUDIO_COFFEE_DRINK_SCENE,
 }
 
-_STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_COMMON}", _NEGATIVE_COMMON)
+_STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_STUDIO}", _NEGATIVE_STUDIO)
 
 
 # =============================================================================
@@ -629,6 +632,8 @@ def build_variant_negative_prompt(variant: ImageVariantType) -> str:
         return _NEGATIVE_POSTER
     if variant == "instagram_feed":
         return _NEGATIVE_REELS
+    if variant == "studio":
+        return _NEGATIVE_STUDIO
     return _NEGATIVE_COMMON
 
 
