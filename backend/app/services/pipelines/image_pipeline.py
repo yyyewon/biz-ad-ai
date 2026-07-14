@@ -20,10 +20,8 @@ from app.core.model_config import get_provider_name, get_variant_image_size, get
 from app.services.pipelines.food_type_prompts import (
     _build_user_priority_block,
     build_food_context_line,
-    build_poster_exact_text_block,
     uses_custom_template,
 )
-from app.utils.poster_taglines import resolve_poster_headline_from_purpose
 from app.services.pipelines.image_variant_prompts import (
     build_hf_variant_prompts,
     build_variant_prompt,
@@ -81,31 +79,19 @@ def _prepare_edit_source_bytes(
 
 
 LAYOUT_POSTER_GUIDE_MAP: dict[str, str] = {
-    "classic": "상단 텍스트, 중앙 가격 포인트, 하단 음식 히어로 이미지의 균형 잡힌 정석형 구도",
-    "focus": "타이포를 간결하게 두고 음식을 더 크게 강조하는 집중형 구도",
-    "left": "음식을 좌측 또는 좌중앙에 배치하고 텍스트를 우측/상단으로 분산한 비대칭 구도",
+    "classic": "상단 여백, 하단 음식 히어로 이미지의 균형 잡힌 정석형 구도",
+    "focus": "상단 여백을 간결하게 두고 음식을 더 크게 강조하는 집중형 구도",
+    "left": "음식을 좌측 또는 좌중앙에 배치하고 상단·우측 여백을 비운 비대칭 구도",
 }
-
-# 포스터: AI EXACT TEXT / 릴스(instagram_feed)만 PIL 후킹 자막 합성
-_PIL_TEXT_OVERLAY_VARIANTS: frozenset[ImageVariantType] = frozenset({"instagram_feed"})
 
 POSTER_PROMPT_HARD_CONSTRAINTS: list[str] = [
     "반드시 1080x1350 비율의 세로 포스터 디자인으로 생성해줘.",
-    "텍스트는 오직 한국어만 사용하고, 임의 영문 문구는 절대 넣지 마.",
-    "EXACT TEXT 블록에 적힌 문구·가격·가게명만 그려줘. 다른 숫자나 가격은 절대 넣지 마.",
-    "지역명·주소·위치 문구는 이미지에 넣지 마.",
-    "가독성이 낮은 배경 위에 텍스트를 두지 말고, 텍스트 영역은 대비를 충분히 확보해줘.",
-    "잘린 텍스트, 깨진 글자, 오탈자, 반복 글자, 의미 없는 문자는 절대 넣지 마.",
+    "이미지 픽셀에 글자·숫자·가격·메뉴명·가게명·영문 문구를 절대 넣지 마.",
+    "카피·가격·가게명은 후처리 PIL 합성이니 상단·우측·하단 우측 여백만 비워 둬.",
     "로고, 워터마크, 브랜드명, 서명, 불필요한 장식 문구를 넣지 마.",
 ]
 
-POSTER_AI_TEXT_RETRY_SUFFIXES: list[str] = [
-    "",
-    "retry: render ONLY EXACT TEXT lines, remove extra numbers/prices/location text",
-    "final retry: fix Korean typos, keep only listed headline/menu/price/store text",
-]
-
-VARIANT_NO_TEXT_RETRY_SUFFIXES: list[str] = [
+POSTER_RETRY_SUFFIXES: list[str] = [
     "",
     "retry: no text, no dish name, no menu title, no store name, food+bg only, keep layout margins",
     "final retry: zero text in image pixels, no burned-in caption/subtitle",
@@ -164,17 +150,6 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
         LAYOUT_POSTER_GUIDE_MAP["classic"],
     )
 
-    headline = (payload.headline or "").strip()
-    if not headline:
-        headline = resolve_poster_headline_from_purpose(payload.promotion_goal or "")
-
-    exact_text = build_poster_exact_text_block(
-        headline=headline,
-        menu_name=payload.menu_name or "",
-        price_text=payload.price_text or "",
-        store_name=payload.store_name or "",
-    )
-
     prompt_chunks: list[str] = []
 
     priority_block = _build_user_priority_block(payload.extra_notes or "")
@@ -186,10 +161,10 @@ def _build_poster_prompt(payload: ImageAdRequest, layout_type: str) -> str:
             "입력된 음식 사진을 기반으로 인스타그램용 세로 광고 포스터를 실사 스타일로 만들어줘.",
             f"포스터 스타일: {DEFAULT_IMAGE_STYLE}",
             f"레이아웃 가이드: {layout_guide}",
-            "상단 38%는 디자인 배경+텍스트, 하단에 음식 히어로 컷.",
-            exact_text,
+            "상단 38%는 디자인 배경, 하단에 음식 히어로 컷.",
             "음식과 접시의 형태/재질은 유지하고 배경, 조명, 구도는 포스터 디자인에 맞게 새롭게 구성해줘.",
-            "EXACT TEXT에 없는 가격·숫자·지역명·주소는 절대 넣지 마.",
+            "이미지 안에 글자·메뉴명·가격·가게명·로고·워터마크를 절대 넣지 마.",
+            "카피·메뉴명·가격·가게명은 후처리로 합성되니 상단·우측·하단 우측 여백을 비워 둬.",
             *POSTER_PROMPT_HARD_CONSTRAINTS,
         ]
     )
@@ -216,17 +191,10 @@ async def _generate_poster_with_retries(
     render_mode: ImageRenderMode = "photo_restyle",
     negative_prompt: str | None = None,
     img2img_strength: float | None = None,
-    variant: ImageVariantType = "poster",
 ) -> list[bytes]:
     last_error: Exception | None = None
 
-    retry_suffixes = (
-        POSTER_AI_TEXT_RETRY_SUFFIXES
-        if variant == "poster"
-        else VARIANT_NO_TEXT_RETRY_SUFFIXES
-    )
-
-    for attempt_idx, suffix in enumerate(retry_suffixes):
+    for attempt_idx, suffix in enumerate(POSTER_RETRY_SUFFIXES):
         retry_prompt = f"{base_prompt}, {suffix}" if suffix else base_prompt
 
         try:
@@ -260,7 +228,7 @@ async def _generate_poster_with_retries(
     raise AppException(
         errors.IMAGE_POSTER_RETRY_FAILED,
         detail={
-            "attempt_count": len(retry_suffixes),
+            "attempt_count": len(POSTER_RETRY_SUFFIXES),
             "last_error": str(last_error) if last_error else None,
         },
     )
@@ -429,7 +397,6 @@ async def generate_image_ads(
                 render_mode=render_mode,
                 negative_prompt=negative_prompt,
                 img2img_strength=img2img_strength,
-                variant=variant,
             )
 
             if not variant_outputs:
@@ -458,10 +425,7 @@ async def generate_image_ads(
             variant_results,
             key=lambda item: item[0],
         ):
-            if (
-                variant in _PIL_TEXT_OVERLAY_VARIANTS
-                and variant_uses_pil_text_overlay(payload.food_type, variant)
-            ):
+            if variant_uses_pil_text_overlay(payload.food_type, variant):
                 poster_bytes = apply_variant_text_overlay(
                     poster_bytes,
                     payload=payload,

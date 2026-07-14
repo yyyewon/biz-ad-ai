@@ -35,7 +35,7 @@ def test_user_image_request_is_priority_block_in_studio_prompt():
     assert prompt.index("PRIORITY:") < prompt.index("SUBJECT:")
 
 
-def test_fried_poster_uses_custom_template_with_ai_text_block():
+def test_fried_poster_uses_custom_template_with_pil_rules():
     assert uses_custom_template("fried", "poster") is True
     assert variant_uses_pil_text_overlay("fried", "poster") is True
 
@@ -48,11 +48,11 @@ def test_fried_poster_uses_custom_template_with_ai_text_block():
 
     assert "crispy golden fried" in prompt
     assert "casual dining poster" in prompt
-    assert "EXACT TEXT" in prompt
-    assert '"7,000원"' in prompt
+    assert "PIL" in prompt
+    assert "PIL post-process" in prompt
     assert "location context" not in prompt
     assert "성수동" not in prompt
-    assert "PIL" not in prompt
+    assert "EXACT TEXT" not in prompt
 
 
 def test_poster_exact_text_block_still_available_for_helpers():
@@ -62,7 +62,7 @@ def test_poster_exact_text_block_still_available_for_helpers():
         price_text="8000원",
         store_name="온기식당",
     )
-    assert '"8000원" — price badge (exact digits only)' in block
+    assert '"8000원" — price' in block
 
 
 def test_reels_uses_flexible_scene_rules_when_background_requested():

@@ -68,9 +68,11 @@ _NEGATIVE_COMMON = (
     f"{_NEGATIVE_CLUTTER}"
 )
 
+# Poster: model outputs food+bg only; copy/price/store added via PIL overlay
 _NEGATIVE_POSTER = (
-    "render ONLY the EXACT TEXT block below, no extra text, no hallucinated numbers or prices, "
-    "no location or address text, no duplicate price badges, no English filler text, "
+    "no text, numbers, price, currency, location, address, city, country, English filler, "
+    "logo, watermark, UI, menu title, caption, subtitle, price badge, pill badge in image pixels, "
+    "all copy/price/store name added via PIL only, do not burn typography into image, "
     f"{_NEGATIVE_CLUTTER}"
 )
 
@@ -264,20 +266,20 @@ _STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_COMMON}", _NEGATIV
 # =============================================================================
 
 _POSTER_LAYOUT_RULES = (
-    "LAYOUT 4:5 1024x1536, top 38% designed bg with headline+menu text, bottom 55-60% food hero, "
-    "price badge top-right, store name bottom-right. Render ONLY the TEXT block below. "
-    "{store_footer_line}"
+    "LAYOUT 4:5 1024x1536, top 38% empty designed bg (PIL text only, no letters in image), "
+    "bottom 55-60% food hero, top-right empty margin for PIL price (no numbers in image), "
+    "bottom-right empty for PIL store name (no location/address text). {store_footer_line}"
 )
 
 _POSTER_PHOTO_TEMPLATE = """
-TASK: menu promo poster from attached food photo
+TASK: menu promo poster from attached food photo — food hero + designed background only
 TYPE: {food_type_label}
 {user_priority_block}{poster_layout_rules}
-TEXT: {poster_exact_text_block}
 SUBJECT: {poster_food_rules}
 BG: {poster_background_rules}
 QUALITY: {realism_rules}
 GOAL: {promotion_goal}, TONE: {tone}
+PRESERVE: preserve food shape/vessel, redesign bg/lighting only, all headline/menu/price/store via PIL post-process
 NEG: {_NEGATIVE_POSTER}, no flat-only bg, no brand copy
 """.strip()
 
@@ -446,7 +448,7 @@ def build_poster_exact_text_block(
     price_text: str = "",
     store_name: str = "",
 ) -> str:
-    """포스터에 이미지 모델이 그릴 정확한 한국어 문구 블록."""
+    """Legacy helper — poster text is applied via PIL, not in the image prompt."""
 
     menu = (menu_name or "").strip() or "오늘의 메뉴"
     items: list[str] = []
@@ -462,7 +464,7 @@ def build_poster_exact_text_block(
 
     price = (price_text or "").strip()
     if price:
-        items.append(f'{index}. "{price}" — price badge (exact digits only)')
+        items.append(f'{index}. "{price}" — price (badge)')
         index += 1
 
     store = (store_name or "").strip()
@@ -471,7 +473,7 @@ def build_poster_exact_text_block(
 
     numbered = "\n".join(items)
     return (
-        "EXACT TEXT (render exactly in image, Korean only, no other numbers or text):\n"
+        "EXACT TEXT (PIL only, not for image model):\n"
         f"{numbered}"
     )
 
@@ -498,8 +500,8 @@ def _build_poster_store_footer_line(
 ) -> str:
     _ = store_location
     if (store_name or "").strip():
-        return "store name only in TEXT block bottom-right"
-    return "follow TEXT block placement only"
+        return "reserve bottom-right empty for PIL store name only"
+    return "keep text zones empty for PIL overlay"
 
 
 def _lookup_food_rules(registry: dict[FoodType, str], food_type: FoodType) -> str:
@@ -569,12 +571,6 @@ def build_template_context(
                 store_name,
                 store_location,
             ),
-        ),
-        "poster_exact_text_block": build_poster_exact_text_block(
-            headline=headline,
-            menu_name=menu_name,
-            price_text=price_text,
-            store_name=store_name,
         ),
         "reels_food_rules": _REELS_FOOD_RULES,
         "reels_scene_rules": _build_reels_scene_rules(extra_notes),
