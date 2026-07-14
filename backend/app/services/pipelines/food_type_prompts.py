@@ -70,18 +70,23 @@ _NEGATIVE_COMMON = (
 
 # Poster: model outputs food+bg only; copy/price/store added via PIL overlay
 _NEGATIVE_POSTER = (
-    "no text, numbers, price, currency, location, address, city, country, English filler, "
-    "logo, watermark, UI, menu title, caption, subtitle, price badge, pill badge in image pixels, "
-    "all copy/price/store name added via PIL only, do not burn typography into image, "
+    "no text, letters, numbers, price, currency, Korean menu title, dish name, store label, "
+    "English words STORE NAME MENU PRICE, location, address, logo, watermark, UI, "
+    "caption, subtitle, price badge, pill badge, placeholder typography in image pixels, "
+    "typography added in post-processing only, do not burn any words into image, "
     f"{_NEGATIVE_CLUTTER}"
 )
 
-_NEGATIVE_REELS = f"{_NEGATIVE_COMMON}, hook via PIL only"
+_NEGATIVE_REELS = (
+    f"{_NEGATIVE_COMMON}, hook/caption via PIL only, not in image pixels, "
+    "no Korean/English letters, no menu title, no price, no store label in image"
+)
 
 # Studio: upgrade framing/light/bg but do not exaggerate the food itself
 _NEGATIVE_STUDIO = (
     f"{_NEGATIVE_COMMON}, no exaggerated gloss/oil/smoke/steam, "
-    "no added toppings/foam/cream/condensation, no oversaturated food colors"
+    "no added toppings/foam/cream/condensation, no oversaturated food colors, "
+    "no Korean/English letters, no menu title, no price, no store label, no caption"
 )
 
 _PRESERVE_FOOD_BASE = (
@@ -175,7 +180,8 @@ TYPE: {food_type_label}
 {user_priority_block}SUBJECT: {food_subject_rules}
 SCENE: {studio_scene_rules}
 QUALITY: {realism_rules}
-GOAL: {promotion_goal}, TONE: {tone}
+MOOD: appetizing commercial atmosphere, TONE: {tone}
+CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no labels
 PRESERVE: keep food shape, portions, vessel, layering and color faithful to photo; improve only light/bg/composition
 NEG: {_NEGATIVE_STUDIO}
 """.strip()
@@ -269,20 +275,21 @@ _STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_STUDIO}", _NEGATIV
 # =============================================================================
 
 _POSTER_LAYOUT_RULES = (
-    "LAYOUT 4:5 1024x1536, top 38% empty designed bg (PIL text only, no letters in image), "
-    "bottom 55-60% food hero, top-right empty margin for PIL price (no numbers in image), "
-    "bottom-right empty for PIL store name (no location/address text). {store_footer_line}"
+    "LAYOUT 4:5 1024x1536, top 38% empty designed bg (no letters in image), "
+    "bottom 55-60% food hero, top-right empty patch, bottom-right empty corner. "
+    "{store_footer_line}"
 )
 
 _POSTER_PHOTO_TEMPLATE = """
-TASK: menu promo poster from attached food photo — food hero + designed background only
+TASK: menu promo poster from attached food photo — food hero + designed background only, zero typography
 TYPE: {food_type_label}
 {user_priority_block}{poster_layout_rules}
 SUBJECT: {poster_food_rules}
 BG: {poster_background_rules}
 QUALITY: {realism_rules}
-GOAL: {promotion_goal}, TONE: {tone}
-PRESERVE: preserve food shape/vessel, redesign bg/lighting only, all headline/menu/price/store via PIL post-process
+MOOD: appetizing commercial promo atmosphere, TONE: {tone}
+CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no labels
+PRESERVE: preserve food shape/vessel, redesign bg/lighting only, typography is post-process overlay not in image
 NEG: {_NEGATIVE_POSTER}, no flat-only bg, no brand copy
 """.strip()
 
@@ -389,12 +396,14 @@ _REELS_SCENE_RULES_FLEXIBLE = (
 )
 
 _REELS_PHOTO_TEMPLATE = """
-TASK: reels food thumbnail from in-store photo
+TASK: reels food thumbnail from in-store photo — faithful food, zero typography
 TYPE: {food_type_label}
 {user_priority_block}SUBJECT: {reels_food_rules}
 SCENE: {reels_scene_rules}
 QUALITY: {realism_rules}
-GOAL: {promotion_goal}, TONE: {tone}
+MOOD: appetizing in-store atmosphere, TONE: {tone}
+CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no caption/hook text
+PRESERVE: keep food appearance faithful to photo; hook caption is PIL overlay only
 NEG: {_NEGATIVE_REELS}
 """.strip()
 
@@ -501,10 +510,8 @@ def _build_poster_store_footer_line(
     store_name: str,
     store_location: str = "",
 ) -> str:
-    _ = store_location
-    if (store_name or "").strip():
-        return "reserve bottom-right empty for PIL store name only"
-    return "keep text zones empty for PIL overlay"
+    _ = (store_name, store_location)
+    return "keep top and bottom-right corners blank, no typography in image"
 
 
 def _lookup_food_rules(registry: dict[FoodType, str], food_type: FoodType) -> str:

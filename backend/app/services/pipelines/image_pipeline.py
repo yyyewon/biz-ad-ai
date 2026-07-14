@@ -93,8 +93,8 @@ POSTER_PROMPT_HARD_CONSTRAINTS: list[str] = [
 
 POSTER_RETRY_SUFFIXES: list[str] = [
     "",
-    "retry: no text, no dish name, no menu title, no store name, food+bg only, keep layout margins",
-    "final retry: zero text in image pixels, no burned-in caption/subtitle",
+    "retry: zero text in image, no menu title, no price, no store label, no STORE/NAME words, food+bg only",
+    "final retry: completely blank text zones, no Korean or English letters or numbers in image pixels",
 ]
 
 

@@ -52,6 +52,36 @@ def test_studio_prompt_polishes_without_food_exaggeration():
     assert "foam/cream texture" not in prompt
 
 
+def test_studio_prompt_has_no_text_leaks():
+    prompt = build_food_variant_prompt(
+        _payload(food_type="soup_stew", promotion_goal="신메뉴 홍보", menu_name="순두부찌개"),
+        "studio",
+        food_type="soup_stew",
+        build_poster_prompt=_build_poster_prompt,
+    )
+
+    assert "no readable text" in prompt
+    assert "신메뉴" not in prompt
+    assert "순두부" not in prompt
+    assert "GOAL:" not in prompt
+    assert "PIL" not in prompt
+
+
+def test_reels_prompt_has_no_text_leaks():
+    prompt = build_food_variant_prompt(
+        _payload(food_type="fried", promotion_goal="신메뉴 홍보", menu_name="고추장 찌개"),
+        "instagram_feed",
+        food_type="fried",
+        build_poster_prompt=_build_poster_prompt,
+    )
+
+    assert "no readable text" in prompt
+    assert "신메뉴" not in prompt
+    assert "고추장" not in prompt
+    assert "GOAL:" not in prompt
+    assert "PIL overlay only" in prompt
+
+
 def test_fried_poster_uses_custom_template_with_pil_rules():
     assert uses_custom_template("fried", "poster") is True
     assert variant_uses_pil_text_overlay("fried", "poster") is True
@@ -65,10 +95,13 @@ def test_fried_poster_uses_custom_template_with_pil_rules():
 
     assert "crispy golden fried" in prompt
     assert "casual dining poster" in prompt
-    assert "PIL" in prompt
-    assert "PIL post-process" in prompt
-    assert "location context" not in prompt
-    assert "성수동" not in prompt
+    assert "zero typography" in prompt
+    assert "no readable text" in prompt
+    assert "신메뉴" not in prompt
+    assert "순두부" not in prompt
+    assert "PIL store" not in prompt
+    assert "promotion_goal" not in prompt.lower()
+    assert "GOAL:" not in prompt
     assert "EXACT TEXT" not in prompt
 
 
@@ -104,7 +137,7 @@ def test_reels_prompt_excludes_menu_name_from_image_model():
 
     assert "고추장 찌개" not in prompt
     assert "menu title" in prompt
-    assert "hook via PIL" in prompt
+    assert "hook via PIL" in prompt or "PIL only" in prompt
 
 
 def test_reels_variant_uses_pil_overlay():
