@@ -15,8 +15,6 @@ Preview:
 
 from __future__ import annotations
 
-from typing import Callable
-
 from app.schemas.food_type import FOOD_TYPE_LABELS, FoodType
 from app.schemas.image_ad import ImageAdRequest, ImageVariantType
 from app.utils.poster_taglines import resolve_poster_headline_from_purpose
@@ -43,7 +41,7 @@ FOOD_TYPE_SCENE_HINTS: dict[FoodType, str] = {
 }
 
 VARIANT_DIRECTION_HINTS: dict[ImageVariantType, str] = {
-    "studio": "medium wide editorial food photo, table+background visible, no extreme closeup",
+    "studio": "polish casual food photo into clean studio shot, faithful food, better light/bg",
     "poster": "4:5 menu promo poster, designed top bg + food hero bottom, PIL text overlay",
     "instagram_feed": "reels mood, preserve store bg, extreme food closeup",
 }
@@ -68,7 +66,26 @@ _NEGATIVE_COMMON = (
     f"{_NEGATIVE_CLUTTER}"
 )
 
-_NEGATIVE_REELS = f"{_NEGATIVE_COMMON}, hook via PIL only"
+# Poster: model outputs food+bg only; copy/price/store added via PIL overlay
+_NEGATIVE_POSTER = (
+    "no text, letters, numbers, price, currency, Korean menu title, dish name, store label, "
+    "English words STORE NAME MENU PRICE, location, address, logo, watermark, UI, "
+    "caption, subtitle, price badge, pill badge, placeholder typography in image pixels, "
+    "typography added in post-processing only, do not burn any words into image, "
+    f"{_NEGATIVE_CLUTTER}"
+)
+
+_NEGATIVE_REELS = (
+    f"{_NEGATIVE_COMMON}, hook/caption via PIL only, not in image pixels, "
+    "no Korean/English letters, no menu title, no price, no store label in image"
+)
+
+# Studio: upgrade framing/light/bg but do not exaggerate the food itself
+_NEGATIVE_STUDIO = (
+    f"{_NEGATIVE_COMMON}, no exaggerated gloss/oil/smoke/steam, "
+    "no added toppings/foam/cream/condensation, no oversaturated food colors, "
+    "no Korean/English letters, no menu title, no price, no store label, no caption"
+)
 
 _PRESERVE_FOOD_BASE = (
     "preserve original main-menu food/toppings and its serving vessel, "
@@ -85,8 +102,13 @@ _SUBJECT_HERO_COMMON = (
 )
 
 _STUDIO_SCENE_BASE = (
-    "clean table surface, no loose clutter props, medium wide 50mm, food 55-65% frame, "
-    "45deg, no people"
+    "upgrade casual shot to clean studio food photo, tidy table, soft even professional light, "
+    "uncluttered background, medium wide framing, food 55-65% frame, no people"
+)
+
+_STUDIO_FOOD_BASE = (
+    f"{_PRESERVE_FOOD_BASE}, hero focus on ordered menu item, "
+    f"keep food appearance faithful to attached photo, {_EXCLUDE_TABLE_CLUTTER}"
 )
 
 _POSTER_FOOD_BASE = (
@@ -151,83 +173,76 @@ def _build_user_priority_block(extra_notes: str) -> str:
 # =============================================================================
 
 _STUDIO_PHOTO_TEMPLATE = """
-TASK: editorial food reshoot from attached photo
+TASK: polish attached casual food photo into a clean studio commercial shot
 TYPE: {food_type_label}
 {user_priority_block}SUBJECT: {food_subject_rules}
 SCENE: {studio_scene_rules}
 QUALITY: {realism_rules}
-GOAL: {promotion_goal}, TONE: {tone}
-NEG: {_NEGATIVE_COMMON}
+MOOD: appetizing commercial atmosphere, TONE: {tone}
+CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no labels
+PRESERVE: keep food shape, portions, vessel, layering and color faithful to photo; improve only light/bg/composition
+NEG: {_NEGATIVE_STUDIO}
 """.strip()
 
 # --- studio subject tags per food type ---
 
 _STUDIO_SOUP_STEW_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, keep main pot + all side dish plates with food, "
-    "vivid broth, tofu/kimchi/pottery detail"
+    f"{_STUDIO_FOOD_BASE}, keep main pot + side dishes, natural broth color"
 )
 
 _STUDIO_FRIED_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, crispy golden crust, sharp fry texture, not soggy/oily"
+    f"{_STUDIO_FOOD_BASE}, natural golden crust, not greasy or over-fried"
 )
 
 _STUDIO_GRILLED_BBQ_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, grill marks, sear gloss, juicy meat surface, "
-    "natural plate smoke not CG smoke"
+    f"{_STUDIO_FOOD_BASE}, natural grill marks and sear, no heavy smoke"
 )
 
 _STUDIO_RICE_DISH_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, visible rice/noodle+topping layers, strong color contrast"
+    f"{_STUDIO_FOOD_BASE}, visible rice/noodle+topping layers, natural colors"
 )
 
 _STUDIO_BREAD_DESSERT_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, crisp crumb, cream/glaze/layer detail"
+    f"{_STUDIO_FOOD_BASE}, natural crumb/cream/layer texture"
 )
 
 _STUDIO_BURGER_SANDWICH_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, visible bun/patty/veg/sauce layers, not collapsed/soggy"
+    f"{_STUDIO_FOOD_BASE}, natural bun/patty/veg/sauce layers, not collapsed"
 )
 
 _STUDIO_COFFEE_DRINK_SUBJECT = (
-    f"{_SUBJECT_HERO_COMMON}, single hero cup only, cup condensation, "
-    "beverage layers, foam/cream texture"
+    f"{_STUDIO_FOOD_BASE}, preserve cup shape and drink layers as in photo, "
+    "no added foam/toppings not in original"
 )
 
 # --- studio scene tags per food type ---
 
 _STUDIO_SOUP_STEW_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, walnut/dark oak wood table, warm brown bokeh wood-wall bg, "
-    "warm side light, table 35-45% frame, no crushed blacks"
+    f"{_STUDIO_SCENE_BASE}, warm wood-tone table, soft warm light"
 )
 
 _STUDIO_FRIED_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, rough wood board or craft paper, warm side light, "
-    "highlight crispy surface gloss"
+    f"{_STUDIO_SCENE_BASE}, warm neutral table, soft side light"
 )
 
 _STUDIO_GRILLED_BBQ_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, cast iron grill pan, dark warm charcoal/brown bokeh, "
-    "strong side light, meat+grill in frame, red/brown contrast"
+    f"{_STUDIO_SCENE_BASE}, dark warm table tone, soft side light, natural contrast"
 )
 
 _STUDIO_RICE_DISH_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, bright cream/light gray seamless bg, soft even studio light, "
-    "top-down or slight angle, full bowl in frame"
+    f"{_STUDIO_SCENE_BASE}, bright clean table, soft even light, full bowl in frame"
 )
 
 _STUDIO_BREAD_DESSERT_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, bright marble or linen cloth, soft window/diffused light, "
-    "45deg side angle, full dessert in frame"
+    f"{_STUDIO_SCENE_BASE}, bright cafe table, soft diffused light, full dessert in frame"
 )
 
 _STUDIO_BURGER_SANDWICH_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, craft paper or slate board, warm side light, "
-    "eye-level front/side angle, layer cross-section visible"
+    f"{_STUDIO_SCENE_BASE}, casual dining table, soft side light, full sandwich in frame"
 )
 
 _STUDIO_COFFEE_DRINK_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, bright oak or white table, soft diffused window light, "
-    "center front/slight side, full cup in frame"
+    f"{_STUDIO_SCENE_BASE}, clean cafe table, soft natural window light, full cup in frame"
 )
 
 FOOD_STUDIO_SUBJECT_RULES: dict[FoodType, str] = {
@@ -250,7 +265,7 @@ FOOD_STUDIO_SCENE_RULES: dict[FoodType, str] = {
     "coffee_drink": _STUDIO_COFFEE_DRINK_SCENE,
 }
 
-_STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_COMMON}", _NEGATIVE_COMMON)
+_STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_STUDIO}", _NEGATIVE_STUDIO)
 
 
 # =============================================================================
@@ -258,19 +273,22 @@ _STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_COMMON}", _NEGATIV
 # =============================================================================
 
 _POSTER_LAYOUT_RULES = (
-    "LAYOUT 4:5 1024x1536, top 38% empty designed bg (PIL text), bottom 55-60% food hero, "
-    "top-right price-pill space, bottom-right store space. {store_footer_line}"
+    "LAYOUT 4:5 1024x1536, top 38% empty designed bg (no letters in image), "
+    "bottom 55-60% food hero, top-right empty patch, bottom-right empty corner. "
+    "{store_footer_line}"
 )
 
 _POSTER_PHOTO_TEMPLATE = """
-TASK: menu promo poster from attached food photo
+TASK: menu promo poster from attached food photo — food hero + designed background only, zero typography
 TYPE: {food_type_label}
 {user_priority_block}{poster_layout_rules}
 SUBJECT: {poster_food_rules}
 BG: {poster_background_rules}
 QUALITY: {realism_rules}
-GOAL: {promotion_goal}, TONE: {tone}
-NEG: {_NEGATIVE_COMMON}, no flat-only bg, no brand copy
+MOOD: appetizing commercial promo atmosphere, TONE: {tone}
+CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no labels
+PRESERVE: preserve food shape/vessel, redesign bg/lighting only, typography is post-process overlay not in image
+NEG: {_NEGATIVE_POSTER}, no flat-only bg, no brand copy
 """.strip()
 
 # --- poster food tags ---
@@ -355,7 +373,7 @@ FOOD_POSTER_BACKGROUND_RULES: dict[FoodType, str] = {
     "coffee_drink": _POSTER_COFFEE_DRINK_BACKGROUND,
 }
 
-_POSTER_TEMPLATE = _POSTER_PHOTO_TEMPLATE.replace("{_NEGATIVE_COMMON}", _NEGATIVE_COMMON)
+_POSTER_TEMPLATE = _POSTER_PHOTO_TEMPLATE.replace("{_NEGATIVE_POSTER}", _NEGATIVE_POSTER)
 
 
 # =============================================================================
@@ -367,21 +385,32 @@ _REELS_FOOD_RULES = (
 )
 
 _REELS_SCENE_RULES = (
-    "keep original store interior/bg/lighting, shallow natural bokeh, no studio/solid bg swap, "
-    "smartphone in-store single shot, 45deg or slight top-down, no people, bottom-left 20% empty"
+    "preserve original restaurant/store interior, table decor, lighting, signage, "
+    "shallow bokeh ok, no studio table/solid bg replacement, "
+    "smartphone restaurant reels thumbnail, bright sharp appetizing, "
+    "45deg or slight top-down, no people, bottom-left 20% empty for PIL"
 )
 
 _REELS_SCENE_RULES_FLEXIBLE = (
-    "user may override bg/lighting/mood/color/table, no people, bottom-left 20% empty"
+    "preserve restaurant/store interior from photo, user may adjust lighting/mood/color/table "
+    "within same in-store location, no studio/solid bg replacement, extreme closeup 70-85%, "
+    "no people, bottom-left 20% empty for PIL"
+)
+
+_REELS_REALISM_EXTRA = (
+    "authentic in-store smartphone single shot, not studio reshoot/composite, "
+    "food+bg same location same shoot, no fake bokeh/over-sharpen/CG ad look"
 )
 
 _REELS_PHOTO_TEMPLATE = """
-TASK: reels food thumbnail from in-store photo
+TASK: reels food thumbnail from in-store photo — faithful food, zero typography
 TYPE: {food_type_label}
 {user_priority_block}SUBJECT: {reels_food_rules}
 SCENE: {reels_scene_rules}
-QUALITY: {realism_rules}
-GOAL: {promotion_goal}, TONE: {tone}
+QUALITY: {realism_rules}, {reels_realism_extra}
+MOOD: appetizing in-store atmosphere, TONE: {tone}
+CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no caption/hook text
+PRESERVE: keep food appearance and store interior/bg faithful to photo; hook caption is PIL overlay only
 NEG: {_NEGATIVE_REELS}
 """.strip()
 
@@ -488,12 +517,8 @@ def _build_poster_store_footer_line(
     store_name: str,
     store_location: str = "",
 ) -> str:
-    parts: list[str] = []
-    if (store_name or "").strip():
-        parts.append("reserve bottom-right for PIL store")
-    if (store_location or "").strip():
-        parts.append(f"location context: {store_location.strip()}")
-    return ", ".join(parts)
+    _ = (store_name, store_location)
+    return "keep top and bottom-right corners blank, no typography in image"
 
 
 def _lookup_food_rules(registry: dict[FoodType, str], food_type: FoodType) -> str:
@@ -566,6 +591,7 @@ def build_template_context(
         ),
         "reels_food_rules": _REELS_FOOD_RULES,
         "reels_scene_rules": _build_reels_scene_rules(extra_notes),
+        "reels_realism_extra": _REELS_REALISM_EXTRA,
         "reels_hook_line": _build_reels_hook_line(
             store_name=store_name,
             menu_name=payload.menu_name or "",
@@ -597,28 +623,31 @@ def build_food_context_line(food_type: FoodType) -> str:
     return f"food type: {label}, {scene_hint}"
 
 
-def build_variant_context_line(variant: ImageVariantType) -> str:
-    return f"variant: {get_variant_direction_hint(variant)}"
-
-
-def append_food_and_variant_context(
-    base_prompt: str,
+def build_food_variant_prompt(
+    payload: ImageAdRequest,
+    variant: ImageVariantType,
     *,
     food_type: FoodType,
-    variant: ImageVariantType,
 ) -> str:
-    return ", ".join(
-        [
-            base_prompt,
-            build_food_context_line(food_type),
-            build_variant_context_line(variant),
-        ]
+    custom_prompt = render_food_variant_prompt_template(
+        payload,
+        food_type=food_type,
+        variant=variant,
     )
+    if not custom_prompt:
+        raise ValueError(
+            f"No prompt template for food_type={food_type!r}, variant={variant!r}"
+        )
+    return custom_prompt
 
 
 def build_variant_negative_prompt(variant: ImageVariantType) -> str:
+    if variant == "poster":
+        return _NEGATIVE_POSTER
     if variant == "instagram_feed":
         return _NEGATIVE_REELS
+    if variant == "studio":
+        return _NEGATIVE_STUDIO
     return _NEGATIVE_COMMON
 
 
@@ -626,32 +655,6 @@ def strip_prompt_neg_line(prompt: str) -> str:
     """HF negative_prompt 파라미터로 분리할 때 positive prompt에서 NEG 줄을 제거한다."""
     lines = [line for line in prompt.splitlines() if not line.strip().startswith("NEG:")]
     return "\n".join(lines).strip()
-
-
-def build_food_variant_prompt(
-    payload: ImageAdRequest,
-    variant: ImageVariantType,
-    *,
-    food_type: FoodType,
-    build_poster_prompt: Callable[[ImageAdRequest, str], str],
-) -> str:
-    custom_prompt = render_food_variant_prompt_template(
-        payload,
-        food_type=food_type,
-        variant=variant,
-    )
-    if custom_prompt:
-        return custom_prompt
-
-    from app.services.pipelines.image_variant_prompts import VARIANT_LAYOUT_MAP
-
-    layout_type = VARIANT_LAYOUT_MAP[variant]
-    base_prompt = build_poster_prompt(payload, layout_type)
-    return append_food_and_variant_context(
-        base_prompt,
-        food_type=food_type,
-        variant=variant,
-    )
 
 
 def build_inpaint_food_prompt(payload: ImageAdRequest, food_type: FoodType) -> str:

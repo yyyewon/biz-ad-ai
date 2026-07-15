@@ -19,7 +19,6 @@ from app.services.pipelines.food_type_prompts import (
     build_food_variant_prompt,
     uses_custom_template,
 )
-from app.services.pipelines.image_pipeline import _build_poster_prompt
 
 
 @dataclass(frozen=True)
@@ -66,7 +65,6 @@ def preview_image_prompt(
         payload,
         variant,
         food_type=food_type,
-        build_poster_prompt=_build_poster_prompt,
     )
 
 

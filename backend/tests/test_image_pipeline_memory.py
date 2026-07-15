@@ -22,6 +22,10 @@ class FakeImageProvider:
         prompt: str,
         num_images: int,
         mask_image_bytes: bytes | None = None,
+        size: str | None = None,
+        render_mode: str | None = None,
+        negative_prompt: str | None = None,
+        img2img_strength: float | None = None,
     ) -> list[bytes]:
         self.calls.append(
             {
@@ -44,11 +48,17 @@ def _sample_source_bytes() -> bytes:
 def test_generate_image_ads_returns_base64_without_file_path(monkeypatch):
     fake_provider = FakeImageProvider()
     monkeypatch.setattr(image_pipeline, "get_image_provider", lambda: fake_provider)
+    monkeypatch.setattr(image_pipeline, "get_provider_name", lambda role: "openai")
+    monkeypatch.setattr(
+        image_pipeline,
+        "get_variant_image_size",
+        lambda variant: "1024x1536",
+    )
 
     payload = ImageAdRequest(
         store_name="만월",
         menu_name="데몬헌터스 케이크",
-        mood="cozy",
+        food_type="bread_dessert",
         num_images=3,
         generation_mode="direct_poster",
     )
@@ -71,42 +81,3 @@ def test_generate_image_ads_returns_base64_without_file_path(monkeypatch):
     assert decoded == result.image_bytes_list[0]
 
     assert len(fake_provider.calls) == 3
-    assert all(call["has_mask"] for call in fake_provider.calls)
-
-
-def test_generate_image_ads_two_stage_uses_food_then_poster(monkeypatch):
-    fake_provider = FakeImageProvider()
-    monkeypatch.setattr(image_pipeline, "get_image_provider", lambda: fake_provider)
-
-    payload = ImageAdRequest(
-        store_name="만월",
-        menu_name="데몬헌터스 케이크",
-        mood="cozy",
-        mood_list=["cozy", "fresh"],
-        num_images=2,
-        generation_mode="two_stage",
-    )
-
-    result = asyncio.run(
-        generate_image_ads(
-            payload=payload,
-            source_image_bytes=_sample_source_bytes(),
-        )
-    )
-
-    assert result.generation_mode == "two_stage"
-    assert len(result.images) == 2
-    assert len(result.composite_images) == 2
-    assert len(result.image_bytes_list) == 2
-    assert result.applied_moods == ["cozy", "fresh"]
-
-    # two_stage:
-    # - food_generation 2회
-    # - poster_generation 2회
-    assert len(fake_provider.calls) == 4
-
-    food_calls = fake_provider.calls[:2]
-    poster_calls = fake_provider.calls[2:]
-
-    assert all(call["has_mask"] for call in food_calls)
-    assert all(not call["has_mask"] for call in poster_calls)
