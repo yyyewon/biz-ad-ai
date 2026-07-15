@@ -239,27 +239,44 @@ class HFImageProvider(ImageGenerationProvider):
                     },
                 )
 
+    def _quantization_components(self) -> list[str]:
+        if self._is_flux:
+            return ["transformer", "text_encoder_2"]
+        return ["transformer", "text_encoder_3"]
+
     def _build_quantization_config(self) -> Any:
         if self._quantization == "none":
             return None
 
+        from diffusers.quantizers import PipelineQuantizationConfig
+
+        components_to_quantize = self._quantization_components()
+
         if self._quantization == "nf4":
-            from transformers import BitsAndBytesConfig
-
-            return BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=self._resolve_torch_dtype(),
-                bnb_4bit_use_double_quant=True,
+            return PipelineQuantizationConfig(
+                quant_backend="bitsandbytes_4bit",
+                quant_kwargs={
+                    "load_in_4bit": True,
+                    "bnb_4bit_quant_type": "nf4",
+                    "bnb_4bit_compute_dtype": self._resolve_torch_dtype(),
+                    "bnb_4bit_use_double_quant": True,
+                },
+                components_to_quantize=components_to_quantize,
             )
 
-        if self._quantization in ("int8", "int4"):
-            from transformers import BitsAndBytesConfig
-
-            load_kwargs: dict[str, Any] = (
-                {"load_in_8bit": True} if self._quantization == "int8" else {"load_in_4bit": True}
+        if self._quantization == "int8":
+            return PipelineQuantizationConfig(
+                quant_backend="bitsandbytes_8bit",
+                quant_kwargs={"load_in_8bit": True},
+                components_to_quantize=components_to_quantize,
             )
-            return BitsAndBytesConfig(**load_kwargs)
+
+        if self._quantization == "int4":
+            return PipelineQuantizationConfig(
+                quant_backend="bitsandbytes_4bit",
+                quant_kwargs={"load_in_4bit": True},
+                components_to_quantize=components_to_quantize,
+            )
 
         logger.warning(
             "hf_unknown_quantization | value={} | falling back to none",

@@ -299,12 +299,9 @@ async def generate_image_ads(
 
             return idx, variant, variant_outputs[0], variant_prompt
 
-        variant_results = await asyncio.gather(
-            *[
-                _generate_variant_image(idx)
-                for idx in range(payload.num_images)
-            ]
-        )
+        variant_results = []
+        for idx in range(payload.num_images):
+            variant_results.append(await _generate_variant_image(idx))
 
         poster_image_bytes: list[bytes] = []
         applied_variants: list[ImageVariantType] = []

@@ -53,7 +53,7 @@ bitsandbytes
 Pygments
 
 # Image background removal
-rembg
+rembg[gpu]
 
 # numba/pymatting compatibility for rembg
 numpy<2.5

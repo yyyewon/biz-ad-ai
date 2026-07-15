@@ -4,8 +4,6 @@
 #
 #    pip-compile --output-file=backend/requirements.txt backend/requirements.in
 #
---extra-index-url https://download.pytorch.org/whl/cu124
-
 accelerate==1.14.0
     # via -r backend/requirements.in
 annotated-doc==0.0.4
@@ -25,6 +23,8 @@ attrs==26.1.0
     # via
     #   jsonschema
     #   referencing
+bitsandbytes==0.49.2
+    # via -r backend/requirements.in
 certifi==2026.6.17
     # via
     #   httpcore
@@ -124,11 +124,13 @@ networkx==3.6.1
     # via
     #   scikit-image
     #   torch
+numba==0.66.0
     # via pymatting
 numpy==2.4.6
     # via
     #   -r backend/requirements.in
     #   accelerate
+    #   bitsandbytes
     #   diffusers
     #   imageio
     #   numba
@@ -181,12 +183,14 @@ nvidia-nvshmem-cu13==3.4.5
     # via torch
 nvidia-nvtx==13.0.85
     # via cuda-toolkit
+onnxruntime-gpu==1.27.0
     # via rembg
 openai==2.44.0
     # via -r backend/requirements.in
 packaging==26.2
     # via
     #   accelerate
+    #   bitsandbytes
     #   huggingface-hub
     #   lazy-loader
     #   onnxruntime-gpu
@@ -229,6 +233,7 @@ pygments==2.20.0
     #   rich
 pyjwt==2.13.0
     # via -r backend/requirements.in
+pymatting==1.1.15
     # via rembg
 pytest==9.1.1
     # via -r backend/requirements.in
@@ -254,6 +259,7 @@ regex==2026.6.28
     # via
     #   diffusers
     #   transformers
+rembg[gpu]==2.0.76
     # via -r backend/requirements.in
 requests==2.34.2
     # via
@@ -295,6 +301,7 @@ torch==2.12.1
     # via
     #   -r backend/requirements.in
     #   accelerate
+    #   bitsandbytes
     #   torchvision
 torchaudio==2.11.0
     # via -r backend/requirements.in

@@ -50,6 +50,10 @@ async def _warm_up_hf_image_pipeline() -> None:
         if hasattr(provider, "_load_text2img_pipeline"):
             logger.info("hf_image_pipeline_warmup_started")
             await run_in_threadpool(provider._load_text2img_pipeline)
+            if hasattr(provider, "_load_img2img_pipeline"):
+                await run_in_threadpool(provider._load_img2img_pipeline)
+            if hasattr(provider, "_load_inpaint_pipeline"):
+                await run_in_threadpool(provider._load_inpaint_pipeline)
             logger.info("hf_image_pipeline_warmup_completed")
 
     except Exception as exc:
