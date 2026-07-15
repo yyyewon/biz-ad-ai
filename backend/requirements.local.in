@@ -47,6 +47,7 @@ transformers
 accelerate
 sentencepiece
 openai
+bitsandbytes
 
 # pytest traceback / terminal output formatting
 Pygments

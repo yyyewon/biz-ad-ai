@@ -99,6 +99,98 @@ def _teardown(monkeypatch):
     model_config.reload_model_config()
 
 
+def _write_flux_model_config(path, active_profile="hybrid_openai_text_hf_image"):
+    path.write_text(
+        f"""
+version: 1
+active_profile: {active_profile}
+profiles:
+  all_openai:
+    text_generation_provider: openai
+    image_generation_provider: openai
+  hybrid_openai_text_hf_image:
+    text_generation_provider: openai
+    image_generation_provider: hf
+runtime:
+  device: auto
+  dtype: auto
+  seed: null
+output_image:
+  width: 1080
+  height: 1350
+  mime_type: image/png
+  default_count: 3
+  max_count: 4
+image_preprocess:
+  provider: pillow
+  target_width: 1024
+  target_height: 1024
+  output_format: png
+logging:
+  performance:
+    enabled: false
+    path: logs/performance.jsonl
+    include_extra: true
+openai:
+  api_key_env: OPENAI_API_KEY
+  text_generation:
+    default_model: gpt-4o-mini
+    models:
+      gpt-4o-mini:
+        api_type: chat_completions
+        temperature: 0.7
+        max_tokens: 800
+  image_generation:
+    default_model: gpt-image-1-mini
+    models:
+      gpt-image-1-mini:
+        api_type: images
+        size: 1024x1536
+        quality: medium
+        output_format: png
+hf:
+  token_env: HF_TOKEN
+  text_generation:
+    default_model: qwen3_4b
+    models:
+      qwen3_4b:
+        model_id: Qwen/Qwen3-4B-Instruct-2507
+  image_generation:
+    default_model: flux_dev
+    models:
+      flux_dev:
+        model_id: black-forest-labs/FLUX.1-dev
+        model_family: flux
+        quantization: nf4
+        width: 64
+        height: 64
+        num_inference_steps: 4
+        guidance_scale: 3.5
+        img2img_restyle_strength: 0.7
+        subject_height_ratio: 0.62
+        subject_max_width_ratio: 0.86
+        subject_bottom_margin_ratio: 0.08
+        color_harmonize_strength: 0.35
+        drop_shadow_opacity: 0.3
+        drop_shadow_blur_px: 16
+        drop_shadow_offset_y: 14
+        seam_blend_enabled: false
+""",
+        encoding="utf-8",
+    )
+
+
+def _build_flux_provider(monkeypatch, tmp_path):
+    config_path = tmp_path / "model.yaml"
+    _write_flux_model_config(config_path)
+
+    monkeypatch.setenv("MODEL_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("HF_TOKEN", "test-hf-token")
+    model_config.reload_model_config()
+
+    return HFImageProvider()
+
+
 def test_missing_hf_token_raises_app_exception(monkeypatch, tmp_path):
     config_path = tmp_path / "model.yaml"
     _write_model_config(config_path)

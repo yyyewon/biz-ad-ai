@@ -25,7 +25,7 @@ from app.services.pipelines.image_variant_prompts import (
 )
 from app.services.providers.base import ImageRenderMode
 from app.services.providers.factory import get_image_provider
-from app.utils.image_processor import shrink_and_pad_for_wider_framing, zoom_center_crop
+from app.utils.image_processor import shrink_and_pad_for_wider_framing, zoom_center_crop, generate_cutout_mask
 from app.utils.image_bytes import (
     encode_image_bytes_to_base64,
     image_bytes_to_pil,
@@ -64,6 +64,29 @@ def _prepare_edit_source_bytes(
             variant,
             image.size,
         )
+
+    return pil_image_to_png_bytes(image)
+
+
+def _apply_reframe_to_mask(
+    mask_bytes: bytes,
+    *,
+    food_type: str | None,
+    variant: ImageVariantType,
+) -> bytes:
+    """
+    누끼 마스크 이미지를 소스 이미지와 동일한 리프레임 규칙으로 변환한다.
+
+    background_swap 시 마스크와 소스의 구도가 정확히 일치해야 한다.
+    """
+
+    image = image_bytes_to_pil(mask_bytes)
+
+    if food_type and uses_custom_template(food_type, variant):
+        if variant == "studio":
+            image = shrink_and_pad_for_wider_framing(image)
+        elif variant == "instagram_feed":
+            image = zoom_center_crop(image, zoom_factor=1.28)
 
     return pil_image_to_png_bytes(image)
 
@@ -211,6 +234,24 @@ async def generate_image_ads(
                 variant=variant,
             )
 
+            # background_swap 모드에서는 음식(피사체) 누끼 마스크를 생성해 provider에 전달.
+            # 마스크 생성 실패 시 photo_restyle로 폴백.
+            mask_bytes_for_swap: bytes | None = None
+            if render_mode == "background_swap":
+                raw_mask = generate_cutout_mask(source_image_bytes)
+                if raw_mask is not None:
+                    mask_bytes_for_swap = _apply_reframe_to_mask(
+                        raw_mask,
+                        food_type=payload.food_type,
+                        variant=variant,
+                    )
+                else:
+                    render_mode = "photo_restyle"
+                    logger.warning(
+                        "image_mask_generation_failed_fallback | variant={} | render_mode=photo_restyle",
+                        variant,
+                    )
+
             img2img_strength: float | None = None
             if image_provider_name == "hf":
                 hf_settings = get_model_settings(
@@ -226,10 +267,11 @@ async def generate_image_ads(
                 )
 
             logger.info(
-                "image_variant_generation_started | variant={} | provider={} | render_mode={} | img2img_strength={}",
+                "image_variant_generation_started | variant={} | provider={} | render_mode={} | has_mask={} | img2img_strength={}",
                 variant,
                 image_provider_name,
                 render_mode,
+                mask_bytes_for_swap is not None,
                 img2img_strength,
             )
 
@@ -237,6 +279,7 @@ async def generate_image_ads(
                 provider=provider,
                 source_image_bytes=edit_source_bytes,
                 base_prompt=variant_prompt,
+                mask_image_bytes=mask_bytes_for_swap,
                 size=variant_size,
                 render_mode=render_mode,
                 negative_prompt=negative_prompt,

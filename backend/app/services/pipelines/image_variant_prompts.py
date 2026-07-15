@@ -35,12 +35,14 @@ def resolve_variant_render_mode(
     image_provider: str,
 ) -> ImageRenderMode:
     """
-    OpenAI·HF 공통: 원본 사진 전체를 한 장으로 편집(photo_restyle).
+    변형 유형과 provider에 따라 렌더 모드를 선택한다.
 
-    OpenAI → images.edit, HF → img2img.
-    누끼 합성(background_swap)은 각도/조명이 어긋나므로 사용하지 않는다.
-  """
-    _ = (variant, image_provider)
+    OpenAI → images.edit (photo_restyle)
+    HF/FLUX → studio/poster는 background_swap (음식 보존 + 배경만 교체),
+              instagram_feed(릴스)는 photo_restyle (매장 배경 보존 후 클로즈업)
+    """
+    if image_provider == "hf" and variant in ("studio", "poster"):
+        return "background_swap"
     return "photo_restyle"
 
 

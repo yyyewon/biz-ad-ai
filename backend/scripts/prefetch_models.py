@@ -42,13 +42,17 @@ def _resolve_image_model_id() -> str:
     except Exception as exc:
         _log(f"model.yaml 에서 model_id 조회 실패, fallback 사용: {exc}")
 
-    return "stabilityai/stable-diffusion-3.5-medium"
+    return "black-forest-labs/FLUX.1-dev"
+
+
+def _is_flux_model_id(model_id: str) -> bool:
+    return "FLUX" in model_id or "flux" in model_id
 
 
 def _prefetch_diffusion_model(model_id: str, hf_token: str) -> None:
     try:
         import torch
-        from diffusers import StableDiffusion3Pipeline
+        from diffusers import FluxPipeline, StableDiffusion3Pipeline
     except Exception as exc:
         _log(f"torch/diffusers import 실패, diffusion 모델 prefetch 생략: {exc}")
         return
@@ -59,7 +63,9 @@ def _prefetch_diffusion_model(model_id: str, hf_token: str) -> None:
         dtype = torch.float32
 
     try:
-        StableDiffusion3Pipeline.from_pretrained(
+        pipeline_cls = FluxPipeline if _is_flux_model_id(model_id) else StableDiffusion3Pipeline
+        _log(f"pipeline class={pipeline_cls.__name__} | model_id={model_id}")
+        pipeline_cls.from_pretrained(
             model_id,
             torch_dtype=dtype,
             token=hf_token or None,

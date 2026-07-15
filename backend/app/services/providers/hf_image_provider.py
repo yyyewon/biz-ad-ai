@@ -23,6 +23,9 @@ from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
 try:
     import torch
     from diffusers import (
+        FluxImg2ImgPipeline,
+        FluxInpaintPipeline,
+        FluxPipeline,
         StableDiffusion3Img2ImgPipeline,
         StableDiffusion3InpaintPipeline,
         StableDiffusion3Pipeline,
@@ -32,10 +35,18 @@ try:
 
 except ImportError as _import_exc:
     torch = None
+    FluxPipeline = None
+    FluxImg2ImgPipeline = None
+    FluxInpaintPipeline = None
     StableDiffusion3Pipeline = None
     StableDiffusion3InpaintPipeline = None
     StableDiffusion3Img2ImgPipeline = None
     _TORCH_DIFFUSERS_IMPORT_ERROR = _import_exc
+
+
+def _is_flux_model(model_id: str) -> bool:
+    """model_id가 FLUX 계열인지 판별한다."""
+    return "FLUX" in model_id or "flux" in model_id
 
 
 _TEXT2IMG_PIPELINE_CACHE: dict[tuple[str, str, str], Any] = {}
@@ -138,9 +149,20 @@ class HFImageProvider(ImageGenerationProvider):
 
         self._img2img_restyle_strength = float(self._settings.get("img2img_restyle_strength", 0.35))
 
+        # 모델 계열(flux / diffusion) — pipeline class 동적 선택용
+        self._model_family = str(self._settings.get("model_family", "")).lower()
+        # model_family 미지정 시 model_id 기반 자동 추론
+        if not self._model_family:
+            self._model_family = "flux" if _is_flux_model(self._model_id) else "diffusion"
+
+        # 양자화 설정 (none / nf4 / int8 / int4)
+        self._quantization = str(self._settings.get("quantization", "none")).lower()
+        self._is_flux = self._model_family == "flux" or _is_flux_model(self._model_id)
+
         self._hf_token = hf_token or self._resolve_hf_token()
 
         if not self._hf_token:
+            model_label = "FLUX.1-dev" if self._is_flux else "stable-diffusion-3.5-medium"
             raise AppException(
                 errors.HF_TOKEN_MISSING,
                 detail={
@@ -148,7 +170,7 @@ class HFImageProvider(ImageGenerationProvider):
                     "role": "image_generation",
                     "model_id": self._model_id,
                     "hint": (
-                        "stable-diffusion-3.5-medium은 gated 모델입니다. "
+                        f"{model_label}은 gated 모델입니다. "
                         "huggingface.co에서 라이선스 동의 후 .env의 HF_TOKEN을 설정하세요."
                     ),
                 },
@@ -198,14 +220,52 @@ class HFImageProvider(ImageGenerationProvider):
                 },
             )
 
-        if StableDiffusion3InpaintPipeline is None:
-            raise AppException(
-                errors.HF_IMAGE_PIPELINE_DEPENDENCY_ERROR,
-                detail={
-                    "reason": "StableDiffusion3InpaintPipeline import 실패",
-                    "hint": "diffusers>=0.31 로 업그레이드가 필요합니다.",
-                },
+        if self._is_flux:
+            if FluxInpaintPipeline is None:
+                raise AppException(
+                    errors.HF_IMAGE_PIPELINE_DEPENDENCY_ERROR,
+                    detail={
+                        "reason": "FluxInpaintPipeline import 실패",
+                        "hint": "diffusers>=0.32 로 업그레이드가 필요합니다.",
+                    },
+                )
+        else:
+            if StableDiffusion3InpaintPipeline is None:
+                raise AppException(
+                    errors.HF_IMAGE_PIPELINE_DEPENDENCY_ERROR,
+                    detail={
+                        "reason": "StableDiffusion3InpaintPipeline import 실패",
+                        "hint": "diffusers>=0.31 로 업그레이드가 필요합니다.",
+                    },
+                )
+
+    def _build_quantization_config(self) -> Any:
+        if self._quantization == "none":
+            return None
+
+        if self._quantization == "nf4":
+            from transformers import BitsAndBytesConfig
+
+            return BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=self._resolve_torch_dtype(),
+                bnb_4bit_use_double_quant=True,
             )
+
+        if self._quantization in ("int8", "int4"):
+            from transformers import BitsAndBytesConfig
+
+            load_kwargs: dict[str, Any] = (
+                {"load_in_8bit": True} if self._quantization == "int8" else {"load_in_4bit": True}
+            )
+            return BitsAndBytesConfig(**load_kwargs)
+
+        logger.warning(
+            "hf_unknown_quantization | value={} | falling back to none",
+            self._quantization,
+        )
+        return None
 
     def _resolve_torch_dtype(self) -> Any:
         self._ensure_torch_and_diffusers_available()
@@ -233,12 +293,29 @@ class HFImageProvider(ImageGenerationProvider):
             return "mps"
         return "cpu"
 
+    def _build_pipeline_call_kwargs(self, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+        """
+        SD3/FLUX 공통 pipeline 호출 kwargs를 빌드한다.
+
+        max_sequence_length는 SD3 전용 파라미터(FLUX에는 없음).
+        FLUX는 height/width가 32의 배수여야 함.
+        """
+        kwargs: dict[str, Any] = {
+            "num_inference_steps": self._num_inference_steps,
+            "guidance_scale": self._guidance_scale,
+        }
+        if not self._is_flux:
+            kwargs["max_sequence_length"] = self._max_sequence_length
+        if extra:
+            kwargs.update(extra)
+        return kwargs
+
     def _load_text2img_pipeline(self):
         self._ensure_torch_and_diffusers_available()
 
         dtype = self._resolve_torch_dtype()
         device = self._resolve_device()
-        cache_key = (self._model_id, str(dtype), device)
+        cache_key = (self._model_id, str(dtype), device, self._quantization)
 
         cached = _TEXT2IMG_PIPELINE_CACHE.get(cache_key)
         if cached is not None:
@@ -250,19 +327,28 @@ class HFImageProvider(ImageGenerationProvider):
                 return cached
 
             logger.info(
-                "hf_image_pipeline_loading | model_id={} | device={} | dtype={}",
-                self._model_id, device, str(dtype),
+                "hf_image_pipeline_loading | model_id={} | device={} | dtype={} | quantization={}",
+                self._model_id, device, str(dtype), self._quantization,
             )
 
             try:
-                pipe = StableDiffusion3Pipeline.from_pretrained(
-                    self._model_id,
-                    torch_dtype=dtype,
-                    token=self._hf_token,
-                    low_cpu_mem_usage=True,
-                )
+                quantization_config = self._build_quantization_config()
 
-                if device == "cuda":
+                load_kwargs: dict[str, Any] = {
+                    "torch_dtype": dtype,
+                    "token": self._hf_token,
+                    "low_cpu_mem_usage": True,
+                }
+                if quantization_config is not None:
+                    load_kwargs["quantization_config"] = quantization_config
+
+                pipeline_cls = FluxPipeline if self._is_flux else StableDiffusion3Pipeline
+                pipe = pipeline_cls.from_pretrained(self._model_id, **load_kwargs)
+
+                # NF4 양자화 모델은 .to(device) 대신 모델 오프로드 사용
+                if self._quantization != "none":
+                    pipe.enable_model_cpu_offload()
+                elif device == "cuda":
                     pipe.to(device)
                 else:
                     pipe.enable_model_cpu_offload()
@@ -285,7 +371,7 @@ class HFImageProvider(ImageGenerationProvider):
 
         dtype = self._resolve_torch_dtype()
         device = self._resolve_device()
-        cache_key = (self._model_id, str(dtype), device)
+        cache_key = (self._model_id, str(dtype), device, self._quantization)
 
         cached = _INPAINT_PIPELINE_CACHE.get(cache_key)
         if cached is not None:
@@ -296,12 +382,28 @@ class HFImageProvider(ImageGenerationProvider):
             if cached is not None:
                 return cached
 
-            text2img_pipe = self._load_text2img_pipeline()
-
             try:
-                inpaint_pipe = StableDiffusion3InpaintPipeline(**text2img_pipe.components)
+                if self._is_flux:
+                    # FLUX inpaint은 text2img components 공유가 불안정 → 별도 로드
+                    quantization_config = self._build_quantization_config()
+                    load_kwargs: dict[str, Any] = {
+                        "torch_dtype": dtype,
+                        "token": self._hf_token,
+                        "low_cpu_mem_usage": True,
+                    }
+                    if quantization_config is not None:
+                        load_kwargs["quantization_config"] = quantization_config
 
-                if device == "cuda":
+                    inpaint_pipe = FluxInpaintPipeline.from_pretrained(
+                        self._model_id, **load_kwargs
+                    )
+                else:
+                    text2img_pipe = self._load_text2img_pipeline()
+                    inpaint_pipe = StableDiffusion3InpaintPipeline(**text2img_pipe.components)
+
+                if self._quantization != "none":
+                    inpaint_pipe.enable_model_cpu_offload()
+                elif device == "cuda":
                     inpaint_pipe.to(device)
                 else:
                     inpaint_pipe.enable_model_cpu_offload()
@@ -328,7 +430,7 @@ class HFImageProvider(ImageGenerationProvider):
         self._ensure_torch_and_diffusers_available()
         dtype = self._resolve_torch_dtype()
         device = self._resolve_device()
-        cache_key = (self._model_id, str(dtype), device)
+        cache_key = (self._model_id, str(dtype), device, self._quantization)
 
         cached = _IMG2IMG_PIPELINE_CACHE.get(cache_key)
         if cached is not None:
@@ -339,12 +441,27 @@ class HFImageProvider(ImageGenerationProvider):
             if cached is not None:
                 return cached
 
-            text2img_pipe = self._load_text2img_pipeline()
-
             try:
-                img2img_pipe = StableDiffusion3Img2ImgPipeline(**text2img_pipe.components)
+                if self._is_flux:
+                    quantization_config = self._build_quantization_config()
+                    load_kwargs: dict[str, Any] = {
+                        "torch_dtype": dtype,
+                        "token": self._hf_token,
+                        "low_cpu_mem_usage": True,
+                    }
+                    if quantization_config is not None:
+                        load_kwargs["quantization_config"] = quantization_config
 
-                if device == "cuda":
+                    img2img_pipe = FluxImg2ImgPipeline.from_pretrained(
+                        self._model_id, **load_kwargs
+                    )
+                else:
+                    text2img_pipe = self._load_text2img_pipeline()
+                    img2img_pipe = StableDiffusion3Img2ImgPipeline(**text2img_pipe.components)
+
+                if self._quantization != "none":
+                    img2img_pipe.enable_model_cpu_offload()
+                elif device == "cuda":
                     img2img_pipe.to(device)
                 else:
                     img2img_pipe.enable_model_cpu_offload()
@@ -391,16 +508,13 @@ class HFImageProvider(ImageGenerationProvider):
         )
 
         try:
+            pipe_kwargs = self._build_pipeline_call_kwargs(
+                extra={"height": self._height, "width": self._width},
+            )
+            pipe_kwargs["num_images_per_prompt"] = num_images
+
             with _PIPELINE_INFERENCE_LOCK:
-                result = pipe(
-                    prompt=prompt,
-                    num_inference_steps=self._num_inference_steps,
-                    guidance_scale=self._guidance_scale,
-                    height=self._height,
-                    width=self._width,
-                    max_sequence_length=self._max_sequence_length,
-                    num_images_per_prompt=num_images,
-                )
+                result = pipe(prompt=prompt, **pipe_kwargs)
 
         except AppException:
             raise
@@ -651,18 +765,19 @@ class HFImageProvider(ImageGenerationProvider):
 
         pipe = self._load_inpaint_pipeline()
 
+        pipe_kwargs = self._build_pipeline_call_kwargs()
+        pipe_kwargs.update({
+            "prompt": prompt,
+            "negative_prompt": negative_prompt or DEFAULT_NEGATIVE_PROMPT,
+            "image": composited_rgb,
+            "mask_image": seam_mask,
+            "strength": self._seam_blend_strength,
+            "num_inference_steps": self._seam_num_inference_steps,
+            "num_images_per_prompt": 1,
+        })
+
         with _PIPELINE_INFERENCE_LOCK:
-            result = pipe(
-                prompt=prompt,
-                negative_prompt=negative_prompt or DEFAULT_NEGATIVE_PROMPT,
-                image=composited_rgb,
-                mask_image=seam_mask,
-                strength=self._seam_blend_strength,
-                num_inference_steps=self._seam_num_inference_steps,
-                guidance_scale=self._guidance_scale,
-                max_sequence_length=self._max_sequence_length,
-                num_images_per_prompt=1,
-            )
+            result = pipe(**pipe_kwargs)
 
         images = list(getattr(result, "images", []) or [])
         if not images:
@@ -694,17 +809,17 @@ class HFImageProvider(ImageGenerationProvider):
         backdrop_negative_prompt = self._build_backdrop_negative_prompt(negative_prompt)
 
         try:
+            pipe_kwargs = self._build_pipeline_call_kwargs(
+                extra={"height": canvas_size[1], "width": canvas_size[0]},
+            )
+            pipe_kwargs.update({
+                "prompt": backdrop_prompt,
+                "negative_prompt": backdrop_negative_prompt,
+                "num_images_per_prompt": num_images,
+            })
+
             with _PIPELINE_INFERENCE_LOCK:
-                result = pipe(
-                    prompt=backdrop_prompt,
-                    negative_prompt=backdrop_negative_prompt,
-                    num_inference_steps=self._num_inference_steps,
-                    guidance_scale=self._guidance_scale,
-                    height=canvas_size[1],
-                    width=canvas_size[0],
-                    max_sequence_length=self._max_sequence_length,
-                    num_images_per_prompt=num_images,
-                )
+                result = pipe(**pipe_kwargs)
 
         except AppException:
             raise
@@ -768,16 +883,17 @@ class HFImageProvider(ImageGenerationProvider):
         )
 
         try:
+            pipe_kwargs = self._build_pipeline_call_kwargs()
+            pipe_kwargs.update({
+                "prompt": prompt,
+                "negative_prompt": negative_prompt or DEFAULT_NEGATIVE_PROMPT,
+                "image": base_image,
+                "strength": effective_strength,
+                "num_images_per_prompt": num_images,
+            })
+
             with _PIPELINE_INFERENCE_LOCK:
-                result = pipe(
-                    prompt=prompt,
-                    negative_prompt=negative_prompt or DEFAULT_NEGATIVE_PROMPT,
-                    image=base_image,
-                    strength=effective_strength,
-                    guidance_scale=self._guidance_scale,
-                    num_inference_steps=self._num_inference_steps,
-                    num_images_per_prompt=num_images,
-                )
+                result = pipe(**pipe_kwargs)
 
         except AppException:
             raise

@@ -48,8 +48,29 @@ httpx
 # AI Providers
 # =========================
 # OpenAI API 연동
-# HuggingFace / ONNX / diffusion 관련 패키지는 모델 확정 후 별도 추가
 openai
+
+# =========================
+# Local diffusion providers (HF / FLUX)
+# =========================
+# PyTorch (CUDA wheel index는 별도 extra-index-url로 지정)
+torch
+torchvision
+torchaudio
+
+# diffusers: FLUX.1 / SD3 pipeline 실행
+diffusers
+
+# transformers / accelerate: 텍스트 인코더(T5/CLIP) + 모델 오프로드
+transformers
+accelerate
+sentencepiece
+
+# bitsandbytes: FLUX.1 dev NF4(4-bit) 양자화
+bitsandbytes
+
+# 이미지 배경 제거(rembg) — background_swap 누끼 마스크 생성용
+rembg
 
 # pytest traceback / terminal output formatting
 Pygments

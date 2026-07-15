@@ -1,15 +1,11 @@
 """
-이미지 전처리 유틸.
-
-역할:
-- 업로드된 이미지 bytes를 PIL Image로 변환
-- 비율을 유지한 채 필요 시 다운스케일
-- PNG bytes로 반환
+이미지 전처리 유틸
 """
 
 from __future__ import annotations
 
 import io
+import threading
 
 from loguru import logger
 from PIL import Image
@@ -88,6 +84,133 @@ def prepare_upload_image(
 
     배경 제거(누끼)는 수행하지 않고, 원본 구도와 반찬/테이블 구성을 그대로 유지한다.
     """
+
+    try:
+        logger.info(
+            "image_preprocess_started | input_bytes={} | max_size={}x{}",
+            len(image_bytes) if image_bytes else 0,
+            max_width,
+            max_height,
+        )
+
+        input_image = Image.open(io.BytesIO(image_bytes))
+
+        logger.info(
+            "image_preprocess_opened | format={} | mode={} | size={}",
+            input_image.format,
+            input_image.mode,
+            input_image.size,
+        )
+
+        output_image = input_image.convert("RGB")
+        output_image = _resize_preserving_aspect(
+            output_image,
+            max_width=max_width,
+            max_height=max_height,
+        )
+
+        buffer = io.BytesIO()
+        output_image.save(buffer, format="PNG")
+        result = buffer.getvalue()
+
+        logger.info(
+            "image_preprocess_completed | output_bytes={} | output_size={}",
+            len(result),
+            output_image.size,
+        )
+
+        return result
+
+    except Exception as exc:
+        logger.exception(
+            "image_preprocess_failed | input_bytes={} | max_size={}x{} | error_type={} | error={}",
+            len(image_bytes) if image_bytes else 0,
+            max_width,
+            max_height,
+            exc.__class__.__name__,
+            str(exc),
+        )
+        raise
+
+
+def _get_rembg_session():
+    """
+    rembg 세션을 지연 생성
+    """
+    try:
+        from rembg import new_session
+
+        return new_session("u2net")
+    except Exception as exc:
+        logger.warning("rembg 세션 생성 실패, 누끼 마스크를 생략합니다 | error={}", str(exc))
+        return None
+
+
+_REMBG_SESSION = None
+_REMBG_SESSION_LOCK = threading.Lock()
+
+
+def generate_cutout_mask(
+    image_bytes: bytes,
+    *,
+    max_width: int = 1024,
+    max_height: int = 1024,
+) -> bytes | None:
+    """
+    업로드 이미지에서 음식(피사체) 영역을 누끼 따서 RGBA PNG bytes로 반환
+    """
+
+    global _REMBG_SESSION
+
+    try:
+        from rembg import remove
+    except Exception as exc:
+        logger.warning("rembg import 실패, 누끼 마스크를 생략합니다 | error={}", str(exc))
+        return None
+
+    try:
+        logger.info(
+            "cutout_mask_started | input_bytes={}",
+            len(image_bytes) if image_bytes else 0,
+        )
+
+        normalized_bytes = prepare_upload_image(
+            image_bytes, max_width=max_width, max_height=max_height
+        )
+
+        with _REMBG_SESSION_LOCK:
+            if _REMBG_SESSION is None:
+                _REMBG_SESSION = _get_rembg_session()
+
+        rgba_bytes = remove(
+            normalized_bytes,
+            session=_REMBG_SESSION,
+            alpha_matting=False,
+        )
+
+        rgba_image = Image.open(io.BytesIO(rgba_bytes))
+        if rgba_image.mode != "RGBA":
+            rgba_image = rgba_image.convert("RGBA")
+
+        buffer = io.BytesIO()
+        rgba_image.save(buffer, format="PNG")
+        result = buffer.getvalue()
+
+        logger.info(
+            "cutout_mask_completed | output_bytes={} | size={}",
+            len(result),
+            rgba_image.size,
+        )
+
+        return result
+
+    except Exception as exc:
+        logger.exception(
+            "cutout_mask_failed | error_type={} | error={}",
+            exc.__class__.__name__,
+            str(exc),
+        )
+        return None
 
     try:
         logger.info(

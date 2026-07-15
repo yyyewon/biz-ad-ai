@@ -388,12 +388,104 @@ hf:
     # HuggingFace 광고 이미지 생성 기본 모델.
     #
     # options:
+    # - flux_dev
     # - sd35_medium
     # - sdxl_lightning
     # - sdxl_base
-    default_model: sd35_medium
+    default_model: flux_dev
 
     models:
+      flux_dev:
+        # HuggingFace model id.
+        model_id: black-forest-labs/FLUX.1-dev
+
+        # 작업 유형.
+        task_type: text-to-image
+
+        # 실행 백엔드.
+        backend_type: pytorch
+
+        # 모델 계열.
+        #
+        # options:
+        # - flux
+        # - diffusion
+        model_family: flux
+
+        # 양자화 설정.
+        #
+        # current options:
+        # - none
+        # - nf4   (FLUX.1 dev 권장) 4-bit 양자화, L4 24GB VRAM 구동용
+        # - int8
+        # - int4
+        quantization: nf4
+
+        # 개별 모델 장치 설정.
+        #
+        # options:
+        # - auto
+        # - cuda
+        # - cpu
+        # - mps
+        device: auto
+
+        # 개별 모델 dtype 설정.
+        #
+        # FLUX NF4는 float16/bfloat16 혼용. auto 시 bfloat16 선택.
+        #
+        # options:
+        # - auto
+        # - fp16
+        # - bf16
+        # - fp32
+        dtype: auto
+
+        # 생성 이미지 크기.
+        #
+        # FLUX.1 dev 권장 해상도: 1024 기반 multOf32.
+        # 4:5 포스터/피드 세로형은 1024x1280 사용.
+        width: 1024
+        height: 1280
+
+        # diffusion 추론 step 수.
+        #
+        # common range:
+        # - 20~28: FLUX.1 dev 일반적 범위 (품질/속도 균형)
+        num_inference_steps: 28
+
+        # prompt 반영 강도(guidance scale).
+        #
+        # FLUX.1 dev 권장값: 3.5
+        guidance_scale: 3.5
+
+        # img2img(배경 교체 아닌 전체 리스타일) 시 원본 반영 강도.
+        img2img_restyle_strength: 0.7
+
+        # ---- background_swap 합성 품질 파라미터 (모델 무관, PIL 기반) ----
+        # 피사체(음식) 캔버스 내 비율·여백
+        subject_height_ratio: 0.62
+        subject_max_width_ratio: 0.86
+        subject_bottom_margin_ratio: 0.08
+        subject_alpha_full_threshold: 0.97
+
+        # 합성 경계(시임) 블렌딩
+        mask_feather_px: 6
+        composite_feather_px: 3
+
+        # 피사체-배경 색 조화
+        color_harmonize_strength: 0.35
+
+        # 드롭 섀도우
+        drop_shadow_opacity: 0.3
+        drop_shadow_blur_px: 16
+        drop_shadow_offset_y: 14
+
+        # 시임 영역 inpaint 블렌딩(생성 모델로 경계 자연스럽게)
+        seam_blend_enabled: true
+        seam_ring_px: 24
+        seam_blend_strength: 0.35
+
       sd35_medium:
         model_id: stabilityai/stable-diffusion-3.5-medium
         width: 1024
