@@ -33,28 +33,28 @@
     "reels_hook": { "weight": 800 }
   },
   "tone_overrides": {
-    "친근한": {
+    "캐주얼·친근": {
       "font": "noto_sans_kr",
       "poster_headline": { "weight": 500 },
       "poster_menu": { "weight": 700 },
       "poster_price": { "weight": 600 },
       "poster_store": { "weight": 400 }
     },
-    "정중한": {
+    "정중·신뢰": {
       "font": "noto_sans_kr",
       "poster_headline": { "weight": 400 },
       "poster_menu": { "weight": 500 },
       "poster_price": { "weight": 500 },
       "poster_store": { "weight": 400 }
     },
-    "고급스러운": {
+    "고급·감성": {
       "font": "noto_serif_kr",
       "poster_headline": { "weight": 400 },
       "poster_menu": { "weight": 600 },
       "poster_price": { "weight": 500 },
       "poster_store": { "weight": 300 }
     },
-    "위트있는": {
+    "유머·이벤트": {
       "font": "jua",
       "poster_headline": { "weight": 400 },
       "poster_menu": { "weight": 400 },

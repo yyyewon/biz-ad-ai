@@ -3,7 +3,7 @@ Step 2: 사진 업로드 & 음식 유형/톤 선택
 """
 from __future__ import annotations
 import streamlit as st
-from core.config import FOOD_OPTIONS, TONE_OPTIONS, MAX_UPLOAD_MB, ALLOWED_IMAGE_TYPES
+from core.config import FOOD_OPTIONS, TONE_OPTIONS, DEFAULT_TONE, MAX_UPLOAD_MB, ALLOWED_IMAGE_TYPES
 from core.upload_validation import validate_upload_image_file
 from core.auth import get_daily_usage, is_quota_exceeded
 from core.state import set_upload, set_style, is_upload_step_valid, next_step, prev_step
@@ -56,11 +56,14 @@ def render() -> None:
                 key="upload_food_type",
             )
 
+            stored_tone = st.session_state.upload["tone"]
+            tone_default = stored_tone if stored_tone in TONE_OPTIONS else DEFAULT_TONE
+
             tone = st.segmented_control(
-                "문구 톤앤매너",
+                "광고 말투",
                 options=TONE_OPTIONS,
                 selection_mode="single",
-                default=st.session_state.upload["tone"],
+                default=tone_default,
                 key="upload_tone_select",
             )
 
@@ -93,7 +96,7 @@ def render() -> None:
                     disabled=quota_exceeded,
                 ):
                     if not is_upload_step_valid():
-                        st.warning("사진 업로드, 음식 유형, 톤을 모두 선택해 주세요.")
+                        st.warning("사진 업로드, 음식 유형, 광고 말투를 모두 선택해 주세요.")
                     else:
                         next_step()
                         st.rerun()

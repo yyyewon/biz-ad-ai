@@ -56,7 +56,7 @@ def test_generate_endpoint_rejects_too_large_image(monkeypatch):
             "purpose": "신메뉴 홍보",
             "request_note": "",
             "moods": "cozy",
-            "tone": "친근한",
+            "tone": "캐주얼·친근",
         },
         files={
             "image": ("large.png", _png_bytes(), "image/png"),
@@ -80,7 +80,7 @@ def test_generate_endpoint_rejects_corrupted_image():
             "purpose": "신메뉴 홍보",
             "request_note": "",
             "moods": "cozy",
-            "tone": "친근한",
+            "tone": "캐주얼·친근",
         },
         files={
             "image": ("broken.png", b"this-is-not-a-valid-image", "image/png"),
@@ -104,7 +104,7 @@ def test_generate_endpoint_rejects_gif_image():
             "purpose": "신메뉴 홍보",
             "request_note": "",
             "moods": "cozy",
-            "tone": "친근한",
+            "tone": "캐주얼·친근",
         },
         files={
             "image": ("sample.gif", _gif_bytes(), "image/gif"),

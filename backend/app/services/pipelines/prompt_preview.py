@@ -26,7 +26,7 @@ class PromptPreviewSample:
     store_name: str = "만월 카페"
     menu_name: str = "시그니처 메뉴"
     purpose: str = "신메뉴 홍보"
-    tone: str = "친근한"
+    tone: str = "캐주얼·친근"
     request_note: str = ""
     headline: str = "오늘 저녁은 든든하게"
     price_text: str = "12,000원"

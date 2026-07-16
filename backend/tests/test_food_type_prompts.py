@@ -13,7 +13,7 @@ def _payload(**kwargs) -> ImageAdRequest:
         "menu_name": "고추장 찌개",
         "food_type": "fried",
         "promotion_goal": "신메뉴 홍보",
-        "tone": "친근한",
+        "tone": "캐주얼·친근",
         "extra_notes": "따뜻한 나무 테이블 배경",
         "num_images": 3,
     }

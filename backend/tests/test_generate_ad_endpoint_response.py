@@ -38,7 +38,7 @@ def test_generate_ad_endpoint_wraps_pipeline_result_with_success_response(monkey
             menu_name="김밥",
             purpose="홍보",
             food="국, 찌개",
-            tone="친근한",
+            tone="캐주얼·친근",
             image_request="",
             llm_request="",
             image=None,
