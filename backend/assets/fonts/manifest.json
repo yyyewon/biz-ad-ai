@@ -22,5 +22,35 @@
     "reels_hook_lead": { "weight": 400 },
     "reels_hook": { "weight": 800 }
   },
+  "tone_overrides": {
+    "친근한": {
+      "font": "noto_sans_kr",
+      "poster_headline": { "weight": 500 },
+      "poster_menu": { "weight": 700 },
+      "poster_price": { "weight": 600 },
+      "poster_store": { "weight": 400 }
+    },
+    "고급스러운": {
+      "font": "noto_sans_kr",
+      "poster_headline": { "weight": 400 },
+      "poster_menu": { "weight": 600 },
+      "poster_price": { "weight": 500 },
+      "poster_store": { "weight": 300 }
+    },
+    "위트있는": {
+      "font": "noto_sans_kr",
+      "poster_headline": { "weight": 600 },
+      "poster_menu": { "weight": 800 },
+      "poster_price": { "weight": 700 },
+      "poster_store": { "weight": 500 }
+    },
+    "정중한": {
+      "font": "noto_sans_kr",
+      "poster_headline": { "weight": 400 },
+      "poster_menu": { "weight": 600 },
+      "poster_price": { "weight": 600 },
+      "poster_store": { "weight": 400 }
+    }
+  },
   "food_type_overrides": {}
 }

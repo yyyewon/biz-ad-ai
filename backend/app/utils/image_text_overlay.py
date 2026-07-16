@@ -74,11 +74,18 @@ def _scale_overlay_font(
     role: TextOverlayRole,
     ratio: float,
     *,
+    tone: str | None = None,
     food_type: str | None = None,
     variant: str | None = None,
 ) -> ImageFont.FreeTypeFont:
     size = max(12, int(image.width * ratio))
-    return load_overlay_font(role, size, food_type=food_type, variant=variant)
+    return load_overlay_font(
+        role,
+        size,
+        tone=tone,
+        food_type=food_type,
+        variant=variant,
+    )
 
 
 def _wrap_text(
@@ -286,6 +293,7 @@ def composite_poster_text(
     image_bytes: bytes,
     overlay_copy: PosterOverlayCopy,
     *,
+    tone: str | None = None,
     food_type: str | None = None,
 ) -> bytes:
     """
@@ -309,6 +317,7 @@ def composite_poster_text(
         image,
         TextOverlayRole.POSTER_HEADLINE,
         0.038,
+        tone=tone,
         food_type=food_type,
         variant="poster",
     )
@@ -316,6 +325,7 @@ def composite_poster_text(
         image,
         TextOverlayRole.POSTER_MENU,
         0.078,
+        tone=tone,
         food_type=food_type,
         variant="poster",
     )
@@ -323,6 +333,7 @@ def composite_poster_text(
         image,
         TextOverlayRole.POSTER_PRICE,
         0.034,
+        tone=tone,
         food_type=food_type,
         variant="poster",
     )
@@ -330,6 +341,7 @@ def composite_poster_text(
         image,
         TextOverlayRole.POSTER_STORE,
         0.036,
+        tone=tone,
         food_type=food_type,
         variant="poster",
     )
@@ -522,6 +534,7 @@ def apply_variant_text_overlay(
             return composite_poster_text(
                 image_bytes,
                 build_poster_overlay_copy(payload),
+                tone=payload.tone,
                 food_type=food_type,
             )
         return image_bytes
