@@ -4,6 +4,16 @@
       "filename": "NotoSansKR-Variable.ttf",
       "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf",
       "license": "OFL-1.1"
+    },
+    "noto_serif_kr": {
+      "filename": "NotoSerifKR-Variable.ttf",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifkr/NotoSerifKR%5Bwght%5D.ttf",
+      "license": "OFL-1.1"
+    },
+    "jua": {
+      "filename": "Jua-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/jua/Jua-Regular.ttf",
+      "license": "OFL-1.1"
     }
   },
   "roles": {
@@ -30,25 +40,25 @@
       "poster_price": { "weight": 600 },
       "poster_store": { "weight": 400 }
     },
-    "고급스러운": {
+    "정중한": {
       "font": "noto_sans_kr",
+      "poster_headline": { "weight": 400 },
+      "poster_menu": { "weight": 500 },
+      "poster_price": { "weight": 500 },
+      "poster_store": { "weight": 400 }
+    },
+    "고급스러운": {
+      "font": "noto_serif_kr",
       "poster_headline": { "weight": 400 },
       "poster_menu": { "weight": 600 },
       "poster_price": { "weight": 500 },
       "poster_store": { "weight": 300 }
     },
     "위트있는": {
-      "font": "noto_sans_kr",
-      "poster_headline": { "weight": 600 },
-      "poster_menu": { "weight": 800 },
-      "poster_price": { "weight": 700 },
-      "poster_store": { "weight": 500 }
-    },
-    "정중한": {
-      "font": "noto_sans_kr",
+      "font": "jua",
       "poster_headline": { "weight": 400 },
-      "poster_menu": { "weight": 600 },
-      "poster_price": { "weight": 600 },
+      "poster_menu": { "weight": 400 },
+      "poster_price": { "weight": 400 },
       "poster_store": { "weight": 400 }
     }
   },
