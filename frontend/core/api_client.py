@@ -8,7 +8,6 @@ import base64
 import requests
 import streamlit as st
 
-# 💡 토큰 재발급 함수 수입 추가
 from core.auth import request_refresh_token
 from core.config import (
     GENERATE_ENDPOINT,
@@ -59,12 +58,9 @@ def generate_ad(
     llm_request: str,
     price: str = "",
     store_location: str = "",
-    cookies: dict | None = None, # 토큰 문자열 대신 쿠키 딕셔너리를 전송받음
+    cookies: dict | None = None,
     mock: bool = False,
 ) -> dict:
-    # ============================================================
-    # ✨ [완벽 복구] 기본 Mock 모드 분기 처리 블록
-    # ============================================================
     if mock:
         time.sleep(1.2)
 
@@ -91,9 +87,7 @@ def generate_ad(
             },
         }
 
-    # ============================================================
-    # 실제 백엔드 API 호출 영역
-    # ============================================================
+
     files = {"image": (image_name or "upload.png", image_bytes, "application/octet-stream")}
     payload = {
         "store_name": store_name,
@@ -163,18 +157,15 @@ def generate_ad(
         }
 
     except requests.exceptions.RequestException as exc:
-        # 💡 기본값: 서버 응답 없이 아예 네트워크가 끊겼거나 타임아웃인 경우
         fallback = "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요."
         code = "NETWORK_DISCONNECTED"
         
         if hasattr(exc, 'response') and exc.response is not None:
             status_code = exc.response.status_code
-            # 💡 502, 503, 504처럼 백엔드가 완전히 죽어서 에러 바디를 못 내려줄 때의 방어 로직 추가
             if status_code in [502, 503, 504]:
                 fallback = f"서버가 응답하지 않습니다. 잠시 후 다시 시도해 주세요. (오류 코드: {status_code})"
                 code = f"SERVER_{status_code}"
             else:
-                # 정상적으로 백엔드가 살아있고 커스텀 에러 응답을 줄 때
                 fallback, code = _extract_error(exc.response, f"오류 발생: {status_code}")
                 
         return {"ok": False, "error": fallback, "error_code": code}

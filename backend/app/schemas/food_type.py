@@ -14,7 +14,7 @@ FoodType = Literal[
 
 FOOD_TYPE_LABELS: dict[FoodType, str] = {
     "soup_stew": "국, 찌개",
-    "fried": "튀김",
+    "fried": "튀김, 치킨",
     "grilled_bbq": "구이, 바베큐",
     "rice_dish": "덮밥, 볶음, 비빔",
     "bread_dessert": "빵, 디저트, 케이크",
@@ -35,6 +35,9 @@ FOOD_TYPE_ALIAS_MAP: dict[str, FoodType] = {
     "국,찌개": "soup_stew",
     "국찌개": "soup_stew",
     "튀김": "fried",
+    "튀김, 치킨": "fried",
+    "튀김,치킨": "fried",
+    "튀김치킨": "fried",
     "구이, 바베큐": "grilled_bbq",
     "구이,바베큐": "grilled_bbq",
     "구이바베큐": "grilled_bbq",

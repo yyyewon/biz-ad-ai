@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.schemas.food_type import FoodType, resolve_food_type
 
 
-GenerationMode = Literal["direct_poster", "two_stage"]
+GenerationMode = Literal["direct_poster"]
 ImageVariantType = Literal["poster", "studio", "instagram_feed"]
 
 DEFAULT_IMAGE_VARIANTS: tuple[ImageVariantType, ...] = (
@@ -62,7 +62,7 @@ class ImageAdRequest(BaseModel):
     )
     generation_mode: GenerationMode = Field(
         default="direct_poster",
-        description="생성 모드(direct_poster: 원본 사진 기반, two_stage: 중간 음식 이미지 후 포스터)",
+        description="생성 모드(원본 사진 기반 direct_poster)",
     )
 
     @field_validator("food_type", mode="before")

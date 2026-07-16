@@ -452,6 +452,7 @@ class HFImageProvider(ImageGenerationProvider):
         size: str | None = None,
         negative_prompt: str | None = None,
         render_mode: ImageRenderMode = "photo_restyle",
+        img2img_strength: float | None = None,
     ) -> list[bytes]:
         _ = size
         return await run_in_threadpool(
@@ -462,6 +463,7 @@ class HFImageProvider(ImageGenerationProvider):
             mask_image_bytes=mask_image_bytes,
             negative_prompt=negative_prompt,
             render_mode=render_mode,
+            img2img_strength=img2img_strength,
         )
 
 
@@ -748,6 +750,7 @@ class HFImageProvider(ImageGenerationProvider):
         negative_prompt: str | None,
         canvas_size: tuple[int, int],
         num_images: int,
+        img2img_strength: float | None = None,
     ) -> list[bytes]:
         pipe = self._load_img2img_pipeline()
 
@@ -758,13 +761,19 @@ class HFImageProvider(ImageGenerationProvider):
             centering=(0.5, 0.5),
         )
 
+        effective_strength = (
+            img2img_strength
+            if img2img_strength is not None
+            else self._img2img_restyle_strength
+        )
+
         try:
             with _PIPELINE_INFERENCE_LOCK:
                 result = pipe(
                     prompt=prompt,
                     negative_prompt=negative_prompt or DEFAULT_NEGATIVE_PROMPT,
                     image=base_image,
-                    strength=self._img2img_restyle_strength,
+                    strength=effective_strength,
                     guidance_scale=self._guidance_scale,
                     num_inference_steps=self._num_inference_steps,
                     num_images_per_prompt=num_images,
@@ -818,6 +827,7 @@ class HFImageProvider(ImageGenerationProvider):
         mask_image_bytes: bytes | None = None,
         negative_prompt: str | None = None,
         render_mode: ImageRenderMode = "photo_restyle",
+        img2img_strength: float | None = None,
     ) -> list[bytes]:
         if not input_image_bytes:
             raise AppException(
@@ -839,6 +849,7 @@ class HFImageProvider(ImageGenerationProvider):
                 negative_prompt=negative_prompt,
                 canvas_size=canvas_size,
                 num_images=num_images,
+                img2img_strength=img2img_strength,
             )
 
         if render_mode != "background_swap":
