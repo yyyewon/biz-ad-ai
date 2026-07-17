@@ -2,7 +2,7 @@
 인스타 릴스·포스터 이미지에 한국어 텍스트를 PIL로 합성한다.
 
 포스터: AI는 배경+음식만 생성, 카피·메뉴명·가격 pill·가게명은 PIL 합성.
-       rembg 기반 LayoutSpec으로 텍스트 배치, 글자색은 상·하단 샘플링.
+       rembg 기반 LayoutSpec으로 배치·배경색·scrim을 적용한다.
 릴스: 하단 후킹 자막 PIL 합성.
 """
 
@@ -17,7 +17,7 @@ from app.schemas.image_ad import ImageAdRequest, ImageVariantType
 from app.services.pipelines.food_type_prompts import uses_custom_template
 from app.utils.font_registry import TextOverlayRole, load_overlay_font
 from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
-from app.utils.poster_layout import PosterLayoutSpec, analyze_poster_layout
+from app.utils.poster_layout import PosterLayoutSpec, PosterPaletteSpec, analyze_poster_layout
 from app.utils.poster_taglines import resolve_poster_headline
 from app.utils.reels_hooks import ReelsHookCopy, resolve_reels_hook_lines
 
@@ -28,15 +28,6 @@ class PosterOverlayCopy:
     menu_name: str
     price_text: str
     store_name: str
-
-
-@dataclass(frozen=True)
-class _PosterPalette:
-    primary_text: tuple[int, int, int]
-    store_text: tuple[int, int, int]
-    store_stroke: tuple[int, int, int]
-    badge_outline: tuple[int, int, int]
-    badge_text: tuple[int, int, int]
 
 
 def variant_uses_pil_text_overlay(food_type: str | None, variant: ImageVariantType) -> bool:
@@ -156,79 +147,28 @@ def _centered_x(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFo
     return int((width - draw.textlength(text, font=font)) / 2)
 
 
-def _relative_luminance(rgb: tuple[int, int, int]) -> float:
-    r, g, b = rgb
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+def _apply_poster_top_scrim(
+    image: Image.Image,
+    *,
+    scrim_height: int,
+    max_alpha: int,
+) -> Image.Image:
+    """상단 텍스트 가독성용 어두운 그라데이션."""
 
+    if max_alpha <= 0 or scrim_height <= 0:
+        return image
 
-def _sample_region_mean_rgb(image: Image.Image, box: tuple[int, int, int, int]) -> tuple[int, int, int]:
     width, height = image.size
-    left = max(0, min(width, box[0]))
-    top = max(0, min(height, box[1]))
-    right = max(left + 1, min(width, box[2]))
-    bottom = max(top + 1, min(height, box[3]))
+    zone_h = min(scrim_height, height)
+    scrim = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(scrim)
 
-    crop = image.crop((left, top, right, bottom)).convert("RGB")
-    pixels = list(crop.getdata())
-    if not pixels:
-        return (120, 80, 55)
+    for offset, y in enumerate(range(zone_h)):
+        fade = 1.0 - (offset / max(zone_h, 1))
+        alpha = int(max_alpha * fade * fade)
+        draw.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
 
-    total_r = total_g = total_b = 0
-    for r, g, b in pixels:
-        total_r += r
-        total_g += g
-        total_b += b
-    count = len(pixels)
-    return (total_r // count, total_g // count, total_b // count)
-
-
-def _harmonious_text_color(background_rgb: tuple[int, int, int]) -> tuple[int, int, int]:
-    r, g, b = background_rgb
-    if _relative_luminance(background_rgb) > 145:
-        return (
-            max(20, int(r * 0.42)),
-            max(20, int(g * 0.42)),
-            max(20, int(b * 0.42)),
-        )
-    return (245, 240, 232)
-
-
-def _contrast_store_colors(background_rgb: tuple[int, int, int]) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
-    if _relative_luminance(background_rgb) > 120:
-        return (30, 30, 30), (255, 255, 255)
-    return (255, 255, 255), (0, 0, 0)
-
-
-def _resolve_poster_palette(image: Image.Image) -> _PosterPalette:
-    width, height = image.size
-    top_bg = _sample_region_mean_rgb(
-        image,
-        (
-            int(width * 0.12),
-            int(height * 0.03),
-            int(width * 0.88),
-            int(height * 0.34),
-        ),
-    )
-    bottom_right_bg = _sample_region_mean_rgb(
-        image,
-        (
-            int(width * 0.52),
-            int(height * 0.84),
-            width,
-            height,
-        ),
-    )
-
-    primary = _harmonious_text_color(top_bg)
-    store_fill, store_stroke = _contrast_store_colors(bottom_right_bg)
-    return _PosterPalette(
-        primary_text=primary,
-        store_text=store_fill,
-        store_stroke=store_stroke,
-        badge_outline=primary,
-        badge_text=primary,
-    )
+    return Image.alpha_composite(image, scrim)
 
 
 def _draw_centered_line(
@@ -264,7 +204,7 @@ def _draw_price_pill_badge(
     center_x: int,
     center_y: int,
     image_width: int,
-    palette: _PosterPalette,
+    palette: PosterPaletteSpec,
 ) -> None:
     text_width = int(draw.textlength(text, font=font))
     ascent, descent = font.getmetrics()
@@ -304,13 +244,18 @@ def composite_poster_text(
     """
     포스터 PIL 합성:
     - rembg 기반 LayoutSpec으로 headline/menu/pill/store 배치
-    - 글자색: 이미지 상단/하단 샘플링 기반 (Phase 2에서 mask 기반으로 확장)
+    - 배경 mask 색·scrim은 layout 분석 결과 사용
     """
     image = image_bytes_to_pil(image_bytes).convert("RGBA")
     if layout is None:
         layout = analyze_poster_layout(image.convert("RGB"))
 
-    palette = _resolve_poster_palette(image.convert("RGB"))
+    image = _apply_poster_top_scrim(
+        image,
+        scrim_height=layout.scrim_height,
+        max_alpha=layout.scrim_max_alpha,
+    )
+    palette = layout.palette
     draw = ImageDraw.Draw(image)
 
     width, height = image.size
@@ -368,7 +313,7 @@ def composite_poster_text(
                 y=cursor_y,
                 image_width=width,
                 fill=palette.primary_text,
-                stroke_fill=(255, 255, 255),
+                stroke_fill=palette.primary_stroke,
                 stroke_width=max(1, stroke_width - 1),
             )
             cursor_y += line_h + line_gap
@@ -388,7 +333,7 @@ def composite_poster_text(
             y=cursor_y,
             image_width=width,
             fill=palette.primary_text,
-            stroke_fill=(255, 255, 255),
+            stroke_fill=palette.primary_stroke,
             stroke_width=stroke_width,
         )
         cursor_y += line_h + line_gap

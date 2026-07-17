@@ -1,8 +1,8 @@
 """
 포스터 PIL 합성용 레이아웃 분석.
 
-rembg로 음식 전경 mask/bbox를 추정하고, 텍스트·pill·가게명 배치에 쓸
-LayoutSpec을 만든다. 분석 실패 시 고정 비율 fallback을 쓴다.
+rembg로 음식 전경 mask/bbox를 추정하고, 텍스트 배치·배경 기반 색·scrim을
+LayoutSpec으로 반환한다. 분석 실패 시 고정 비율 fallback을 쓴다.
 """
 
 from __future__ import annotations
@@ -32,10 +32,26 @@ _MAX_FOOD_AREA_RATIO = 0.88
 _FOOD_TOP_PADDING_RATIO = 0.02
 _PRICE_FOOD_PADDING_RATIO = 0.04
 
+_FOREGROUND_ALPHA_THRESHOLD = 128
+_SCRIM_COMPLEXITY_THRESHOLD = 22.0
+_SCRIM_MAX_ALPHA_CAP = 150
+
+
+@dataclass(frozen=True)
+class PosterPaletteSpec:
+    """포스터 텍스트·pill 색상."""
+
+    primary_text: tuple[int, int, int]
+    primary_stroke: tuple[int, int, int]
+    store_text: tuple[int, int, int]
+    store_stroke: tuple[int, int, int]
+    badge_outline: tuple[int, int, int]
+    badge_text: tuple[int, int, int]
+
 
 @dataclass(frozen=True)
 class PosterLayoutSpec:
-    """포스터 텍스트 합성에 필요한 배치 파라미터."""
+    """포스터 텍스트 합성에 필요한 배치·색·scrim 파라미터."""
 
     width: int
     height: int
@@ -48,6 +64,9 @@ class PosterLayoutSpec:
     price_badge_cy_hint: int
     store_margin_right: int
     store_margin_bottom: int
+    palette: PosterPaletteSpec
+    scrim_height: int
+    scrim_max_alpha: int
     used_fallback: bool
 
     def clamp_price_badge_center(
@@ -78,7 +97,6 @@ class PosterLayoutSpec:
         ):
             return cx, cy
 
-        # 음식 왼쪽 빈 공간에 pill 배치 시도
         candidate_cx = max(half_w, left - pad - half_w)
         candidate_box = (
             candidate_cx - half_w,
@@ -89,7 +107,6 @@ class PosterLayoutSpec:
         if not _boxes_overlap(candidate_box, food_box):
             return candidate_cx, cy
 
-        # 상단으로 올림
         candidate_cy = max(self.content_top_y + half_h, top - pad - half_h)
         return cx, candidate_cy
 
@@ -121,7 +138,7 @@ def analyze_poster_layout(
     layout_mode: str = "single",
 ) -> PosterLayoutSpec:
     """
-    포스터 이미지에서 음식 bbox를 추정하고 텍스트 배치 spec을 반환한다.
+    포스터 이미지에서 음식 bbox·배경 색·scrim을 추정해 LayoutSpec을 반환한다.
 
     layout_mode는 현재 single만 지원한다. multi는 Phase 5에서 확장한다.
     """
@@ -132,30 +149,41 @@ def analyze_poster_layout(
             layout_mode,
         )
 
-    width, height = image.size
-    fallback = _build_fallback_spec(width, height)
+    rgb_image = image.convert("RGB")
+    width, height = rgb_image.size
+
+    alpha: Image.Image | None = None
+    food_bbox: tuple[int, int, int, int] | None = None
 
     try:
-        food_bbox = _detect_food_bbox(image)
+        alpha = _detect_foreground_alpha(rgb_image)
+        food_bbox = alpha.getbbox()
     except Exception as exc:
         logger.warning(
             "poster_layout_rembg_failed | error={} | using_fallback=true",
             str(exc),
         )
-        return fallback
+        return _build_fallback_spec(rgb_image, food_bbox=None, alpha=None)
 
     if food_bbox is None:
         logger.info("poster_layout_no_food_bbox | using_fallback=true")
-        return fallback
+        return _build_fallback_spec(rgb_image, food_bbox=None, alpha=alpha)
 
     if not _is_valid_food_bbox(food_bbox, width, height):
         logger.info(
             "poster_layout_invalid_food_bbox | bbox={} | using_fallback=true",
             food_bbox,
         )
-        return fallback
+        return _build_fallback_spec(rgb_image, food_bbox=None, alpha=alpha)
 
-    return _build_spec_from_food_bbox(width, height, food_bbox)
+    spec = _build_spec_from_food_bbox(rgb_image, food_bbox, alpha=alpha)
+    logger.info(
+        "poster_layout_applied | used_fallback={} | food_bbox={} | scrim_alpha={}",
+        spec.used_fallback,
+        spec.food_bbox,
+        spec.scrim_max_alpha,
+    )
+    return spec
 
 
 def _get_rembg_session():
@@ -169,19 +197,17 @@ def _get_rembg_session():
         return _rembg_session
 
 
-def _detect_food_bbox(image: Image.Image) -> tuple[int, int, int, int] | None:
+def _detect_foreground_alpha(image: Image.Image) -> Image.Image:
     from rembg import remove
 
     rgb_image = image.convert("RGB")
     buffer = io.BytesIO()
     rgb_image.save(buffer, format="PNG")
-    input_bytes = buffer.getvalue()
 
     session = _get_rembg_session()
-    output_bytes = remove(input_bytes, session=session)
+    output_bytes = remove(buffer.getvalue(), session=session)
     rgba = Image.open(io.BytesIO(output_bytes)).convert("RGBA")
-    alpha = rgba.split()[-1]
-    return alpha.getbbox()
+    return rgba.split()[-1]
 
 
 def _is_valid_food_bbox(
@@ -201,11 +227,25 @@ def _is_valid_food_bbox(
     return _MIN_FOOD_AREA_RATIO <= ratio <= _MAX_FOOD_AREA_RATIO
 
 
-def _build_fallback_spec(width: int, height: int) -> PosterLayoutSpec:
+def _build_fallback_spec(
+    image: Image.Image,
+    *,
+    food_bbox: tuple[int, int, int, int] | None,
+    alpha: Image.Image | None,
+) -> PosterLayoutSpec:
+    width, height = image.size
+    palette = _build_palette(image, alpha=alpha, food_bbox=food_bbox)
+    scrim_height, scrim_alpha = _compute_scrim(
+        image,
+        alpha=alpha,
+        food_bbox=food_bbox,
+        top_text_bottom=int(height * 0.34),
+    )
+
     return PosterLayoutSpec(
         width=width,
         height=height,
-        food_bbox=None,
+        food_bbox=food_bbox,
         content_top_y=int(height * _FALLBACK_CONTENT_TOP_RATIO),
         max_text_width=int(width * _FALLBACK_MAX_TEXT_WIDTH_RATIO),
         line_gap=max(6, int(height * _FALLBACK_LINE_GAP_RATIO)),
@@ -214,16 +254,21 @@ def _build_fallback_spec(width: int, height: int) -> PosterLayoutSpec:
         price_badge_cy_hint=int(height * _FALLBACK_PRICE_CY_RATIO),
         store_margin_right=int(width * _FALLBACK_STORE_MARGIN_RIGHT_RATIO),
         store_margin_bottom=int(height * _FALLBACK_STORE_MARGIN_BOTTOM_RATIO),
+        palette=palette,
+        scrim_height=scrim_height,
+        scrim_max_alpha=scrim_alpha,
         used_fallback=True,
     )
 
 
 def _build_spec_from_food_bbox(
-    width: int,
-    height: int,
+    image: Image.Image,
     food_bbox: tuple[int, int, int, int],
+    *,
+    alpha: Image.Image | None,
 ) -> PosterLayoutSpec:
-    fallback = _build_fallback_spec(width, height)
+    width, height = image.size
+    fallback = _build_fallback_spec(image, food_bbox=food_bbox, alpha=alpha)
     _, food_top, food_right, _ = food_bbox
 
     content_top_y = fallback.content_top_y
@@ -232,7 +277,6 @@ def _build_spec_from_food_bbox(
         food_top - max(8, int(height * _FOOD_TOP_PADDING_RATIO)),
     )
 
-    # 음식 상단이 너무 높으면 fallback
     if text_bottom_limit <= content_top_y + int(height * 0.05):
         return fallback
 
@@ -248,6 +292,19 @@ def _build_spec_from_food_bbox(
         min(fallback.price_badge_cy_hint, text_bottom_limit - int(height * 0.04)),
     )
 
+    palette = _build_palette(
+        image,
+        alpha=alpha,
+        food_bbox=food_bbox,
+        top_text_bottom=text_bottom_limit,
+    )
+    scrim_height, scrim_alpha = _compute_scrim(
+        image,
+        alpha=alpha,
+        food_bbox=food_bbox,
+        top_text_bottom=text_bottom_limit,
+    )
+
     return PosterLayoutSpec(
         width=width,
         height=height,
@@ -260,8 +317,193 @@ def _build_spec_from_food_bbox(
         price_badge_cy_hint=price_cy_hint,
         store_margin_right=fallback.store_margin_right,
         store_margin_bottom=fallback.store_margin_bottom,
+        palette=palette,
+        scrim_height=scrim_height,
+        scrim_max_alpha=scrim_alpha,
         used_fallback=False,
     )
+
+
+def _build_palette(
+    image: Image.Image,
+    *,
+    alpha: Image.Image | None,
+    food_bbox: tuple[int, int, int, int] | None,
+    top_text_bottom: int | None = None,
+) -> PosterPaletteSpec:
+    width, height = image.size
+    top_bottom = top_text_bottom or int(height * 0.34)
+    if food_bbox:
+        top_bottom = min(top_bottom, max(int(height * 0.12), food_bbox[1] - 8))
+
+    top_bg = _sample_background_mean_rgb(
+        image,
+        alpha,
+        (
+            int(width * 0.12),
+            int(height * 0.03),
+            int(width * 0.88),
+            top_bottom,
+        ),
+    )
+    bottom_right_bg = _sample_background_mean_rgb(
+        image,
+        alpha,
+        (
+            int(width * 0.52),
+            int(height * 0.84),
+            width,
+            height,
+        ),
+    )
+
+    primary = _harmonious_text_color(top_bg)
+    primary_stroke = _primary_stroke_color(top_bg, primary)
+    store_fill, store_stroke = _contrast_store_colors(bottom_right_bg)
+
+    return PosterPaletteSpec(
+        primary_text=primary,
+        primary_stroke=primary_stroke,
+        store_text=store_fill,
+        store_stroke=store_stroke,
+        badge_outline=primary,
+        badge_text=primary,
+    )
+
+
+def _compute_scrim(
+    image: Image.Image,
+    *,
+    alpha: Image.Image | None,
+    food_bbox: tuple[int, int, int, int] | None,
+    top_text_bottom: int,
+) -> tuple[int, int]:
+    width, height = image.size
+    scrim_height = min(
+        int(height * 0.38),
+        max(int(height * 0.22), top_text_bottom + int(height * 0.02)),
+    )
+    if food_bbox:
+        scrim_height = min(scrim_height, max(int(height * 0.18), food_bbox[1]))
+
+    complexity = _sample_background_complexity(
+        image,
+        alpha,
+        (int(width * 0.08), 0, int(width * 0.92), scrim_height),
+    )
+
+    if complexity < _SCRIM_COMPLEXITY_THRESHOLD:
+        return scrim_height, 0
+
+    alpha_strength = int(
+        min(
+            _SCRIM_MAX_ALPHA_CAP,
+            (complexity - _SCRIM_COMPLEXITY_THRESHOLD) * 2.8,
+        )
+    )
+    return scrim_height, max(24, alpha_strength)
+
+
+def _sample_background_mean_rgb(
+    image: Image.Image,
+    alpha: Image.Image | None,
+    box: tuple[int, int, int, int],
+) -> tuple[int, int, int]:
+    width, height = image.size
+    left = max(0, min(width, box[0]))
+    top = max(0, min(height, box[1]))
+    right = max(left + 1, min(width, box[2]))
+    bottom = max(top + 1, min(height, box[3]))
+
+    crop_rgb = image.crop((left, top, right, bottom)).convert("RGB")
+    if alpha is None:
+        pixels = list(crop_rgb.getdata())
+    else:
+        crop_alpha = alpha.crop((left, top, right, bottom))
+        pixels = [
+            rgb
+            for rgb, opacity in zip(crop_rgb.getdata(), crop_alpha.getdata())
+            if opacity < _FOREGROUND_ALPHA_THRESHOLD
+        ]
+        if len(pixels) < 16:
+            pixels = list(crop_rgb.getdata())
+
+    if not pixels:
+        return (120, 80, 55)
+
+    total_r = total_g = total_b = 0
+    for r, g, b in pixels:
+        total_r += r
+        total_g += g
+        total_b += b
+    count = len(pixels)
+    return (total_r // count, total_g // count, total_b // count)
+
+
+def _sample_background_complexity(
+    image: Image.Image,
+    alpha: Image.Image | None,
+    box: tuple[int, int, int, int],
+) -> float:
+    width, height = image.size
+    left = max(0, min(width, box[0]))
+    top = max(0, min(height, box[1]))
+    right = max(left + 1, min(width, box[2]))
+    bottom = max(top + 1, min(height, box[3]))
+
+    crop_rgb = image.crop((left, top, right, bottom)).convert("RGB")
+    if alpha is None:
+        pixels = list(crop_rgb.getdata())
+    else:
+        crop_alpha = alpha.crop((left, top, right, bottom))
+        pixels = [
+            rgb
+            for rgb, opacity in zip(crop_rgb.getdata(), crop_alpha.getdata())
+            if opacity < _FOREGROUND_ALPHA_THRESHOLD
+        ]
+
+    if len(pixels) < 16:
+        return 0.0
+
+    luminances = [_relative_luminance(pixel) for pixel in pixels]
+    mean_lum = sum(luminances) / len(luminances)
+    variance = sum((value - mean_lum) ** 2 for value in luminances) / len(luminances)
+    return variance**0.5
+
+
+def _relative_luminance(rgb: tuple[int, int, int]) -> float:
+    r, g, b = rgb
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _harmonious_text_color(background_rgb: tuple[int, int, int]) -> tuple[int, int, int]:
+    r, g, b = background_rgb
+    if _relative_luminance(background_rgb) > 145:
+        return (
+            max(20, int(r * 0.55)),
+            max(20, int(g * 0.55)),
+            max(20, int(b * 0.55)),
+        )
+    return (245, 240, 232)
+
+
+def _primary_stroke_color(
+    background_rgb: tuple[int, int, int],
+    text_rgb: tuple[int, int, int],
+) -> tuple[int, int, int]:
+    if _relative_luminance(background_rgb) > 145:
+        return (255, 255, 255)
+    if _relative_luminance(text_rgb) > 200:
+        return (30, 30, 30)
+    return (255, 255, 255)
+
+
+def _contrast_store_colors(
+    background_rgb: tuple[int, int, int],
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    if _relative_luminance(background_rgb) > 120:
+        return (30, 30, 30), (255, 255, 255)
+    return (255, 255, 255), (0, 0, 0)
 
 
 def _boxes_overlap(
