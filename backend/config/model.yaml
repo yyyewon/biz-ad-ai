@@ -32,7 +32,7 @@ version: 1
 # - hybrid_hf_text_openai_image
 #   → 텍스트 생성: HuggingFace
 #   → 이미지 생성: OpenAI
-active_profile: all_openai
+active_profile: hybrid_openai_text_hf_image
 
 # provider 조합 정의.
 #
@@ -391,7 +391,7 @@ hf:
     # - sd35_medium
     # - sdxl_lightning
     # - sdxl_base
-    default_model: sd35_medium
+    default_model: sdxl_lightning
 
     models:
       sd35_medium:
@@ -403,77 +403,47 @@ hf:
         img2img_restyle_strength: 0.7
 
       sdxl_lightning:
-        # HuggingFace model id.
+        # SDXL Lightning 4-step UNet checkpoint repository.
         model_id: ByteDance/SDXL-Lightning
 
-        # 작업 유형.
-        #
-        # current option:
-        # - text-to-image
+        # SDXL base pipeline repository.
+        base_model_id: stabilityai/stable-diffusion-xl-base-1.0
+
+        # Lightning 4-step UNet weight file.
+        lightning_checkpoint: sdxl_lightning_4step_unet.safetensors
+
         task_type: text-to-image
-
-        # 실행 백엔드.
-        #
-        # options:
-        # - pytorch
         backend_type: pytorch
-
-        # 모델 계열.
-        #
-        # options:
-        # - diffusion
         model_family: diffusion
-
-        # diffusers pipeline class.
-        #
-        # options:
-        # - StableDiffusionXLPipeline
+        provider_type: sdxl_lightning
         pipeline_class: StableDiffusionXLPipeline
 
-        # 개별 모델 장치 설정.
-        #
-        # options:
-        # - auto
-        # - cuda
-        # - cpu
-        # - mps
         device: auto
-
-        # 개별 모델 dtype 설정.
-        #
-        # options:
-        # - auto
-        # - fp16
-        # - bf16
-        # - fp32
-        dtype: auto
-
-        # 양자화 설정.
-        #
-        # current options:
-        # - none
+        dtype: fp16
         quantization: none
 
-        # 생성 이미지 크기.
         width: 1024
-        height: 1280
+        height: 1024
 
-        # diffusion 추론 step 수.
-        #
-        # note:
-        # - Lightning 계열은 낮은 step을 사용
-        # - 일반 SDXL은 더 높은 step을 사용
         num_inference_steps: 4
-
-        # prompt 반영 강도.
-        #
-        # common range:
-        # - 1.0: Lightning 계열에서 자주 사용
-        # - 5.0~7.5: 일반 diffusion 모델에서 자주 사용
-        guidance_scale: 1.0
-
-        # prompt당 생성 이미지 개수.
+        guidance_scale: 0.0
         num_images_per_prompt: 1
+
+        scheduler:
+          class_name: EulerDiscreteScheduler
+          timestep_spacing: trailing
+
+        use_xformers: true
+        enable_vae_slicing: true
+
+        ip_adapter:
+          enabled: true
+          repo_id: h94/IP-Adapter
+          subfolder: sdxl_models
+          weight_name: ip-adapter_sdxl.bin
+          image_encoder_folder: sdxl_models/image_encoder
+          image_encoder_weight_name: model.safetensors
+          scale: 0.6
 
       sdxl_base:
         model_id: stabilityai/stable-diffusion-xl-base-1.0

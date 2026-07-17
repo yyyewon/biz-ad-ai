@@ -48,8 +48,25 @@ httpx
 # AI Providers
 # =========================
 # OpenAI API 연동
-# HuggingFace / ONNX / diffusion 관련 패키지는 모델 확정 후 별도 추가
 openai
+
+# HuggingFace / Diffusers 기반 이미지 생성
+# - SDXL Lightning 4-step
+# - IP-Adapter
+# - xformers attention optimization
+#
+# 주의:
+# - torch 2.6.0 + CUDA 12.4 환경에서 xformers 0.0.29.post2 조합을 테스트 완료
+# - xformers는 torch 버전 호환성이 민감하므로 임의 업그레이드하지 않음
+torch==2.6.0
+diffusers
+transformers
+accelerate
+safetensors
+huggingface-hub
+sentencepiece
+protobuf
+xformers==0.0.29.post2
 
 # pytest traceback / terminal output formatting
 Pygments
