@@ -1,3 +1,4 @@
+#!/usr/bin/env sh
 # 컨테이너 시작 시점에 모델 가중치를 미리 다운로드한 뒤 uvicorn 을 실행
 set -e
 
