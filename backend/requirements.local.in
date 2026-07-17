@@ -47,6 +47,7 @@ transformers
 accelerate
 sentencepiece
 openai
+qwen-vl-utils
 
 # pytest traceback / terminal output formatting
 Pygments
