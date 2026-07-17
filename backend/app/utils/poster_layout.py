@@ -69,6 +69,7 @@ class PosterLayoutSpec:
     scrim_height: int
     scrim_max_alpha: int
     used_fallback: bool
+    vlm_template: "PosterTemplateSpec | None" = None
 
     def clamp_price_badge_center(
         self,
@@ -214,6 +215,7 @@ def _apply_vlm_overrides(spec: PosterLayoutSpec, image: Image.Image) -> PosterLa
 
     hints = analyze_poster_design_with_vlm(image)
     if hints is None:
+        logger.info("poster_vlm_skipped | reason=disabled_or_failed | using_rules_palette=true")
         return spec
 
     return PosterLayoutSpec(
@@ -238,6 +240,7 @@ def _apply_vlm_overrides(spec: PosterLayoutSpec, image: Image.Image) -> PosterLa
             hints.scrim_max_alpha if hints.scrim_max_alpha is not None else spec.scrim_max_alpha
         ),
         used_fallback=spec.used_fallback,
+        vlm_template=hints.template,
     )
 
 

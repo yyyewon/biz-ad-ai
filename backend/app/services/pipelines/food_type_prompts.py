@@ -72,6 +72,8 @@ _NEGATIVE_POSTER = (
     "English words STORE NAME MENU PRICE, location, address, logo, watermark, UI, "
     "caption, subtitle, price badge, pill badge, placeholder typography in image pixels, "
     "typography added in post-processing only, do not burn any words into image, "
+    "no cafe interior, no dining room, no brick wall backdrop, no wood table photo, "
+    "no decorative pattern texture in top text zone, "
     f"{_NEGATIVE_CLUTTER}"
 )
 
@@ -116,7 +118,10 @@ _POSTER_FOOD_BASE = (
     f"no added food, {_EXCLUDE_TABLE_CLUTTER}"
 )
 
-_POSTER_BG_BASE = "designed commercial poster bg, cohesive top+bottom flow"
+_POSTER_BG_BASE = (
+    "flat solid-color commercial poster background, clean graphic design not a cafe photo, "
+    "simple top-to-bottom color flow, no interior scene"
+)
 
 _VISUAL_OVERRIDE_KEYWORDS: tuple[str, ...] = (
     # Korean
@@ -273,8 +278,8 @@ _STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_STUDIO}", _NEGATIV
 # =============================================================================
 
 _POSTER_LAYOUT_RULES = (
-    "LAYOUT 4:5 1024x1536, top 38% empty designed bg (no letters in image), "
-    "bottom 55-60% food hero, top-right empty patch, bottom-right empty corner. "
+    "LAYOUT 4:5 1024x1536, top 38% flat solid-color empty zone (no letters in image), "
+    "bottom 55-60% food hero on simple surface, top-right empty patch, bottom-right empty corner. "
     "{store_footer_line}"
 )
 
@@ -288,7 +293,7 @@ QUALITY: {realism_rules}
 MOOD: appetizing commercial promo atmosphere, TONE: {tone}
 CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no labels
 PRESERVE: preserve food shape/vessel, redesign bg/lighting only, typography is post-process overlay not in image
-NEG: {_NEGATIVE_POSTER}, no flat-only bg, no brand copy
+NEG: {_NEGATIVE_POSTER}, no cafe interior, no restaurant room, no wood wall, no photo backdrop, no brand copy
 """.strip()
 
 # --- poster food tags ---
@@ -324,33 +329,31 @@ _POSTER_COFFEE_DRINK_FOOD = (
 # --- poster background tags ---
 
 _POSTER_SOUP_STEW_BACKGROUND = (
-    f"{_POSTER_BG_BASE}, warm wood/stone/hanji texture, subtle traditional pattern, "
-    "warm cream/terracotta/deep brown, hot-steam mood"
+    f"{_POSTER_BG_BASE}, warm cream-to-terracotta solid gradient, appetizing hot-meal mood"
 )
 
 _POSTER_FRIED_BACKGROUND = (
-    f"{_POSTER_BG_BASE}, casual dining poster, craft paper/wood, warm orange/gold pattern, "
-    "bright appetizing tone"
+    f"{_POSTER_BG_BASE}, warm orange-to-gold solid gradient, bright appetizing tone"
 )
 
 _POSTER_GRILLED_BBQ_BACKGROUND = (
-    f"{_POSTER_BG_BASE}, dark BBQ poster, charcoal/smoke/deep brown pattern, premium contrast"
+    f"{_POSTER_BG_BASE}, deep charcoal-to-brown solid gradient, premium contrast"
 )
 
 _POSTER_RICE_DISH_BACKGROUND = (
-    f"{_POSTER_BG_BASE}, bright clean meal poster, wood/light beige soft pattern, warm tone"
+    f"{_POSTER_BG_BASE}, light beige-to-warm ivory solid gradient, clean meal promo"
 )
 
 _POSTER_BREAD_DESSERT_BACKGROUND = (
-    f"{_POSTER_BG_BASE}, cafe dessert poster, pastel/cream/latte beige soft pattern"
+    f"{_POSTER_BG_BASE}, pastel cream-to-latte solid gradient, soft dessert promo"
 )
 
 _POSTER_BURGER_SANDWICH_BACKGROUND = (
-    f"{_POSTER_BG_BASE}, casual diner/brunch poster, bold color/modern pattern, warm red/mustard accent"
+    f"{_POSTER_BG_BASE}, warm red-to-mustard solid gradient, bold casual promo"
 )
 
 _POSTER_COFFEE_DRINK_BACKGROUND = (
-    f"{_POSTER_BG_BASE}, minimal cafe drink poster, white/oak/soft green clean pattern"
+    f"{_POSTER_BG_BASE}, soft white-to-matcha green solid gradient, minimal drink promo"
 )
 
 FOOD_POSTER_FOOD_RULES: dict[FoodType, str] = {

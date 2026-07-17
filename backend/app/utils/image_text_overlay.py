@@ -18,6 +18,7 @@ from app.services.pipelines.food_type_prompts import uses_custom_template
 from app.utils.font_registry import TextOverlayRole, load_overlay_font
 from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
 from app.utils.poster_layout import PosterLayoutSpec, PosterPaletteSpec, analyze_poster_layout
+from app.utils.poster_template import PosterTemplateSpec, resolve_poster_template_for_layout
 from app.utils.poster_taglines import resolve_poster_headline
 from app.utils.reels_hooks import ReelsHookCopy, resolve_reels_hook_lines
 
@@ -196,6 +197,20 @@ def _draw_centered_line(
     return ascent + descent
 
 
+def _relative_luminance(rgb: tuple[int, int, int]) -> float:
+    r, g, b = rgb
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast_text_on_fill(
+    fill_rgb: tuple[int, int, int],
+    preferred_text: tuple[int, int, int],
+) -> tuple[int, int, int]:
+    if _relative_luminance(fill_rgb) < 150:
+        return (255, 255, 255)
+    return preferred_text
+
+
 def _draw_price_pill_badge(
     draw: ImageDraw.ImageDraw,
     *,
@@ -205,13 +220,14 @@ def _draw_price_pill_badge(
     center_y: int,
     image_width: int,
     palette: PosterPaletteSpec,
+    template: PosterTemplateSpec,
 ) -> None:
     text_width = int(draw.textlength(text, font=font))
     ascent, descent = font.getmetrics()
     text_height = ascent + descent
 
-    pad_x = max(10, int(image_width * 0.028))
-    pad_y = max(6, int(image_width * 0.012))
+    pad_x = max(10, int(image_width * template.badge_pad_x_ratio))
+    pad_y = max(6, int(image_width * template.badge_pad_y_ratio))
     badge_w = text_width + pad_x * 2
     badge_h = text_height + pad_y * 2
     radius = badge_h // 2
@@ -219,7 +235,17 @@ def _draw_price_pill_badge(
     left = int(center_x - badge_w / 2)
     top = int(center_y - badge_h / 2)
     bbox = (left, top, left + badge_w, top + badge_h)
-    outline_width = max(2, int(image_width * 0.0035))
+    outline_width = max(2, int(image_width * template.badge_outline_width_ratio))
+
+    text_x = left + pad_x
+    text_y = top + (badge_h - text_height) // 2
+
+    if template.badge_style == "filled":
+        fill = palette.badge_outline
+        text_fill = _contrast_text_on_fill(fill, palette.badge_text)
+        draw.rounded_rectangle(bbox, radius=radius, fill=fill)
+        draw.text((text_x, text_y), text, font=font, fill=text_fill)
+        return
 
     draw.rounded_rectangle(
         bbox,
@@ -227,10 +253,52 @@ def _draw_price_pill_badge(
         outline=palette.badge_outline,
         width=outline_width,
     )
-
-    text_x = left + pad_x
-    text_y = top + (badge_h - text_height) // 2
     draw.text((text_x, text_y), text, font=font, fill=palette.badge_text)
+
+
+def _resolve_price_badge_placement(
+    *,
+    width: int,
+    menu_lines: list[str],
+    menu_font: ImageFont.FreeTypeFont,
+    menu_start_y: int,
+    menu_end_y: int,
+    price_text: str,
+    price_font: ImageFont.FreeTypeFont,
+    layout: PosterLayoutSpec,
+    template: PosterTemplateSpec,
+    draw: ImageDraw.ImageDraw,
+) -> tuple[int, int, int, int]:
+    pad_x = max(10, int(width * template.badge_pad_x_ratio))
+    pad_y = max(6, int(width * template.badge_pad_y_ratio))
+    text_width = int(draw.textlength(price_text, font=price_font))
+    ascent, descent = price_font.getmetrics()
+    text_height = ascent + descent
+    badge_w = text_width + pad_x * 2
+    badge_h = text_height + pad_y * 2
+
+    if menu_lines:
+        badge_cy = int((menu_start_y + menu_end_y) / 2)
+    else:
+        badge_cy = layout.price_badge_cy_hint
+
+    if template.price_anchor == "menu_right" and menu_lines:
+        max_menu_w = max(int(draw.textlength(line, font=menu_font)) for line in menu_lines)
+        menu_right = (width + max_menu_w) // 2
+        margin = max(12, int(width * 0.04))
+        badge_cx = int(menu_right + width * 0.035 + badge_w / 2)
+        badge_cx = min(width - badge_w // 2 - margin, badge_cx)
+        badge_cx = max(badge_w // 2 + margin, badge_cx)
+    else:
+        badge_cx = layout.price_badge_cx
+
+    badge_cx, badge_cy = layout.clamp_price_badge_center(
+        center_x=badge_cx,
+        center_y=badge_cy,
+        badge_width=badge_w,
+        badge_height=badge_h,
+    )
+    return badge_cx, badge_cy, badge_w, badge_h
 
 
 def composite_poster_text(
@@ -256,17 +324,22 @@ def composite_poster_text(
         max_alpha=layout.scrim_max_alpha,
     )
     palette = layout.palette
+    template = resolve_poster_template_for_layout(
+        tone,
+        vlm_template=layout.vlm_template,
+    )
     draw = ImageDraw.Draw(image)
 
     width, height = image.size
     max_text_width = layout.max_text_width
     line_gap = layout.line_gap
     stroke_width = layout.stroke_width
+    headline_menu_gap = max(line_gap, int(height * template.headline_menu_gap_ratio))
 
     headline_font = _scale_overlay_font(
         image,
         TextOverlayRole.POSTER_HEADLINE,
-        0.038,
+        template.headline_size_ratio,
         tone=tone,
         food_type=food_type,
         variant="poster",
@@ -274,7 +347,7 @@ def composite_poster_text(
     menu_font = _scale_overlay_font(
         image,
         TextOverlayRole.POSTER_MENU,
-        0.078,
+        template.menu_size_ratio,
         tone=tone,
         food_type=food_type,
         variant="poster",
@@ -282,7 +355,7 @@ def composite_poster_text(
     price_font = _scale_overlay_font(
         image,
         TextOverlayRole.POSTER_PRICE,
-        0.034,
+        template.price_size_ratio,
         tone=tone,
         food_type=food_type,
         variant="poster",
@@ -290,7 +363,7 @@ def composite_poster_text(
     store_font = _scale_overlay_font(
         image,
         TextOverlayRole.POSTER_STORE,
-        0.036,
+        template.store_size_ratio,
         tone=tone,
         food_type=food_type,
         variant="poster",
@@ -314,9 +387,11 @@ def composite_poster_text(
                 image_width=width,
                 fill=palette.primary_text,
                 stroke_fill=palette.primary_stroke,
-                stroke_width=max(1, stroke_width - 1),
+                stroke_width=max(1, stroke_width + template.headline_stroke_delta),
             )
             cursor_y += line_h + line_gap
+
+        cursor_y += max(0, headline_menu_gap - line_gap)
 
     menu_start_y = cursor_y
     menu_lines = _wrap_text(
@@ -341,23 +416,17 @@ def composite_poster_text(
     menu_end_y = cursor_y
 
     if overlay_copy.price_text:
-        badge_cx = layout.price_badge_cx
-        badge_cy = int((menu_start_y + menu_end_y) / 2)
-        if badge_cy < layout.price_badge_cy_hint:
-            badge_cy = layout.price_badge_cy_hint
-
-        pad_x = max(10, int(width * 0.028))
-        pad_y = max(6, int(width * 0.012))
-        text_width = int(draw.textlength(overlay_copy.price_text, font=price_font))
-        ascent, descent = price_font.getmetrics()
-        text_height = ascent + descent
-        badge_w = text_width + pad_x * 2
-        badge_h = text_height + pad_y * 2
-        badge_cx, badge_cy = layout.clamp_price_badge_center(
-            center_x=badge_cx,
-            center_y=badge_cy,
-            badge_width=badge_w,
-            badge_height=badge_h,
+        badge_cx, badge_cy, badge_w, badge_h = _resolve_price_badge_placement(
+            width=width,
+            menu_lines=menu_lines,
+            menu_font=menu_font,
+            menu_start_y=menu_start_y,
+            menu_end_y=menu_end_y,
+            price_text=overlay_copy.price_text,
+            price_font=price_font,
+            layout=layout,
+            template=template,
+            draw=draw,
         )
 
         _draw_price_pill_badge(
@@ -368,6 +437,7 @@ def composite_poster_text(
             center_y=badge_cy,
             image_width=width,
             palette=palette,
+            template=template,
         )
 
     if overlay_copy.store_name:

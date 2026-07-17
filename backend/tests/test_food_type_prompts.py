@@ -88,7 +88,7 @@ def test_fried_poster_uses_custom_template_with_pil_rules():
     )
 
     assert "crispy golden fried" in prompt
-    assert "casual dining poster" in prompt
+    assert "warm orange-to-gold solid gradient" in prompt
     assert "zero typography" in prompt
     assert "no readable text" in prompt
     assert "신메뉴" not in prompt

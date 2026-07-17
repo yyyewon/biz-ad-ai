@@ -1,59 +1,61 @@
 # =========================
 # Backend API
 # =========================
-# FastAPI 서버와 API 실행에 필요한 패키지
 fastapi
 uvicorn[standard]
-
-# 이미지 업로드 multipart/form-data 처리를 위한 패키지
 python-multipart
-
 
 # =========================
 # Config / Environment
 # =========================
-# .env 및 환경변수 로딩
 python-dotenv
 pydantic-settings
-
-# config/model.yaml 로딩
 PyYAML
-
 
 # =========================
 # Logging
 # =========================
-# 서버 요청, 에러, 추론 시간 로그 관리
 loguru
-
 
 # =========================
 # Image Processing
 # =========================
-# 이미지 bytes 변환, 크기 후처리, hash 계산 보조
 pillow
 
-# 폰트 번들 설치: pip install 후 `python scripts/setup_fonts.py`
-
+# 폰트 번들: pip install 후 `python scripts/setup_fonts.py`
 
 # =========================
 # Testing
 # =========================
-# 단위 테스트 및 FastAPI TestClient 테스트
 pytest
 httpx
 
+# =========================
+# AI Providers / PyTorch (GPU / CUDA)
+# =========================
+--extra-index-url https://download.pytorch.org/whl/cu124
 
-# =========================
-# AI Providers
-# =========================
-# OpenAI API 연동
-# HuggingFace / ONNX / diffusion 관련 패키지는 모델 확정 후 별도 추가
+torch
+torchvision
+torchaudio
+diffusers
+transformers
+accelerate
+sentencepiece
 openai
+
+# Poster design VLM (Qwen2-VL GPTQ)
+qwen-vl-utils
+optimum
+gptqmodel>=2.4.0
 
 # pytest traceback / terminal output formatting
 Pygments
 
+# Image background removal (poster layout analysis)
+rembg[gpu]
+
+# numba/pymatting compatibility for rembg
 numpy<2.5
 
 # TestClient dependency for Starlette/FastAPI tests
@@ -62,5 +64,4 @@ httpx2
 # =========================
 # Auth / Social Login
 # =========================
-# 자체 세션 토큰(JWT) 발급/검증
 PyJWT

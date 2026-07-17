@@ -47,7 +47,10 @@ transformers
 accelerate
 sentencepiece
 openai
+# Poster design VLM (Qwen2-VL GPTQ)
 qwen-vl-utils
+optimum
+gptqmodel>=2.4.0
 
 # pytest traceback / terminal output formatting
 Pygments

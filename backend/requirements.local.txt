@@ -300,5 +300,9 @@ websockets==16.0
 zipp==4.1.0
     # via importlib-metadata
 
+# Poster VLM GPTQ runtime (Linux GPU; skipped by pip-compile on Windows)
+gptqmodel>=2.4.0
+    # via -r backend/requirements.local.in
+
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools

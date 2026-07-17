@@ -59,7 +59,11 @@
       "poster_headline": { "weight": 400 },
       "poster_menu": { "weight": 400 },
       "poster_price": { "weight": 400 },
-      "poster_store": { "weight": 400 }
+      "poster_store": { "weight": 400 },
+      "poster_template": {
+        "badge_style": "filled",
+        "menu_size_ratio": 0.090
+      }
     }
   },
   "food_type_overrides": {}
