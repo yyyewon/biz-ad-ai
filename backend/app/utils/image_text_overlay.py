@@ -17,7 +17,7 @@ from app.schemas.image_ad import ImageAdRequest, ImageVariantType
 from app.services.pipelines.food_type_prompts import uses_custom_template
 from app.utils.font_registry import TextOverlayRole, load_overlay_font
 from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
-from app.utils.poster_taglines import resolve_poster_headline_from_purpose
+from app.utils.poster_taglines import resolve_poster_headline
 from app.utils.reels_hooks import ReelsHookCopy, resolve_reels_hook_lines
 
 
@@ -59,7 +59,10 @@ def build_reels_overlay_copy(payload: ImageAdRequest) -> ReelsHookCopy:
 def build_poster_overlay_copy(payload: ImageAdRequest) -> PosterOverlayCopy:
     headline = (payload.headline or "").strip()
     if not headline:
-        headline = resolve_poster_headline_from_purpose(payload.promotion_goal or "")
+        headline = resolve_poster_headline(
+            payload.promotion_goal or "",
+            payload.tone,
+        )
 
     return PosterOverlayCopy(
         headline=headline,

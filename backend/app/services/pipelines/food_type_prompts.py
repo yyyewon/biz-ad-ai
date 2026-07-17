@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from app.schemas.food_type import FOOD_TYPE_LABELS, FoodType
 from app.schemas.image_ad import ImageAdRequest, ImageVariantType
-from app.utils.poster_taglines import resolve_poster_headline_from_purpose
+from app.utils.poster_taglines import resolve_poster_headline
 from app.utils.reels_hooks import resolve_reels_hook_from_purpose
 
 # =============================================================================
@@ -548,7 +548,10 @@ def build_template_context(
     store_location = (payload.store_location or "").strip()
     headline = (payload.headline or "").strip()
     if not headline and variant == "poster":
-        headline = resolve_poster_headline_from_purpose(payload.promotion_goal or "")
+        headline = resolve_poster_headline(
+            payload.promotion_goal or "",
+            payload.tone,
+        )
     price_text = (payload.price_text or "").strip()
     extra_notes = (payload.extra_notes or "").strip()
     price_line, price_accuracy_line = _build_poster_price_lines(price_text)
