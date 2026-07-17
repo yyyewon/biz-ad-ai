@@ -2,7 +2,7 @@
 인스타 릴스·포스터 이미지에 한국어 텍스트를 PIL로 합성한다.
 
 포스터: AI는 배경+음식만 생성, 카피·메뉴명·가격 pill·가게명은 PIL 합성.
-       글자색은 생성 이미지 상단/하단 영역 색을 샘플링해 배경과 조화되게 맞춘다.
+       rembg 기반 LayoutSpec으로 텍스트 배치, 글자색은 상·하단 샘플링.
 릴스: 하단 후킹 자막 PIL 합성.
 """
 
@@ -17,6 +17,7 @@ from app.schemas.image_ad import ImageAdRequest, ImageVariantType
 from app.services.pipelines.food_type_prompts import uses_custom_template
 from app.utils.font_registry import TextOverlayRole, load_overlay_font
 from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
+from app.utils.poster_layout import PosterLayoutSpec, analyze_poster_layout
 from app.utils.poster_taglines import resolve_poster_headline
 from app.utils.reels_hooks import ReelsHookCopy, resolve_reels_hook_lines
 
@@ -298,23 +299,24 @@ def composite_poster_text(
     *,
     tone: str | None = None,
     food_type: str | None = None,
+    layout: PosterLayoutSpec | None = None,
 ) -> bytes:
     """
     포스터 PIL 합성:
-    - 상단 중앙: 카피(작게) + 메뉴명(크게)
-    - 우측: pill 가격 뱃지
-    - 하단 우측: 가게명
-    - 글자색: 이미지 상단/하단 샘플링 기반
+    - rembg 기반 LayoutSpec으로 headline/menu/pill/store 배치
+    - 글자색: 이미지 상단/하단 샘플링 기반 (Phase 2에서 mask 기반으로 확장)
     """
     image = image_bytes_to_pil(image_bytes).convert("RGBA")
+    if layout is None:
+        layout = analyze_poster_layout(image.convert("RGB"))
+
     palette = _resolve_poster_palette(image.convert("RGB"))
     draw = ImageDraw.Draw(image)
 
     width, height = image.size
-    margin_top = int(height * 0.045)
-    max_text_width = int(width * 0.88)
-    line_gap = max(6, int(height * 0.012))
-    stroke_width = max(1, int(width * 0.003))
+    max_text_width = layout.max_text_width
+    line_gap = layout.line_gap
+    stroke_width = layout.stroke_width
 
     headline_font = _scale_overlay_font(
         image,
@@ -349,7 +351,7 @@ def composite_poster_text(
         variant="poster",
     )
 
-    cursor_y = margin_top
+    cursor_y = layout.content_top_y
     menu_start_y = cursor_y
 
     if overlay_copy.headline:
@@ -394,10 +396,25 @@ def composite_poster_text(
     menu_end_y = cursor_y
 
     if overlay_copy.price_text:
-        badge_cx = int(width * 0.76)
+        badge_cx = layout.price_badge_cx
         badge_cy = int((menu_start_y + menu_end_y) / 2)
-        if badge_cy < int(height * 0.12):
-            badge_cy = int(height * 0.16)
+        if badge_cy < layout.price_badge_cy_hint:
+            badge_cy = layout.price_badge_cy_hint
+
+        pad_x = max(10, int(width * 0.028))
+        pad_y = max(6, int(width * 0.012))
+        text_width = int(draw.textlength(overlay_copy.price_text, font=price_font))
+        ascent, descent = price_font.getmetrics()
+        text_height = ascent + descent
+        badge_w = text_width + pad_x * 2
+        badge_h = text_height + pad_y * 2
+        badge_cx, badge_cy = layout.clamp_price_badge_center(
+            center_x=badge_cx,
+            center_y=badge_cy,
+            badge_width=badge_w,
+            badge_height=badge_h,
+        )
+
         _draw_price_pill_badge(
             draw,
             text=overlay_copy.price_text,
@@ -409,14 +426,18 @@ def composite_poster_text(
         )
 
     if overlay_copy.store_name:
-        margin_right = int(width * 0.055)
-        margin_bottom = int(height * 0.042)
         store_stroke = max(2, int(width * 0.004))
         text_width = int(draw.textlength(overlay_copy.store_name, font=store_font))
         ascent, descent = store_font.getmetrics()
         line_height = ascent + descent
-        store_x = width - margin_right - text_width
-        store_y = height - margin_bottom - line_height
+        store_x = width - layout.store_margin_right - text_width
+        store_y = height - layout.store_margin_bottom - line_height
+        store_x, store_y = layout.clamp_store_position(
+            x=store_x,
+            y=store_y,
+            text_width=text_width,
+            text_height=line_height,
+        )
         _draw_stroked_text(
             draw,
             (store_x, store_y),
