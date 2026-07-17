@@ -15,6 +15,7 @@ from app.core.model_config import get_model_settings, get_provider_name
 from app.services.providers.openai_image_provider import OpenAIImageProvider
 from app.services.providers.openai_text_provider import OpenAITextProvider
 from app.services.providers.hf_image_provider import HFImageProvider
+from app.services.providers.hf_sdxl_lightning_provider import HFSDXLLightningImageProvider
 
 
 def get_text_provider() -> OpenAITextProvider:
@@ -80,14 +81,34 @@ def get_image_provider() -> OpenAIImageProvider:
         )
 
     if provider_name == "hf":
+        # ------------------------------------------------------------
+        # HF 이미지 Provider 선택
+        # ------------------------------------------------------------
+        # model.yaml의 active_profile과 default_model을 기준으로 HF 모델 설정을 가져온다.
         resolved = get_model_settings(
             role="image_generation",
             provider_name="hf",
         )
 
+        model_settings = resolved["settings"]
+
+        # ------------------------------------------------------------
+        # HF Provider 세부 타입 분기
+        # ------------------------------------------------------------
+        # sd35_medium처럼 provider_type이 없는 기존 모델은 기존 HFImageProvider를 사용한다.
+        # sdxl_lightning처럼 provider_type이 명시된 모델은 전용 Provider로 분리한다.
+        provider_type = str(model_settings.get("provider_type", "sd3")).lower()
+
+        if provider_type == "sdxl_lightning":
+            return HFSDXLLightningImageProvider(
+                model_name=resolved["model_name"],
+                model_settings=model_settings,
+            )
+
+        # 기존 Stable Diffusion 3.5 기반 Provider
         return HFImageProvider(
             model_name=resolved["model_name"],
-            model_settings=resolved["settings"],
+            model_settings=model_settings,
         )
 
     raise AppException(
