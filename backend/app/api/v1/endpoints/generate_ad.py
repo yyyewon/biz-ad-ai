@@ -22,17 +22,23 @@ router = APIRouter()
 
 
 def _should_count_daily_usage(result: dict) -> bool:
-    """이미지 생성이 실제로 성공한 경우에만 일일 사용량을 차감한다."""
+    """
+    이미지 생성이 실제로 성공한 경우에만 일일 사용량 차감
+    """
     return result.get("image_generation_success") is True
 
 
 def _sse(data: dict[str, Any]) -> str:
-    """dict를 SSE data: 라인 하나로 직렬화한다."""
+    """
+    dict를 SSE data: 라인 하나로 직렬화
+    """
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 def _error_event_payload(exc: Exception) -> dict[str, Any]:
-    """예외를 프론트엔드용 SSE error 이벤트로 변환한다."""
+    """
+    예외를 프론트엔드용 SSE error 이벤트로 변환
+    """
     if isinstance(exc, AppException):
         return {
             "event": "error",
@@ -52,7 +58,9 @@ def _error_event_payload(exc: Exception) -> dict[str, Any]:
 
 
 def _single_event_streaming_response(event: dict[str, Any]) -> StreamingResponse:
-    """하나의 이벤트만 보내고 닫는 SSE 응답(사전 검증 실패 등)."""
+    """
+    하나의 이벤트만 보내고 닫는 SSE 응답
+    """
 
     async def _stream() -> AsyncIterator[str]:
         yield _sse(event)
@@ -79,14 +87,8 @@ async def generate_ad_endpoint(
     current_user: dict | None = Depends(get_current_user_optional),
 ):
     """
-    통합 광고 콘텐츠 생성 API (SSE 스트리밍).
-
-    응답은 text/event-stream으로 흘러가며, 각 이벤트는 한 줄 JSON이다.
-    - stage 이벤트: text/image 트랙의 시작·진행·완료/실패 상태
-    - result 이벤트: 최종 생성 결과(caption, images, ...)
-    - error 이벤트: 파이프라인/엔드포인트 오류
+    통합 광고 콘텐츠 생성 API
     """
-    # 업로드된 이미지 파일 읽기
     image_bytes = None
     if image and image.filename:
         image_bytes = await image.read()
@@ -97,11 +99,9 @@ async def generate_ad_endpoint(
                 content_type=image.content_type,
             )
         except AppException as exc:
-            # exc를 즉시 payload로 변환: 중첩 클로저의 free variable 캡처 이슈를 피한다.
             validation_payload = _error_event_payload(exc)
             return _single_event_streaming_response(validation_payload)
 
-    # 로그인된 사용자: 한도 확인만 먼저 (실패 시에는 차감하지 않음)
     if current_user:
         try:
             await ensure_daily_quota_available_async(current_user["id"])
@@ -109,9 +109,6 @@ async def generate_ad_endpoint(
             quota_payload = _error_event_payload(exc)
             return _single_event_streaming_response(quota_payload)
 
-        # 생성 결과와 무관하게, 유효한 이미지 생성 요청이 접수된 시점의 최신
-        # 가게 정보를 저장한다. 파이프라인 실패/클라이언트 연결 종료가 발생해도
-        # 다음 Step 1 진입 시 이번 요청 값을 불러올 수 있어야 한다.
         update_user_business_info(
             user_id=current_user["id"],
             store_name=store_name,
@@ -132,8 +129,6 @@ async def generate_ad_endpoint(
         food,
     )
 
-    # 파이프라인 진행 상황 이벤트를 SSE로 내보내기 위한 큐.
-    # 터미널 이벤트(result/error)가 들어오면 스트림을 종료한다.
     progress_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
     TERMINAL = None
 
@@ -141,7 +136,9 @@ async def generate_ad_endpoint(
         await progress_queue.put(event)
 
     async def _run_pipeline() -> None:
-        """실제 파이프라인을 실행하고 터미널 이벤트를 큐에 넣는다."""
+        """
+        실제 파이프라인을 실행하고 터미널 이벤트를 큐에 넣는다
+        """
         try:
             async with generation_limiter.slot():
                 result = await run_generate_pipeline(
@@ -158,7 +155,6 @@ async def generate_ad_endpoint(
                     on_progress=_on_progress,
                 )
 
-            # 이미지 생성이 성공한 로그인 사용자: 일일 사용량 차감
             if current_user and _should_count_daily_usage(result):
                 await increment_daily_usage_async(current_user["id"])
 
@@ -213,6 +209,6 @@ async def generate_ad_endpoint(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # nginx 프록시 버퍼링 방지
+            "X-Accel-Buffering": "no",
         },
     )

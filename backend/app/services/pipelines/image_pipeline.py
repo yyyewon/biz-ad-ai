@@ -261,8 +261,6 @@ async def generate_image_ads(
 
             return idx, variant, variant_outputs[0], variant_prompt
 
-        # asyncio.gather 대신 as_completed를 사용해 각 variant가 완료되는 즉시
-        # 진행률 콜백을 호출한다. 최종 결과는 idx 기준으로 정렬해 순서를 보존한다.
         tasks = [
             asyncio.create_task(_generate_variant_image(idx))
             for idx in range(payload.num_images)
@@ -282,7 +280,6 @@ async def generate_image_ads(
                         str(exc),
                     )
 
-        # 완료 순서와 무관하게 idx 오름차순으로 정렬해 일관된 결과 순서 유지
         variant_results.sort(key=lambda item: item[0])
 
         poster_image_bytes: list[bytes] = []

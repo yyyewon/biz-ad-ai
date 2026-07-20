@@ -63,7 +63,6 @@ def _render_login_section() -> None:
         if st.session_state.mock_mode:
             st.caption("지금은 목업 모드라 로그인 없이 체험 중이에요.")
 
-    # 목업/게스트 모드에서도 로컬 생성 횟수 표시
     if not is_logged_in() and (st.session_state.mock_mode or is_dev_guest_mode()):
         local_count = st.session_state.get("local_generation_count", 0)
         st.caption(f"로컬 생성 횟수: {local_count}회")
@@ -139,12 +138,10 @@ def _render_sidebar() -> None:
 def main() -> None:
     init_state()
 
-    # persist_state를 st.rerun 후에도 호출되도록 main() 마다 실행
     persist_state()
     init_auth_state()
     check_auth_status_from_cookies(st.context.cookies)
 
-    # 사이드바 렌더링 전에 최신 사용량 및 저장된 가게 정보 동기화
     sync_usage(st.context.cookies)
 
     current_step = st.session_state.step

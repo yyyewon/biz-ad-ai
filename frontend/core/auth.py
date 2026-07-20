@@ -71,11 +71,7 @@ def refresh_me(cookies: dict) -> None:
 
 def apply_saved_business_info(*, force: bool = False) -> None:
     """
-    DB에 저장된 가게 이름/위치를 입력 폼에 자동 입력한다.
-
-    - 로그인된 사용자에 한해 동작한다.
-    - 로그인 사용자 또는 Step 1 진입이 바뀌면 DB 값을 우선 적용한다.
-    - 같은 Step 1 안에서 발생하는 Streamlit 재실행에는 입력 중인 값을 보존한다.
+    DB에 저장된 가게 이름/위치를 입력 폼에 자동 입력
     """
     if not is_logged_in():
         return
@@ -99,13 +95,12 @@ def apply_saved_business_info(*, force: bool = False) -> None:
 
     st.session_state.business_info_loaded_user_id = user_id
     if changed:
-        # 이미 마운트된 Step 1 form widget가 예전 값을 유지하지 않도록 새 form으로 만든다.
         st.session_state.business_form_epoch = st.session_state.get("business_form_epoch", 0) + 1
 
 
 def request_refresh_token(cookies: dict) -> bool:
     """
-    401 발생 시 쿠키를 실어 서버에 토큰 재발급을 요청합니다.
+    401 발생 시 쿠키를 실어 서버에 토큰 재발급 요청
     """
     try:
         refresh_endpoint = ME_ENDPOINT.replace("/me", "/refresh")
@@ -125,7 +120,7 @@ def request_refresh_token(cookies: dict) -> bool:
 
 def logout_session() -> None:
     """
-    프론트엔드 세션 상태 초기화한다
+    프론트엔드 세션 상태 초기화
     """
     st.session_state.auth = {"is_logged_in": False, "user": None}
     st.query_params.clear()
@@ -191,8 +186,7 @@ def reset_quota_for_testing(cookies: dict) -> tuple[bool, str]:
 
 def save_business_info(cookies: dict, store_name: str, store_location: str) -> bool:
     """
-    Step 1에서 입력한 가게 이름/위치를 즉시 DB에 저장한다.
-    로그인된 사용자만 호출 가능. 성공 시 True, 실패 시 False.
+    Step 1에서 입력한 가게 이름/위치를 DB에 저장
     """
     if not is_logged_in():
         return False
@@ -209,7 +203,6 @@ def save_business_info(cookies: dict, store_name: str, store_location: str) -> b
         data = res.json().get("data") or {}
         user = st.session_state.auth.get("user")
         if user is not None:
-            # 다음 /me 동기화 전에도 현재 세션의 DB 스냅샷을 최신 상태로 유지한다.
             user["store_name"] = data.get("store_name", store_name.strip())
             user["store_location"] = data.get("store_location", store_location.strip())
         return True

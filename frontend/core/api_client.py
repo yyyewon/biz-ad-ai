@@ -48,7 +48,9 @@ def _extract_error(res: requests.Response, fallback: str) -> tuple[str, str | No
 
 
 def _decode_images(image_base64_list: list) -> list[bytes]:
-    """base64 문자열 목록을 bytes 목록으로 변환한다."""
+    """
+    base64 문자열 목록을 bytes 목록으로 변환
+    """
     images: list[bytes] = []
     for image_base64 in image_base64_list:
         if not image_base64:
@@ -78,16 +80,7 @@ def generate_ad(
     on_stage=None,
 ) -> dict:
     """
-    통합 광고 생성을 SSE로 요청한다.
-
-    on_stage:
-        진행 단계 이벤트(text/image 트랙 상태)를 수신할 때마다 호출되는 콜백.
-        시그니처: on_stage(event: dict) -> None
-        별도 스레드에서 호출되므로, 호출부는 st.session_state를 통해 메인 스레드로 상태를 전달한다.
-
-    반환값:
-        - 성공: {"ok": True, "data": {caption, images, ...}}
-        - 실패: {"ok": False, "error": str, "error_code": str | None}
+    통합 광고 생성을 SSE로 요청
     """
     if mock:
         simulate_failure = bool(st.session_state.get("simulate_image_failure"))
@@ -120,12 +113,10 @@ def generate_ad(
         if res is None:
             return {"ok": False, "error": "인증 세션이 만료됐어요. 다시 로그인해 주세요.", "error_code": "UNAUTHORIZED"}
 
-        # SSE 응답이 아닌 일반 에러 응답(예: 4xx/5xx) 처리
         content_type = res.headers.get("content-type", "")
         if "text/event-stream" not in content_type:
             return _handle_non_sse_error(res)
 
-        # event-stream 파싱
         for raw_line in res.iter_lines(decode_unicode=True):
             if not raw_line:
                 continue
@@ -153,10 +144,8 @@ def generate_ad(
                 try:
                     on_stage(event)
                 except Exception:
-                    # 진행 표시용 콜백 실패가 생성 흐름을 깨면 안 된다.
                     pass
 
-        # 스트림이 종료 이벤트 없이 끝난 경우
         return {"ok": False, "error": "서버 응답이 중간에 끊겼어요. 다시 시도해 주세요.", "error_code": "STREAM_INCOMPLETE"}
 
     except requests.exceptions.RequestException as exc:
@@ -176,7 +165,7 @@ def generate_ad(
 
 def _post_generate_sse(files: dict, payload: dict, cookies: dict | None) -> requests.Response | None:
     """
-    SSE 스트리밍 요청을 보낸다. 401이면 토큰 재발급 후 1회 재시도한다.
+    SSE 스트리밍 요청을 보낸다. 401이면 토큰 재발급 후 1회 재시도
     """
     res = requests.post(
         GENERATE_ENDPOINT,
@@ -205,7 +194,9 @@ def _post_generate_sse(files: dict, payload: dict, cookies: dict | None) -> requ
 
 
 def _handle_non_sse_error(res: requests.Response) -> dict:
-    """SSE가 아닌 에러 응답(레거시 JSON 에러 등)을 처리한다."""
+    """
+    SSE가 아닌 에러 응답(레거시 JSON 에러 등)을 처리
+    """
     try:
         body = res.json()
         if body.get("success") is False:
@@ -226,16 +217,12 @@ def _handle_non_sse_error(res: requests.Response) -> dict:
 
 def _build_result(data: dict) -> dict:
     """
-    result 이벤트의 data를 프론트엔드용 결과 dict로 변환한다.
-
-    요청3: 이미지 생성에 실패한 경우(partial_success 또는 images가 비어 있음)는
-    원본 노출 대신 일관된 실패 처리(에러 메시지 + 재시도/이전 단계)로 보낸다.
+    result 이벤트의 data를 프론트엔드용 결과 dict로 변환
     """
     images_b64 = data.get("images") or []
     images = _decode_images(images_b64)
     image_generation_success = data.get("image_generation_success")
 
-    # 이미지 생성이 명시적으로 실패했거나 결과 이미지가 없으면 실패로 취급한다.
     if image_generation_success is False or not images:
         return {
             "ok": False,
@@ -268,7 +255,9 @@ def _generate_ad_mock(
     on_stage=None,
     simulate_image_failure: bool = False,
 ) -> dict:
-    """mock 모드: 가짜 단계 이벤트를 흘려보낸 뒤 더미 결과를 반환한다."""
+    """
+    mock 모드: 가짜 단계 이벤트를 흘려보낸 뒤 더미 결과를 반환
+    """
     stages = [
         {"event": "stage", "track": "text", "status": "start", "label": "광고 문구를 생성 중이에요"},
         {"event": "stage", "track": "image", "status": "start", "label": "이미지를 생성 중이에요 (0/3)", "current": 0, "total": 3},

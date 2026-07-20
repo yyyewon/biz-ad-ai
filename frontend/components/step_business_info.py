@@ -63,7 +63,6 @@ def render() -> None:
                     max_chars=30,
                 )
 
-            # 홍보 목적 선택 구역
             st.markdown('<div style="margin-top: 0.5rem;"></div>', unsafe_allow_html=True)
             purpose = st.pills(
                 "홍보 목적",
@@ -92,7 +91,6 @@ def render() -> None:
             return
         set_business_info(store_name, menu_name, store_location, price, purpose)
 
-        # 로그인 사용자: 가게 이름/위치를 즉시 DB에 저장 (새로고침 대비)
         if is_logged_in():
             save_business_info(
                 cookies=st.context.cookies,

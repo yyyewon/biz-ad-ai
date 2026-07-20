@@ -9,11 +9,10 @@ TOTAL_STEPS = 3
 STEP_LABELS = ["가게 & 메뉴 정보", "사진 업로드 & 옵션 선택", "생성 결과 확인"]
 
 
-# ---------------------------------------------------------------
-# Query param 기반 영속화 (새로고침/북마크 대응)
-# ---------------------------------------------------------------
 def _save_business_to_query_params() -> None:
-    """가게 이름/위치를 URL query param에 저장해 새로고침 시 복원 가능하게 한다."""
+    """
+    가게 이름/위치를 URL query param에 저장해 새로고침 시 복원 가능
+    """
     b = st.session_state.get("business") or {}
     store_name = (b.get("store_name") or "").strip()
     store_location = (b.get("store_location") or "").strip()
@@ -24,12 +23,13 @@ def _save_business_to_query_params() -> None:
         if value:
             st.query_params[key] = value
         elif key in st.query_params:
-            # DB 값이 비어 있는데 URL에 예전 값이 남아 다시 복원되는 것을 막는다.
             del st.query_params[key]
 
 
 def _restore_business_from_query_params() -> None:
-    """URL query param에서 가게 이름/위치를 복원한다."""
+    """
+    URL query param에서 가게 이름/위치 복원
+    """
     qp = st.query_params
     store_name = qp.get("store_name")
     store_location = qp.get("store_location")
@@ -43,13 +43,17 @@ def _restore_business_from_query_params() -> None:
 
 
 def _save_local_generation_count() -> None:
-    """목업/게스트 모드용 로컬 생성 횟수를 query param에 저장한다."""
+    """
+    목업/게스트 모드용 로컬 생성 횟수를 query param에 저장
+    """
     count = st.session_state.get("local_generation_count", 0)
     st.query_params["local_gen_count"] = str(count)
 
 
 def _restore_local_generation_count() -> None:
-    """query param에서 로컬 생성 횟수를 복원한다."""
+    """
+    query param에서 로컬 생성 횟수를 복원
+    """
     qp = st.query_params
     raw = qp.get("local_gen_count")
     if raw:
@@ -102,16 +106,13 @@ def init_state() -> None:
 
         "dev_guest_mode": DEV_GUEST_MODE_DEFAULT,
         "auth": {"access_token": None, "refresh_token": None, "user": None},
-        # Step 1 폼 remount용 — reset 시 증가시켜 저장된 가게 이름/위치가 폼에 다시 반영되게 한다.
         "business_form_epoch": 0,
-        # 목업/게스트 모드용 로컬 생성 횟수
         "local_generation_count": 0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
-    # query param에서 복원 (init_state 후에 호출되어야 함)
     restore_state()
 
 
@@ -141,7 +142,7 @@ def set_business_info(store_name: str, menu_name: str, store_location: str, pric
         "price": price,
         "purpose": purpose,
     }
-    # 입력 즉시 query param에 저장 (새로고침 대비)
+
     _save_business_to_query_params()
 
 
@@ -200,8 +201,6 @@ def get_local_generation_count() -> int:
 def reset_all() -> None:
     """
     처음부터 다시 만들기
-
-    가게 이름·위치는 세션/DB에 저장된 값을 유지하고, 나머지 입력·생성 결과만 초기화한다.
     """
     preserved_name = (st.session_state.get("business") or {}).get("store_name", "").strip()
     preserved_location = (st.session_state.get("business") or {}).get("store_location", "").strip()

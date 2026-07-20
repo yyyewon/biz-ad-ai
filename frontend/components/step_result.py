@@ -15,7 +15,6 @@ from components.ui_kit import phone_preview, feed_grid, alert, quota_exceeded_ba
 
 
 def _preview_feed_image(images: list[bytes]) -> bytes | None:
-    """게시물 미리보기용 — 3번(릴스) 이미지 우선."""
     if not images:
         return None
     if len(images) >= 3:
@@ -84,10 +83,7 @@ def _render_generation_loading_ui() -> tuple[object, object, float, object]:
 
 def _compute_progress_from_stages(stages: dict, *, thread_alive: bool = True) -> int:
     """
-    트랙별 상태(stage_text/stage_image)로부터 진행률(%)을 계산한다.
-    - text 완료 시 50%
-    - image 진행률에 따라 50% ~ 88%
-    - 두 트랙 모두 완료 후 서버 마무리 작업 중에는 88~95%
+    트랙별 상태(stage_text/stage_image)로부터 진행률(%)을계산
     """
     progress = 5
     text_status = stages.get("text_status")
@@ -117,8 +113,7 @@ def _compute_progress_from_stages(stages: dict, *, thread_alive: bool = True) ->
 
 def _format_stage_lines(stages: dict) -> str:
     """
-    트랙별 상태를 사용자용 진행 문장으로 변환한다.
-    한 트랙이라도 진행 중이면 해당 라벨을, 완료면 '완성'을 표시한다.
+    트랙별 상태를 사용자용 진행 문장으로 변환
     """
     lines: list[str] = []
 
@@ -154,7 +149,6 @@ def _format_stage_lines(stages: dict) -> str:
 
 
 def _render_stage_status(message_placeholder, stages: dict) -> None:
-    """진행 문장을 덜 눈에 띄는 스타일로 표시한다."""
     lines = _format_stage_lines(stages).split("\n")
     html_lines = "".join(f"<div>{line}</div>" for line in lines)
     message_placeholder.markdown(
@@ -172,9 +166,6 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
     if loading_container is None or message_placeholder is None or progress_bar is None or start_time is None:
         loading_container, message_placeholder, progress_bar, start_time = _render_generation_loading_ui()
 
-    # SSE 단계 이벤트를 스레드 간 공유하기 위한 상태.
-    # on_stage 콜백은 백그라운드 스레드에서 호출되므로 dict에 직접 갱신한다.
-    # 메인 스레드는 time.sleep 폴링으로 이 dict를 읽어 화면을 갱신한다.
     stage_state: dict = {
         "text_status": None,
         "image_status": None,
@@ -213,7 +204,7 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
                 mock=mock,
                 on_stage=_on_stage,
             )
-        except Exception as exc:  # pragma: no cover - defensive
+        except Exception as exc:
             error_holder["error"] = exc
 
     generation_thread = threading.Thread(target=_run_generate_ad, daemon=True)
@@ -232,7 +223,6 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
 
     result = result_holder.get("result")
 
-    # 종료 직전 마지막 상태 표시 후 닫기
     progress_bar.progress(100)
     if loading_container is not None:
         loading_container.empty()
@@ -261,7 +251,6 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
     if not mock:
         refresh_me(st.context.cookies)
 
-    # 로컬 생성 횟수 증가 (모든 모드에서 UI에 즉시 반영)
     increment_local_generation_count()
 
     st.rerun()
@@ -350,12 +339,10 @@ def render() -> None:
                 unsafe_allow_html=True,
             )
             if gen["images"]:
-                # 이미지 개수만큼 탭 생성 (예: 이미지 1, 이미지 2, 이미지 3)
                 tabs = st.tabs([f"이미지 {i+1}" for i in range(len(gen["images"]))])
                 
                 for idx, tab in enumerate(tabs):
                     with tab:
-                        # 각 탭 안에 이미지와 다운로드 버튼을 매핑
                         st.image(gen["images"][idx], width="stretch")
                         
                         st.download_button(
@@ -365,7 +352,7 @@ def render() -> None:
                             mime="image/png",
                             type="primary",
                             width="stretch",
-                            key=f"download_btn_{idx}"  # 고유 키 필수
+                            key=f"download_btn_{idx}"
                         )
 
     footer_left, footer_right = st.columns(2)

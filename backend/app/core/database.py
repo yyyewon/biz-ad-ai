@@ -27,10 +27,6 @@ def get_connection() -> sqlite3.Connection:
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
-    """
-    SQLite는 ADD COLUMN IF NOT EXISTS를 지원하지 않으므로,
-    PRAGMA table_info로 컬럼 존재 여부를 확인한 뒤 필요할 때만 ALTER TABLE를 실행한다.
-    """
     existing_columns = {
         row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
     }
@@ -70,8 +66,6 @@ def init_db() -> None:
             """
         )
 
-        # 기존 users 테이블에 store_name/store_location 컬럼이 없으면 추가.
-        # 유저가 마지막으로 입력한 가게 정보를 저장해 다음 생성 시 자동 입력하기 위함.
         _ensure_column(conn, "users", "store_name", "TEXT")
         _ensure_column(conn, "users", "store_location", "TEXT")
 

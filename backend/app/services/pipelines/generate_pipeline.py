@@ -58,8 +58,6 @@ def _safe_model_info(role: str) -> dict[str, str]:
             "model": "unknown",
         }
 
-
-# 진행 상황 콜백 타입: 이벤트 dict를 받아 비동기로 처리한다(SSE 큐에 push).
 ProgressCallback = Callable[[dict[str, Any]], Awaitable[None]]
 
 
@@ -67,10 +65,6 @@ async def _emit_progress(
     on_progress: ProgressCallback | None,
     event: dict[str, Any],
 ) -> None:
-    """
-    진행 상황 콜백을 안전하게 호출한다.
-    콜백이 없거나 예외가 발생해도 파이프라인 흐름에 영향을 주지 않는다.
-    """
     if on_progress is None:
         return
     try:
