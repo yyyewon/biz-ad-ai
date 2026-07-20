@@ -17,7 +17,12 @@ from app.schemas.image_ad import ImageAdRequest, ImageVariantType
 from app.services.pipelines.food_type_prompts import uses_custom_template
 from app.utils.font_registry import TextOverlayRole, load_overlay_font
 from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
-from app.utils.poster_layout import PosterLayoutSpec, PosterPaletteSpec, analyze_poster_layout
+from app.utils.poster_layout import (
+    PosterLayoutSpec,
+    PosterPaletteSpec,
+    _darker_hue_variant,
+    analyze_poster_layout,
+)
 from app.utils.poster_template import PosterTemplateSpec, resolve_poster_template_for_layout
 from app.utils.poster_taglines import resolve_poster_headline
 from app.utils.reels_hooks import ReelsHookCopy, resolve_reels_hook_lines
@@ -180,19 +185,22 @@ def _draw_centered_line(
     y: int,
     image_width: int,
     fill: tuple[int, int, int],
-    stroke_fill: tuple[int, int, int],
-    stroke_width: int,
+    stroke_fill: tuple[int, int, int] | None = None,
+    stroke_width: int = 0,
 ) -> int:
     x = _centered_x(draw, text, font, image_width)
-    _draw_stroked_text(
-        draw,
-        (x, y),
-        text,
-        font=font,
-        fill=fill,
-        stroke_fill=stroke_fill,
-        stroke_width=stroke_width,
-    )
+    if stroke_width > 0 and stroke_fill is not None:
+        _draw_stroked_text(
+            draw,
+            (x, y),
+            text,
+            font=font,
+            fill=fill,
+            stroke_fill=stroke_fill,
+            stroke_width=stroke_width,
+        )
+    else:
+        draw.text((x, y), text, font=font, fill=fill)
     ascent, descent = font.getmetrics()
     return ascent + descent
 
@@ -242,6 +250,8 @@ def _draw_price_pill_badge(
 
     if template.badge_style == "filled":
         fill = palette.badge_outline
+        if _relative_luminance(fill) > 165:
+            fill = _darker_hue_variant(fill, amount=0.35)
         text_fill = _contrast_text_on_fill(fill, palette.badge_text)
         draw.rounded_rectangle(bbox, radius=radius, fill=fill)
         draw.text((text_x, text_y), text, font=font, fill=text_fill)
@@ -254,6 +264,49 @@ def _draw_price_pill_badge(
         width=outline_width,
     )
     draw.text((text_x, text_y), text, font=font, fill=palette.badge_text)
+
+
+def _measure_line_height(font: ImageFont.FreeTypeFont) -> int:
+    ascent, descent = font.getmetrics()
+    return ascent + descent
+
+
+def _measure_poster_primary_block_height(
+    *,
+    headline: str,
+    menu_name: str,
+    headline_font: ImageFont.FreeTypeFont,
+    menu_font: ImageFont.FreeTypeFont,
+    max_text_width: int,
+    line_gap: int,
+    headline_menu_gap: int,
+    draw: ImageDraw.ImageDraw,
+) -> int:
+    total = 0
+    headline = (headline or "").strip()
+    if headline:
+        headline_lines = _wrap_text(
+            headline,
+            font=headline_font,
+            max_width=max_text_width,
+            draw=draw,
+        )
+        for _ in headline_lines:
+            total += _measure_line_height(headline_font) + line_gap
+        total += max(0, headline_menu_gap - line_gap)
+
+    menu_lines = _wrap_text(
+        menu_name,
+        font=menu_font,
+        max_width=max_text_width,
+        draw=draw,
+    )
+    for _ in menu_lines:
+        total += _measure_line_height(menu_font) + line_gap
+
+    if total > 0:
+        total -= line_gap
+    return total
 
 
 def _resolve_price_badge_placement(
@@ -282,22 +335,32 @@ def _resolve_price_badge_placement(
     else:
         badge_cy = layout.price_badge_cy_hint
 
-    if template.price_anchor == "menu_right" and menu_lines:
+    if template.price_anchor == "food_top_right":
+        badge_cx, badge_cy = layout.resolve_price_badge_food_top_right(
+            badge_width=badge_w,
+            badge_height=badge_h,
+        )
+    elif template.price_anchor == "menu_right" and menu_lines:
         max_menu_w = max(int(draw.textlength(line, font=menu_font)) for line in menu_lines)
         menu_right = (width + max_menu_w) // 2
         margin = max(12, int(width * 0.04))
         badge_cx = int(menu_right + width * 0.035 + badge_w / 2)
         badge_cx = min(width - badge_w // 2 - margin, badge_cx)
         badge_cx = max(badge_w // 2 + margin, badge_cx)
+        badge_cx, badge_cy = layout.clamp_price_badge_center(
+            center_x=badge_cx,
+            center_y=badge_cy,
+            badge_width=badge_w,
+            badge_height=badge_h,
+        )
     else:
         badge_cx = layout.price_badge_cx
-
-    badge_cx, badge_cy = layout.clamp_price_badge_center(
-        center_x=badge_cx,
-        center_y=badge_cy,
-        badge_width=badge_w,
-        badge_height=badge_h,
-    )
+        badge_cx, badge_cy = layout.clamp_price_badge_center(
+            center_x=badge_cx,
+            center_y=badge_cy,
+            badge_width=badge_w,
+            badge_height=badge_h,
+        )
     return badge_cx, badge_cy, badge_w, badge_h
 
 
@@ -333,7 +396,6 @@ def composite_poster_text(
     width, height = image.size
     max_text_width = layout.max_text_width
     line_gap = layout.line_gap
-    stroke_width = layout.stroke_width
     headline_menu_gap = max(line_gap, int(height * template.headline_menu_gap_ratio))
 
     headline_font = _scale_overlay_font(
@@ -369,7 +431,17 @@ def composite_poster_text(
         variant="poster",
     )
 
-    cursor_y = layout.content_top_y
+    block_height = _measure_poster_primary_block_height(
+        headline=overlay_copy.headline,
+        menu_name=overlay_copy.menu_name,
+        headline_font=headline_font,
+        menu_font=menu_font,
+        max_text_width=max_text_width,
+        line_gap=line_gap,
+        headline_menu_gap=headline_menu_gap,
+        draw=draw,
+    )
+    cursor_y = layout.resolve_text_block_start_y(block_height)
     menu_start_y = cursor_y
 
     if overlay_copy.headline:
@@ -386,8 +458,6 @@ def composite_poster_text(
                 y=cursor_y,
                 image_width=width,
                 fill=palette.primary_text,
-                stroke_fill=palette.primary_stroke,
-                stroke_width=max(1, stroke_width + template.headline_stroke_delta),
             )
             cursor_y += line_h + line_gap
 
@@ -408,8 +478,6 @@ def composite_poster_text(
             y=cursor_y,
             image_width=width,
             fill=palette.primary_text,
-            stroke_fill=palette.primary_stroke,
-            stroke_width=stroke_width,
         )
         cursor_y += line_h + line_gap
 
@@ -441,7 +509,6 @@ def composite_poster_text(
         )
 
     if overlay_copy.store_name:
-        store_stroke = max(2, int(width * 0.004))
         text_width = int(draw.textlength(overlay_copy.store_name, font=store_font))
         ascent, descent = store_font.getmetrics()
         line_height = ascent + descent
@@ -453,14 +520,11 @@ def composite_poster_text(
             text_width=text_width,
             text_height=line_height,
         )
-        _draw_stroked_text(
-            draw,
+        draw.text(
             (store_x, store_y),
             overlay_copy.store_name,
             font=store_font,
             fill=palette.store_text,
-            stroke_fill=palette.store_stroke,
-            stroke_width=store_stroke,
         )
 
     return pil_image_to_png_bytes(image.convert("RGB"))

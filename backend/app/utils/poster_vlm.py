@@ -40,15 +40,14 @@ Return ONLY one JSON object (no markdown) for text overlay design:
   "layout": {
     "price_badge_cx_ratio": 0.76,
     "price_badge_cy_ratio": 0.16,
-    "price_anchor": "menu_right"
+    "price_anchor": "food_top_right"
   },
   "typography": {
-    "headline_size_ratio": 0.030,
-    "menu_size_ratio": 0.092,
-    "price_size_ratio": 0.034,
-    "store_size_ratio": 0.032,
-    "headline_menu_gap_ratio": 0.016,
-    "badge_style": "outline"
+    "headline_size_ratio": 0.040,
+    "menu_size_ratio": 0.112,
+    "price_size_ratio": 0.042,
+    "store_size_ratio": 0.046,
+    "headline_menu_gap_ratio": 0.016
   },
   "scrim": {
     "height_ratio": 0.32,
@@ -64,8 +63,8 @@ Rules:
 - Text colors should harmonize with the BACKGROUND hue (not food colors).
 - Ratios are 0.0-1.0 relative to image width/height.
 - typography.headline_size_ratio should be smaller than typography.menu_size_ratio.
-- typography.badge_style must be "outline" or "filled".
-- layout.price_anchor must be "menu_right" or "layout".
+- typography.badge_style is ignored; price pill always uses filled style in PIL.
+- layout.price_anchor must be "food_top_right", "menu_right", or "layout".
 - scrim.max_alpha is 0-150 (use 60-120 on busy or light backgrounds).
 - Use readable contrast; stroke must contrast with both text and background.
 """
@@ -234,12 +233,12 @@ def _build_template_from_vlm(
     if headline_stroke_delta is not None:
         overrides["headline_stroke_delta"] = headline_stroke_delta
 
-    badge_style = typography_block.get("badge_style")
-    if isinstance(badge_style, str) and badge_style in ("outline", "filled"):
-        overrides["badge_style"] = badge_style
-
     price_anchor = layout_block.get("price_anchor")
-    if isinstance(price_anchor, str) and price_anchor in ("menu_right", "layout"):
+    if isinstance(price_anchor, str) and price_anchor in (
+        "menu_right",
+        "layout",
+        "food_top_right",
+    ):
         overrides["price_anchor"] = price_anchor
 
     price_cx_ratio = _parse_ratio(layout_block.get("price_badge_cx_ratio"))

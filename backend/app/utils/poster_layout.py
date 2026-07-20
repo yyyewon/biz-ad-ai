@@ -32,6 +32,10 @@ _MIN_FOOD_AREA_RATIO = 0.04
 _MAX_FOOD_AREA_RATIO = 0.88
 _FOOD_TOP_PADDING_RATIO = 0.02
 _PRICE_FOOD_PADDING_RATIO = 0.04
+_TEXT_ZONE_TOP_RATIO = 0.03
+_TEXT_ZONE_BIAS_TOWARD_FOOD = 0.62
+_PRICE_SHOULDER_TOP_RATIO = 0.08
+_PRICE_SHOULDER_OVERLAP_RATIO = 0.35
 
 _FOREGROUND_ALPHA_THRESHOLD = 128
 _SCRIM_COMPLEXITY_THRESHOLD = 22.0
@@ -58,6 +62,7 @@ class PosterLayoutSpec:
     height: int
     food_bbox: tuple[int, int, int, int] | None
     content_top_y: int
+    text_zone_bottom: int | None
     max_text_width: int
     line_gap: int
     stroke_width: int
@@ -70,6 +75,26 @@ class PosterLayoutSpec:
     scrim_max_alpha: int
     used_fallback: bool
     vlm_template: "PosterTemplateSpec | None" = None
+
+    def resolve_text_block_start_y(self, block_height: int) -> int:
+        """음식 위 상단 존 안에서 문구+메뉴명 블록 시작 Y를 계산한다."""
+
+        margin_top = max(self.content_top_y, int(self.height * _TEXT_ZONE_TOP_RATIO))
+        zone_bottom = self.text_zone_bottom
+        if zone_bottom is None and self.food_bbox:
+            zone_bottom = self.food_bbox[1] - max(8, int(self.height * _FOOD_TOP_PADDING_RATIO))
+        if zone_bottom is None:
+            zone_bottom = int(self.height * 0.34)
+
+        zone_bottom = min(zone_bottom, self.height)
+        zone_height = max(0, zone_bottom - margin_top)
+        min_block = max(1, block_height)
+        if zone_height <= min_block:
+            return margin_top
+
+        slack = zone_height - min_block
+        offset = int(slack * (1.0 - _TEXT_ZONE_BIAS_TOWARD_FOOD))
+        return margin_top + offset
 
     def clamp_price_badge_center(
         self,
@@ -111,6 +136,44 @@ class PosterLayoutSpec:
 
         candidate_cy = max(self.content_top_y + half_h, top - pad - half_h)
         return cx, candidate_cy
+
+    def resolve_price_badge_food_top_right(
+        self,
+        *,
+        badge_width: int,
+        badge_height: int,
+    ) -> tuple[int, int]:
+        """가격 pill을 음식 bbox 우측 상단에 붙인다 (캔버스 밖으로만 보정)."""
+
+        margin = max(12, int(self.width * 0.04))
+        half_w = badge_width // 2
+        half_h = badge_height // 2
+
+        if not self.food_bbox:
+            return self.clamp_price_badge_center(
+                center_x=self.price_badge_cx,
+                center_y=self.price_badge_cy_hint,
+                badge_width=badge_width,
+                badge_height=badge_height,
+            )
+
+        _, top, right, bottom = self.food_bbox
+        food_height = max(1, bottom - top)
+        pad_y = max(4, int(food_height * 0.04))
+
+        # 잔 어깨(shoulder): 상단에서 약간 아래, 우측은 음식에 30~40% 겹침
+        badge_top = int(top + food_height * _PRICE_SHOULDER_TOP_RATIO) + pad_y
+        badge_left = int(right - badge_width * _PRICE_SHOULDER_OVERLAP_RATIO)
+
+        badge_left = max(margin, min(self.width - badge_width - margin, badge_left))
+        badge_top = max(self.content_top_y, min(self.height - badge_height - margin, badge_top))
+
+        badge_cx = int(badge_left + badge_width / 2)
+        badge_cy = int(badge_top + badge_height / 2)
+
+        badge_cx = max(half_w + margin, min(self.width - half_w - margin, badge_cx))
+        badge_cy = max(half_h + margin, min(self.height - half_h - margin, badge_cy))
+        return badge_cx, badge_cy
 
     def clamp_store_position(
         self,
@@ -238,6 +301,7 @@ def _apply_vlm_overrides(spec: PosterLayoutSpec, image: Image.Image) -> PosterLa
         height=spec.height,
         food_bbox=spec.food_bbox,
         content_top_y=spec.content_top_y,
+        text_zone_bottom=spec.text_zone_bottom,
         max_text_width=spec.max_text_width,
         line_gap=spec.line_gap,
         stroke_width=spec.stroke_width,
@@ -315,13 +379,17 @@ def _reconcile_vlm_palette(
         used_rules = True
 
     return (
-        PosterPaletteSpec(
-            primary_text=primary_text,
-            primary_stroke=primary_stroke,
-            store_text=store_text,
-            store_stroke=store_stroke,
-            badge_text=badge_text,
-            badge_outline=badge_outline,
+        _ensure_palette_readability(
+            PosterPaletteSpec(
+                primary_text=primary_text,
+                primary_stroke=primary_stroke,
+                store_text=store_text,
+                store_stroke=store_stroke,
+                badge_text=badge_text,
+                badge_outline=badge_outline,
+            ),
+            top_bg=top_bg,
+            bottom_bg=bottom_bg,
         ),
         used_rules,
     )
@@ -413,6 +481,9 @@ def _build_fallback_spec(
         height=height,
         food_bbox=food_bbox,
         content_top_y=int(height * _FALLBACK_CONTENT_TOP_RATIO),
+        text_zone_bottom=int(height * 0.34) if food_bbox is None else (
+            food_bbox[1] - max(8, int(height * _FOOD_TOP_PADDING_RATIO))
+        ),
         max_text_width=int(width * _FALLBACK_MAX_TEXT_WIDTH_RATIO),
         line_gap=max(6, int(height * _FALLBACK_LINE_GAP_RATIO)),
         stroke_width=max(1, int(width * _FALLBACK_STROKE_WIDTH_RATIO)),
@@ -446,6 +517,7 @@ def _build_spec_from_food_bbox(
     if text_bottom_limit <= content_top_y + int(height * 0.05):
         return fallback
 
+    text_zone_bottom = text_bottom_limit
     price_cx = fallback.price_badge_cx
     if food_right > int(width * 0.62):
         price_cx = max(
@@ -476,6 +548,7 @@ def _build_spec_from_food_bbox(
         height=height,
         food_bbox=food_bbox,
         content_top_y=content_top_y,
+        text_zone_bottom=text_zone_bottom,
         max_text_width=fallback.max_text_width,
         line_gap=fallback.line_gap,
         stroke_width=fallback.stroke_width,
@@ -528,13 +601,59 @@ def _build_palette(
     store_fill = _background_hue_text_color(bottom_right_bg)
     store_stroke = _primary_stroke_color(bottom_right_bg, store_fill)
 
+    return _ensure_palette_readability(
+        PosterPaletteSpec(
+            primary_text=primary,
+            primary_stroke=primary_stroke,
+            store_text=store_fill,
+            store_stroke=store_stroke,
+            badge_outline=primary,
+            badge_text=primary,
+        ),
+        top_bg=top_bg,
+        bottom_bg=bottom_right_bg,
+    )
+
+
+def _ensure_palette_readability(
+    palette: PosterPaletteSpec,
+    *,
+    top_bg: tuple[int, int, int],
+    bottom_bg: tuple[int, int, int],
+) -> PosterPaletteSpec:
+    """밝은 배경에서 흰색/연한 글자가 나오지 않도록 보정한다."""
+
+    primary_text = palette.primary_text
+    primary_stroke = palette.primary_stroke
+    top_bg_lum = _relative_luminance(top_bg)
+    if top_bg_lum >= 125 and _relative_luminance(primary_text) > top_bg_lum - 48:
+        primary_text = _background_hue_text_color(top_bg)
+        primary_stroke = _primary_stroke_color(top_bg, primary_text)
+    elif top_bg_lum >= 125 and _relative_luminance(primary_stroke) > top_bg_lum - 35:
+        primary_stroke = _darker_hue_variant(primary_text, amount=0.30)
+
+    store_text = palette.store_text
+    store_stroke = palette.store_stroke
+    bottom_bg_lum = _relative_luminance(bottom_bg)
+    if bottom_bg_lum >= 115 and _relative_luminance(store_text) > bottom_bg_lum - 42:
+        store_text = _background_hue_text_color(bottom_bg)
+        store_stroke = _primary_stroke_color(bottom_bg, store_text)
+    elif bottom_bg_lum >= 115 and _relative_luminance(store_stroke) > bottom_bg_lum - 35:
+        store_stroke = _darker_hue_variant(store_text, amount=0.30)
+
+    badge_outline = palette.badge_outline
+    badge_text = palette.badge_text
+    if top_bg_lum >= 125 and _relative_luminance(badge_text) > top_bg_lum - 48:
+        badge_text = primary_text
+        badge_outline = primary_text
+
     return PosterPaletteSpec(
-        primary_text=primary,
+        primary_text=primary_text,
         primary_stroke=primary_stroke,
-        store_text=store_fill,
+        store_text=store_text,
         store_stroke=store_stroke,
-        badge_outline=primary,
-        badge_text=primary,
+        badge_outline=badge_outline,
+        badge_text=badge_text,
     )
 
 
@@ -687,6 +806,15 @@ def _primary_stroke_color(
 ) -> tuple[int, int, int]:
     bg_lum = _relative_luminance(background_rgb)
     text_lum = _relative_luminance(text_rgb)
+
+    # 밝은 단색 배경: 흰색 halo 대신 글자색보다 진한 같은 계열 테두리
+    if bg_lum >= 125:
+        if text_lum < bg_lum - 20:
+            return _darker_hue_variant(text_rgb, amount=0.30)
+        if text_lum > bg_lum + 20:
+            return _darker_hue_variant(text_rgb, amount=0.38)
+        return _darker_hue_variant(text_rgb, amount=0.24)
+
     if text_lum < bg_lum - 25:
         return (255, 255, 255)
     if text_lum > bg_lum + 25:
