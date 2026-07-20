@@ -12,6 +12,7 @@ __pycache__/
 venv/
 env/
 ENV/
+.venv-sdxl/
 
 # Python packaging
 build/
@@ -211,3 +212,9 @@ backend/logs-dev/
 docker-compose.local.yml
 backend/logs-local/
 backend/.hf-cache/
+
+# Local SDXL experiments
+experiments/sdxl/outputs/
+experiments/sdxl/logs/
+experiments/sdxl/assets/
+experiments/**

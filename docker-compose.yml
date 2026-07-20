@@ -27,9 +27,13 @@ services:
       - "8010:8010"
     env_file:
       - ./backend/.env
+    environment:
+      - HF_HOME=/app/.cache/huggingface
+      - HF_HUB_CACHE=/app/.cache/huggingface/hub
     volumes:
       - backend_data:/app/data
       - ./backend/logs:/app/logs
+      - /opt/hf-cache:/app/.cache/huggingface
       - model_cache:/models
     deploy:
       resources:

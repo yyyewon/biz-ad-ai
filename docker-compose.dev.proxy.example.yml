@@ -9,7 +9,6 @@
 #    - Backend 개발 포트
 #    - Frontend 개발 포트
 #    - container_name
-#    - image 이름
 #    - API_BROWSER_BASE_URL
 #    - --root-path
 #
@@ -25,8 +24,9 @@
 
 services:
   backend:
-    # 예시: biz-ad-ai-backend-dev-spai0913:latest
-    image: biz-ad-ai-backend-dev-본인계정명:latest
+    # 개발용 공용 이미지 태그
+    # 계정별 이미지명을 쓰지 않는다. 디스크 중복 사용을 줄이기 위함.
+    image: biz-ad-ai-backend-dev:latest
 
     # 예시: biz-ad-ai-backend-dev-spai0913
     container_name: biz-ad-ai-backend-dev-본인계정명
@@ -39,7 +39,14 @@ services:
 
     env_file:
       - ./backend/.env
+      
+    # HF 모델 캐시 관리 주소
+    environment:
+      - HF_HOME=/app/.cache/huggingface
+      - HF_HUB_CACHE=/app/.cache/huggingface/hub
 
+    # 개발 환경에서는 production entrypoint를 쓰지 않고,
+    # Jupyter proxy root-path와 reload를 적용하기 위해 uvicorn을 직접 실행한다.
     entrypoint: !override
       - uvicorn
       - app.main:app
@@ -59,11 +66,14 @@ services:
       # 개발용 로그 폴더
       - ./backend/logs-dev:/app/logs
 
+      # hf 모델 캐시 관리 폴더
+      - /opt/hf-cache:/app/.cache/huggingface
+
     restart: "no"
 
   frontend:
-    # 예시: biz-ad-ai-frontend-dev-spai0913:latest
-    image: biz-ad-ai-frontend-dev-본인계정명:latest
+    # 개발용 공용 이미지 태그
+    image: biz-ad-ai-frontend-dev:latest
 
     # 예시: biz-ad-ai-frontend-dev-spai0913
     container_name: biz-ad-ai-frontend-dev-본인계정명
