@@ -32,18 +32,17 @@ Return ONLY one JSON object (no markdown) for text overlay design:
   "palette": {
     "primary_text_rgb": [r, g, b],
     "primary_stroke_rgb": [r, g, b],
+    "accent_text_rgb": [r, g, b],
     "store_text_rgb": [r, g, b],
     "store_stroke_rgb": [r, g, b],
+    "badge_fill_rgb": [r, g, b],
     "badge_text_rgb": [r, g, b],
     "badge_outline_rgb": [r, g, b]
   },
-  "layout": {
-    "price_badge_cx_ratio": 0.76,
-    "price_badge_cy_ratio": 0.16,
-    "price_anchor": "food_top_right"
-  },
   "typography": {
-    "headline_size_ratio": 0.040,
+    "headline_size_ratio": 0.050,
+    "subline_size_ratio": 0.034,
+    "sticker_size_ratio": 0.028,
     "menu_size_ratio": 0.112,
     "price_size_ratio": 0.042,
     "store_size_ratio": 0.046,
@@ -56,15 +55,17 @@ Return ONLY one JSON object (no markdown) for text overlay design:
 }
 
 Rules:
-- Analyze the TOP background area (not the food) for headline/menu/price colors.
-- Analyze the BOTTOM-RIGHT background for store name colors.
+- Analyze the TOP background area for headline/subline colors (primary_text).
+- accent_text_rgb is for the MENU name: slightly richer than primary, may echo food hue.
+- badge_fill_rgb is the price pill BACKGROUND (cream/off-white, e.g. [248, 245, 238]).
+- badge_text_rgb must contrast with badge_fill_rgb (dark on cream).
+- Analyze the BOTTOM-RIGHT background for store name colors (muted, weaker than accent).
 - NEVER set every RGB field to [255, 255, 255] or identical values.
 - On light/beige backgrounds use DARK text (e.g. [60, 40, 30]); on dark backgrounds use LIGHT text.
-- Text colors should harmonize with the BACKGROUND hue (not food colors).
+- Text colors should harmonize with the BACKGROUND hue for primary/store; accent may be warmer.
 - Ratios are 0.0-1.0 relative to image width/height.
+- Text positions are fixed in PIL; only suggest colors, typography sizes, and scrim.
 - typography.headline_size_ratio should be smaller than typography.menu_size_ratio.
-- typography.badge_style is ignored; price pill always uses filled style in PIL.
-- layout.price_anchor must be "food_top_right", "menu_right", or "layout".
 - scrim.max_alpha is 0-150 (use 60-120 on busy or light backgrounds).
 - Use readable contrast; stroke must contrast with both text and background.
 """
@@ -82,6 +83,18 @@ class PosterVlmDesignHints:
 
 def is_poster_vlm_enabled() -> bool:
     return get_poster_design_model_settings() is not None
+
+
+def warm_up_poster_vlm() -> None:
+    """서버 시작 시 VLM 가중치를 GPU(또는 설정된 device)에 미리 로드한다."""
+
+    model_config = get_poster_design_model_settings()
+    if model_config is None:
+        return
+
+    settings = model_config["settings"]
+    model_id = str(settings["model_id"])
+    _get_vlm_model(model_id=model_id, settings=settings)
 
 
 def analyze_poster_design_with_vlm(image: Image.Image) -> PosterVlmDesignHints | None:
@@ -111,12 +124,10 @@ def analyze_poster_design_with_vlm(image: Image.Image) -> PosterVlmDesignHints |
             json.dumps(parsed, ensure_ascii=False),
         )
         logger.info(
-            "poster_vlm_applied | model={} | primary_text={} | price_cx={} | scrim_alpha={} | badge_style={}",
+            "poster_vlm_applied | model={} | primary_text={} | scrim_alpha={}",
             model_config["model_name"],
             hints.palette.primary_text,
-            hints.price_badge_cx,
             hints.scrim_max_alpha,
-            hints.template.badge_style if hints.template else None,
         )
         return hints
 
@@ -161,57 +172,60 @@ def _build_hints_from_parsed(
     if not isinstance(palette_block, dict):
         palette_block = {}
 
+    primary_default = (80, 45, 20)
+    accent_default = (120, 72, 28)
+    badge_fill_default = (248, 245, 238)
+
     palette = PosterPaletteSpec(
-        primary_text=_parse_rgb(palette_block.get("primary_text_rgb"), default=(80, 45, 20)),
+        primary_text=_parse_rgb(palette_block.get("primary_text_rgb"), default=primary_default),
         primary_stroke=_parse_rgb(palette_block.get("primary_stroke_rgb"), default=(255, 255, 255)),
-        store_text=_parse_rgb(palette_block.get("store_text_rgb"), default=(80, 45, 20)),
+        accent_text=_parse_rgb(
+            palette_block.get("accent_text_rgb"),
+            default=_parse_rgb(palette_block.get("primary_text_rgb"), default=accent_default),
+        ),
+        store_text=_parse_rgb(palette_block.get("store_text_rgb"), default=primary_default),
         store_stroke=_parse_rgb(palette_block.get("store_stroke_rgb"), default=(255, 255, 255)),
+        badge_fill=_parse_rgb(
+            palette_block.get("badge_fill_rgb"),
+            default=badge_fill_default,
+        ),
         badge_text=_parse_rgb(
             palette_block.get("badge_text_rgb"),
-            default=_parse_rgb(palette_block.get("primary_text_rgb"), default=(80, 45, 20)),
+            default=_parse_rgb(palette_block.get("accent_text_rgb"), default=accent_default),
         ),
         badge_outline=_parse_rgb(
             palette_block.get("badge_outline_rgb"),
-            default=_parse_rgb(palette_block.get("primary_text_rgb"), default=(80, 45, 20)),
+            default=_parse_rgb(palette_block.get("accent_text_rgb"), default=accent_default),
         ),
     )
 
-    layout_block = payload.get("layout", {})
     typography_block = payload.get("typography", {})
     scrim_block = payload.get("scrim", {})
-    if not isinstance(layout_block, dict):
-        layout_block = {}
     if not isinstance(typography_block, dict):
         typography_block = {}
     if not isinstance(scrim_block, dict):
         scrim_block = {}
 
-    price_cx = _parse_ratio(layout_block.get("price_badge_cx_ratio"))
-    price_cy = _parse_ratio(layout_block.get("price_badge_cy_ratio"))
     scrim_h = _parse_ratio(scrim_block.get("height_ratio"))
     scrim_alpha = _parse_int(scrim_block.get("max_alpha"), min_value=0, max_value=150)
-
-    template = _build_template_from_vlm(typography_block, layout_block)
+    template = _build_template_from_vlm(typography_block)
 
     return PosterVlmDesignHints(
         palette=palette,
-        price_badge_cx=int(width * price_cx) if price_cx is not None else None,
-        price_badge_cy_hint=int(height * price_cy) if price_cy is not None else None,
         scrim_height=int(height * scrim_h) if scrim_h is not None else None,
         scrim_max_alpha=scrim_alpha,
         template=template,
     )
 
 
-def _build_template_from_vlm(
-    typography_block: dict,
-    layout_block: dict,
-) -> "PosterTemplateSpec | None":
+def _build_template_from_vlm(typography_block: dict) -> "PosterTemplateSpec | None":
     from app.utils.poster_template import apply_template_overrides, resolve_poster_template
 
     overrides: dict[str, object] = {}
     for key in (
         "headline_size_ratio",
+        "subline_size_ratio",
+        "sticker_size_ratio",
         "menu_size_ratio",
         "price_size_ratio",
         "store_size_ratio",
@@ -219,7 +233,6 @@ def _build_template_from_vlm(
         "badge_pad_x_ratio",
         "badge_pad_y_ratio",
         "badge_outline_width_ratio",
-        "price_cx_ratio",
     ):
         ratio = _parse_ratio(typography_block.get(key))
         if ratio is not None:
@@ -232,18 +245,6 @@ def _build_template_from_vlm(
     )
     if headline_stroke_delta is not None:
         overrides["headline_stroke_delta"] = headline_stroke_delta
-
-    price_anchor = layout_block.get("price_anchor")
-    if isinstance(price_anchor, str) and price_anchor in (
-        "menu_right",
-        "layout",
-        "food_top_right",
-    ):
-        overrides["price_anchor"] = price_anchor
-
-    price_cx_ratio = _parse_ratio(layout_block.get("price_badge_cx_ratio"))
-    if price_cx_ratio is not None:
-        overrides["price_cx_ratio"] = price_cx_ratio
 
     if not overrides:
         return None

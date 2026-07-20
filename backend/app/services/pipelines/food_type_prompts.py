@@ -42,7 +42,7 @@ FOOD_TYPE_SCENE_HINTS: dict[FoodType, str] = {
 
 VARIANT_DIRECTION_HINTS: dict[ImageVariantType, str] = {
     "studio": "polish casual food photo into clean studio shot, faithful food, better light/bg",
-    "poster": "4:5 menu promo poster, designed top bg + food hero bottom, PIL text overlay",
+    "poster": "4:5 menu promo poster, empty top bg + food hero in lower half only, PIL text overlay",
     "instagram_feed": "reels mood, preserve store bg, extreme food closeup",
 }
 
@@ -74,6 +74,8 @@ _NEGATIVE_POSTER = (
     "typography added in post-processing only, do not burn any words into image, "
     "no cafe interior, no dining room, no brick wall backdrop, no wood table photo, "
     "no decorative pattern texture in top text zone, "
+    "no vertically centered food hero, no food occupying upper 40% of frame, "
+    "no oversized soup pot filling entire frame, no giant ttukbaegi closeup, "
     f"{_NEGATIVE_CLUTTER}"
 )
 
@@ -115,6 +117,8 @@ _STUDIO_FOOD_BASE = (
 
 _POSTER_FOOD_BASE = (
     f"preserve original main dish, hero focus on ordered menu item, "
+    f"compose food in lower third of frame (not vertically centered), "
+    f"food mass center below 60% frame height, "
     f"no added food, {_EXCLUDE_TABLE_CLUTTER}"
 )
 
@@ -278,8 +282,11 @@ _STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_STUDIO}", _NEGATIV
 # =============================================================================
 
 _POSTER_LAYOUT_RULES = (
-    "LAYOUT 4:5 1024x1536, top 38% flat solid-color empty zone (no letters in image), "
-    "bottom 55-60% food hero on simple surface, top-right empty patch, bottom-right empty corner. "
+    "LAYOUT 4:5 1024x1536: upper 42-45% flat solid-color empty zone only (headline/menu added in PIL later), "
+    "food hero anchored in LOWER half (vertical center of food below 62% height), "
+    "never center food in frame, food base near bottom 10-15% margin on simple surface, "
+    "keep top-left clear for headline, upper-center clear for large menu title, "
+    "keep bottom-right 18%x14% corner empty for store name, price zone upper-right above food shoulder. "
     "{store_footer_line}"
 )
 
@@ -299,7 +306,11 @@ NEG: {_NEGATIVE_POSTER}, no cafe interior, no restaurant room, no wood wall, no 
 # --- poster food tags ---
 
 _POSTER_SOUP_STEW_FOOD = (
-    f"{_POSTER_FOOD_BASE}, main pot only no side plates, glossy broth"
+    f"{_POSTER_FOOD_BASE}, main pot only no side plates, glossy broth, "
+    "moderate hero scale not oversized closeup, "
+    "pot/bowl occupies 32-42% of frame height and max 50-58% of frame width, "
+    "visible empty background margin around vessel on all sides, "
+    "tall pot/bowl base near bottom edge, pot rim must stay below vertical midpoint"
 )
 
 _POSTER_FRIED_FOOD = (
@@ -323,7 +334,8 @@ _POSTER_BURGER_SANDWICH_FOOD = (
 )
 
 _POSTER_COFFEE_DRINK_FOOD = (
-    f"{_POSTER_FOOD_BASE}, cup shape, foam/ice/beverage layers clear"
+    f"{_POSTER_FOOD_BASE}, cup shape, foam/ice/beverage layers clear, "
+    "no straw, no stirrer, no drinking accessories, open cup rim visible"
 )
 
 # --- poster background tags ---
@@ -521,11 +533,32 @@ def _build_poster_store_footer_line(
     store_location: str = "",
 ) -> str:
     _ = (store_name, store_location)
-    return "keep top and bottom-right corners blank, no typography in image"
+    return (
+        "reserve bottom-right corner blank for store-name PIL overlay, "
+        "do not place food or props in that corner"
+    )
 
 
 def _lookup_food_rules(registry: dict[FoodType, str], food_type: FoodType) -> str:
     return registry.get(food_type, "")
+
+
+def _poster_food_rules_with_menu(
+    base_rules: str,
+    *,
+    menu_name: str,
+    variant: ImageVariantType,
+) -> str:
+    """이미지 모델이 메뉴명과 다른 음식을 그리지 않도록 subject에 메뉴를 명시한다."""
+
+    if variant != "poster":
+        return base_rules
+
+    menu = (menu_name or "").strip()
+    if not menu:
+        return base_rules
+
+    return f"{base_rules}, must clearly depict the menu item: {menu}"
 
 
 def uses_custom_template(food_type: FoodType, variant: ImageVariantType) -> bool:
@@ -585,7 +618,11 @@ def build_template_context(
         "extra_notes_line": "",
         "food_subject_rules": FOOD_STUDIO_SUBJECT_RULES[food_type],
         "studio_scene_rules": FOOD_STUDIO_SCENE_RULES[food_type],
-        "poster_food_rules": _lookup_food_rules(FOOD_POSTER_FOOD_RULES, food_type),
+        "poster_food_rules": _poster_food_rules_with_menu(
+            _lookup_food_rules(FOOD_POSTER_FOOD_RULES, food_type),
+            menu_name=menu_name,
+            variant=variant,
+        ),
         "poster_background_rules": _lookup_food_rules(
             FOOD_POSTER_BACKGROUND_RULES, food_type
         ),

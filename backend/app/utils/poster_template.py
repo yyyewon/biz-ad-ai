@@ -14,7 +14,9 @@ from app.utils.font_registry import _get_tone_block, _load_manifest, _normalize_
 PosterBadgeStyle = Literal["outline", "filled"]
 
 _DEFAULT_TEMPLATE: dict[str, Any] = {
-    "headline_size_ratio": 0.040,
+    "headline_size_ratio": 0.050,
+    "subline_size_ratio": 0.034,
+    "sticker_size_ratio": 0.028,
     "menu_size_ratio": 0.112,
     "price_size_ratio": 0.042,
     "store_size_ratio": 0.046,
@@ -25,30 +27,30 @@ _DEFAULT_TEMPLATE: dict[str, Any] = {
     "badge_pad_y_ratio": 0.016,
     "badge_outline_width_ratio": 0.0034,
     "price_cx_ratio": 0.76,
-    "price_anchor": "food_top_right",
+    "price_anchor": "top_right",
 }
 
 _TONE_TEMPLATE_DEFAULTS: dict[str, dict[str, Any]] = {
     "캐주얼·친근": {
-        "headline_size_ratio": 0.042,
+        "headline_size_ratio": 0.052,
         "menu_size_ratio": 0.114,
         "badge_style": "filled",
     },
     "정중·신뢰": {
-        "headline_size_ratio": 0.038,
+        "headline_size_ratio": 0.048,
         "menu_size_ratio": 0.102,
         "badge_style": "filled",
         "badge_outline_width_ratio": 0.0030,
     },
     "고급·감성": {
-        "headline_size_ratio": 0.036,
+        "headline_size_ratio": 0.046,
         "menu_size_ratio": 0.106,
         "headline_menu_gap_ratio": 0.018,
         "badge_style": "filled",
         "badge_pad_x_ratio": 0.036,
     },
     "유머·이벤트": {
-        "headline_size_ratio": 0.044,
+        "headline_size_ratio": 0.054,
         "menu_size_ratio": 0.110,
         "badge_style": "filled",
         "badge_pad_x_ratio": 0.034,
@@ -62,6 +64,8 @@ class PosterTemplateSpec:
     """포스터 타이포 계층·pill 스타일."""
 
     headline_size_ratio: float
+    subline_size_ratio: float
+    sticker_size_ratio: float
     menu_size_ratio: float
     price_size_ratio: float
     store_size_ratio: float
@@ -72,7 +76,7 @@ class PosterTemplateSpec:
     badge_pad_y_ratio: float
     badge_outline_width_ratio: float
     price_cx_ratio: float
-    price_anchor: Literal["layout", "menu_right", "food_top_right"]
+    price_anchor: Literal["layout", "menu_right", "food_top_right", "top_right"]
 
 
 def resolve_poster_template(tone: str | None = None) -> PosterTemplateSpec:
@@ -94,12 +98,14 @@ def resolve_poster_template(tone: str | None = None) -> PosterTemplateSpec:
     if badge_style not in ("outline", "filled"):
         badge_style = "outline"
 
-    price_anchor = str(merged.get("price_anchor", "food_top_right"))
-    if price_anchor not in ("layout", "menu_right", "food_top_right"):
-        price_anchor = "food_top_right"
+    price_anchor = str(merged.get("price_anchor", "top_right"))
+    if price_anchor not in ("layout", "menu_right", "food_top_right", "top_right"):
+        price_anchor = "top_right"
 
     return PosterTemplateSpec(
         headline_size_ratio=float(merged["headline_size_ratio"]),
+        subline_size_ratio=float(merged["subline_size_ratio"]),
+        sticker_size_ratio=float(merged["sticker_size_ratio"]),
         menu_size_ratio=float(merged["menu_size_ratio"]),
         price_size_ratio=float(merged["price_size_ratio"]),
         store_size_ratio=float(merged["store_size_ratio"]),
@@ -115,7 +121,9 @@ def resolve_poster_template(tone: str | None = None) -> PosterTemplateSpec:
 
 
 _RATIO_BOUNDS: dict[str, tuple[float, float]] = {
-    "headline_size_ratio": (0.028, 0.052),
+    "headline_size_ratio": (0.032, 0.058),
+    "subline_size_ratio": (0.026, 0.042),
+    "sticker_size_ratio": (0.022, 0.034),
     "menu_size_ratio": (0.082, 0.128),
     "price_size_ratio": (0.030, 0.048),
     "store_size_ratio": (0.032, 0.052),
@@ -135,6 +143,8 @@ def apply_template_overrides(
 
     merged: dict[str, Any] = {
         "headline_size_ratio": base.headline_size_ratio,
+        "subline_size_ratio": base.subline_size_ratio,
+        "sticker_size_ratio": base.sticker_size_ratio,
         "menu_size_ratio": base.menu_size_ratio,
         "price_size_ratio": base.price_size_ratio,
         "store_size_ratio": base.store_size_ratio,
@@ -163,12 +173,14 @@ def apply_template_overrides(
     if badge_style not in ("outline", "filled"):
         badge_style = "outline"
 
-    price_anchor = str(merged.get("price_anchor", "food_top_right"))
-    if price_anchor not in ("layout", "menu_right", "food_top_right"):
-        price_anchor = "food_top_right"
+    price_anchor = str(merged.get("price_anchor", "top_right"))
+    if price_anchor not in ("layout", "menu_right", "food_top_right", "top_right"):
+        price_anchor = "top_right"
 
     return PosterTemplateSpec(
         headline_size_ratio=float(merged["headline_size_ratio"]),
+        subline_size_ratio=float(merged["subline_size_ratio"]),
+        sticker_size_ratio=float(merged["sticker_size_ratio"]),
         menu_size_ratio=float(merged["menu_size_ratio"]),
         price_size_ratio=float(merged["price_size_ratio"]),
         store_size_ratio=float(merged["store_size_ratio"]),
@@ -197,6 +209,8 @@ def resolve_poster_template_for_layout(
         base,
         {
             "headline_size_ratio": vlm_template.headline_size_ratio,
+            "subline_size_ratio": vlm_template.subline_size_ratio,
+            "sticker_size_ratio": vlm_template.sticker_size_ratio,
             "menu_size_ratio": vlm_template.menu_size_ratio,
             "price_size_ratio": vlm_template.price_size_ratio,
             "store_size_ratio": vlm_template.store_size_ratio,
@@ -205,7 +219,5 @@ def resolve_poster_template_for_layout(
             "badge_pad_x_ratio": vlm_template.badge_pad_x_ratio,
             "badge_pad_y_ratio": vlm_template.badge_pad_y_ratio,
             "badge_outline_width_ratio": vlm_template.badge_outline_width_ratio,
-            "price_cx_ratio": vlm_template.price_cx_ratio,
-            "price_anchor": vlm_template.price_anchor,
         },
     )
