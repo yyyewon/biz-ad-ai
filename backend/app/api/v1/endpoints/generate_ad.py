@@ -122,7 +122,8 @@ async def generate_ad_endpoint(
         )
 
     logger.info(
-        "generate_ad_endpoint_started | store_name={} | menu_name={} | has_image={} | food={}",
+        "generate_ad_endpoint_started | user_id={} | store_name={} | menu_name={} | has_image={} | food={}",
+        current_user["id"] if current_user else None,
         store_name,
         menu_name,
         bool(image_bytes),
@@ -155,14 +156,17 @@ async def generate_ad_endpoint(
                     on_progress=_on_progress,
                 )
 
+            usage_count = None
             if current_user and _should_count_daily_usage(result):
-                await increment_daily_usage_async(current_user["id"])
+                usage_count = await increment_daily_usage_async(current_user["id"])
 
             logger.info(
-                "generate_ad_endpoint_completed | store_name={} | menu_name={} | partial_success={}",
+                "generate_ad_endpoint_completed | user_id={} | store_name={} | menu_name={} | partial_success={} | usage_count={}",
+                current_user["id"] if current_user else None,
                 store_name,
                 menu_name,
                 result.get("partial_success") if isinstance(result, dict) else None,
+                usage_count,
             )
 
             await progress_queue.put({"event": "result", "data": result})

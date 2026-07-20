@@ -7,7 +7,7 @@ import threading
 import time
 import streamlit as st
 
-from core.state import prev_step, reset_all, increment_local_generation_count
+from core.state import prev_step, reset_all
 from core.api_client import generate_ad
 from core.auth import is_logged_in, refresh_me, is_quota_exceeded, get_daily_usage, is_dev_guest_mode
 from core.config import KAKAO_LOGIN_ENDPOINT
@@ -157,10 +157,20 @@ def _render_stage_status(message_placeholder, stages: dict) -> None:
     )
 
 
+def _capture_generation_cookies(*, mock: bool) -> dict | None:
+    """
+    메인 Streamlit 스레드에서 로그인 쿠키를 복사해 생성 작업에 전달
+    """
+    if mock or not is_logged_in():
+        return None
+    return dict(st.context.cookies)
+
+
 def _run_generation(loading_container=None, message_placeholder=None, progress_bar=None, start_time=None) -> None:
     b = st.session_state.business
     u = st.session_state.upload
     mock = st.session_state.mock_mode
+    request_cookies = _capture_generation_cookies(mock=mock)
 
     st.session_state.generation.update(status="loading", error_message="")
     if loading_container is None or message_placeholder is None or progress_bar is None or start_time is None:
@@ -200,7 +210,7 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
                 tone=u["tone"],
                 image_request=u["image_request"],
                 llm_request=u["llm_request"],
-                cookies=st.context.cookies,
+                cookies=request_cookies,
                 mock=mock,
                 on_stage=_on_stage,
             )
@@ -233,8 +243,8 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
             error_message=result["error"],
             error_code=result.get("error_code"),
         )
-        if not mock and result.get("error_code") == "DAILY_LIMIT_EXCEEDED":
-            refresh_me(st.context.cookies)
+        if request_cookies and result.get("error_code") == "DAILY_LIMIT_EXCEEDED":
+            refresh_me(request_cookies)
         st.rerun()
         return
 
@@ -248,10 +258,8 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
         signature=_input_signature(),
     )
 
-    if not mock:
-        refresh_me(st.context.cookies)
-
-    increment_local_generation_count()
+    if request_cookies:
+        refresh_me(request_cookies)
 
     st.rerun()
 

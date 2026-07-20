@@ -42,39 +42,18 @@ def _restore_business_from_query_params() -> None:
         st.session_state.business = business
 
 
-def _save_local_generation_count() -> None:
+def persist_business_state() -> None:
     """
-    목업/게스트 모드용 로컬 생성 횟수를 query param에 저장
+    새로고침에 대비해 가게 정보를 query param에 저장
     """
-    count = st.session_state.get("local_generation_count", 0)
-    st.query_params["local_gen_count"] = str(count)
-
-
-def _restore_local_generation_count() -> None:
-    """
-    query param에서 로컬 생성 횟수를 복원
-    """
-    qp = st.query_params
-    raw = qp.get("local_gen_count")
-    if raw:
-        try:
-            st.session_state.local_generation_count = int(raw)
-        except (ValueError, TypeError):
-            st.session_state.local_generation_count = 0
-    else:
-        st.session_state.local_generation_count = 0
-
-
-def persist_state() -> None:
-    """새로고침 대비: 현재 상태를 query param에 저장한다."""
     _save_business_to_query_params()
-    _save_local_generation_count()
 
 
-def restore_state() -> None:
-    """새로고침 후: query param에서 상태를 복원한다."""
+def restore_business_state() -> None:
+    """
+    새로고침 후 query param에서 가게 정보를 복원
+    """
     _restore_business_from_query_params()
-    _restore_local_generation_count()
 
 
 # ---------------------------------------------------------------
@@ -107,13 +86,12 @@ def init_state() -> None:
         "dev_guest_mode": DEV_GUEST_MODE_DEFAULT,
         "auth": {"access_token": None, "refresh_token": None, "user": None},
         "business_form_epoch": 0,
-        "local_generation_count": 0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
-    restore_state()
+    restore_business_state()
 
 
 # ---------------------------------------------------------------
@@ -185,17 +163,6 @@ def set_generation_result(caption: str, images: list[dict]) -> None:
     st.session_state.generation.update(
         {"status": "done", "caption": caption, "images": images, "error_message": "", "error_code": None}
     )
-
-
-def increment_local_generation_count() -> None:
-    """목업/게스트 모드에서 로컬 생성 횟수를 1 증가시키고 query param에 저장한다."""
-    count = st.session_state.get("local_generation_count", 0) + 1
-    st.session_state.local_generation_count = count
-    _save_local_generation_count()
-
-
-def get_local_generation_count() -> int:
-    return st.session_state.get("local_generation_count", 0)
 
 
 def reset_all() -> None:

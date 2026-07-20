@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import streamlit as st
 
-from core.state import init_state, persist_state
+from core.state import init_state, persist_business_state
 from core.api_client import check_backend_health
 from core.auth import (
     init_auth_state,
@@ -47,10 +47,8 @@ def _render_login_section() -> None:
         user = st.session_state.auth.get("user") or {}
         nickname = user.get("nickname") or "사용자"
         usage = user.get("daily_usage") or {}
-        server_used = usage.get("used", 0)
+        used = usage.get("used", 0)
         limit = usage.get("limit", 3)
-        local_count = st.session_state.get("local_generation_count", 0)
-        used = max(server_used, local_count)
 
         st.success(f"{nickname}님 환영해요 👋")
         st.caption(f"오늘 생성 {used}/{limit}회 사용")
@@ -62,10 +60,6 @@ def _render_login_section() -> None:
         st.caption("메인 화면에서 카카오 로그인 후 이용할 수 있어요.")
         if st.session_state.mock_mode:
             st.caption("지금은 목업 모드라 로그인 없이 체험 중이에요.")
-
-    if not is_logged_in() and (st.session_state.mock_mode or is_dev_guest_mode()):
-        local_count = st.session_state.get("local_generation_count", 0)
-        st.caption(f"로컬 생성 횟수: {local_count}회")
 
 
 def _render_dev_tools() -> None:
@@ -138,7 +132,7 @@ def _render_sidebar() -> None:
 def main() -> None:
     init_state()
 
-    persist_state()
+    persist_business_state()
     init_auth_state()
     check_auth_status_from_cookies(st.context.cookies)
 

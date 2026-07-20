@@ -57,6 +57,9 @@ def refresh_me(cookies: dict) -> None:
     """
     로그인된 상태에서 오늘 생성 사용량 등 최신 정보를 다시 가져오기
     """
+    if not is_logged_in():
+        return
+
     try:
         res = requests.get(
             ME_ENDPOINT,
@@ -140,7 +143,7 @@ def is_quota_exceeded() -> bool:
     """
     오늘 생성 가능 횟수를 모두 사용했는지 확인
     """
-    if st.session_state.get("mock_mode"):
+    if st.session_state.get("mock_mode") or not is_logged_in():
         return False
     usage = get_daily_usage()
     if not usage:
