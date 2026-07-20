@@ -1,0 +1,7 @@
+# PyTorch (GPU VM) — install_requirements.sh 1단계 전용
+# 단독 설치: pip install -r backend/requirements-torch.txt
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+torch==2.12.1
+torchvision==0.27.1
+torchaudio==2.11.0

@@ -218,6 +218,21 @@ def _apply_vlm_overrides(spec: PosterLayoutSpec, image: Image.Image) -> PosterLa
         logger.info("poster_vlm_skipped | reason=disabled_or_failed | using_rules_palette=true")
         return spec
 
+    merged_palette, palette_used_rules = _reconcile_vlm_palette(
+        hints.palette,
+        rules_palette=spec.palette,
+        image=image,
+        food_bbox=spec.food_bbox,
+    )
+    if palette_used_rules:
+        logger.info("poster_vlm_palette_reconciled | used_rules_fallback=true")
+
+    scrim_max_alpha = (
+        hints.scrim_max_alpha if hints.scrim_max_alpha is not None else spec.scrim_max_alpha
+    )
+    if palette_used_rules and scrim_max_alpha < 60:
+        scrim_max_alpha = max(scrim_max_alpha, 60)
+
     return PosterLayoutSpec(
         width=spec.width,
         height=spec.height,
@@ -234,14 +249,107 @@ def _apply_vlm_overrides(spec: PosterLayoutSpec, image: Image.Image) -> PosterLa
         ),
         store_margin_right=spec.store_margin_right,
         store_margin_bottom=spec.store_margin_bottom,
-        palette=hints.palette,
+        palette=merged_palette,
         scrim_height=hints.scrim_height if hints.scrim_height is not None else spec.scrim_height,
-        scrim_max_alpha=(
-            hints.scrim_max_alpha if hints.scrim_max_alpha is not None else spec.scrim_max_alpha
-        ),
+        scrim_max_alpha=scrim_max_alpha,
         used_fallback=spec.used_fallback,
         vlm_template=hints.template,
     )
+
+
+def _reconcile_vlm_palette(
+    vlm_palette: PosterPaletteSpec,
+    *,
+    rules_palette: PosterPaletteSpec,
+    image: Image.Image,
+    food_bbox: tuple[int, int, int, int] | None,
+) -> tuple[PosterPaletteSpec, bool]:
+    """VLM palette를 배경 대비·퇴화 출력 기준으로 보정한다."""
+
+    width, height = image.size
+    top_bottom = int(height * 0.34)
+    if food_bbox:
+        top_bottom = min(top_bottom, max(int(height * 0.12), food_bbox[1] - 8))
+
+    top_bg = _sample_background_mean_rgb(
+        image,
+        None,
+        (int(width * 0.12), int(height * 0.03), int(width * 0.88), top_bottom),
+    )
+    bottom_bg = _sample_background_mean_rgb(
+        image,
+        None,
+        (int(width * 0.52), int(height * 0.84), width, height),
+    )
+
+    if _is_degenerate_vlm_palette(vlm_palette):
+        return rules_palette, True
+
+    used_rules = False
+
+    primary_text = vlm_palette.primary_text
+    primary_stroke = vlm_palette.primary_stroke
+    if not _text_bg_contrast_ok(primary_text, top_bg):
+        primary_text = rules_palette.primary_text
+        primary_stroke = rules_palette.primary_stroke
+        used_rules = True
+    elif not _text_bg_contrast_ok(primary_stroke, top_bg):
+        primary_stroke = _primary_stroke_color(top_bg, primary_text)
+
+    store_text = vlm_palette.store_text
+    store_stroke = vlm_palette.store_stroke
+    if not _text_bg_contrast_ok(store_text, bottom_bg):
+        store_text = rules_palette.store_text
+        store_stroke = rules_palette.store_stroke
+        used_rules = True
+    elif not _text_bg_contrast_ok(store_stroke, bottom_bg):
+        store_stroke = _primary_stroke_color(bottom_bg, store_text)
+
+    badge_text = vlm_palette.badge_text
+    badge_outline = vlm_palette.badge_outline
+    if not _text_bg_contrast_ok(badge_text, top_bg):
+        badge_text = primary_text
+        used_rules = True
+    if not _text_bg_contrast_ok(badge_outline, top_bg):
+        badge_outline = primary_stroke if _text_bg_contrast_ok(primary_stroke, top_bg) else primary_text
+        used_rules = True
+
+    return (
+        PosterPaletteSpec(
+            primary_text=primary_text,
+            primary_stroke=primary_stroke,
+            store_text=store_text,
+            store_stroke=store_stroke,
+            badge_text=badge_text,
+            badge_outline=badge_outline,
+        ),
+        used_rules,
+    )
+
+
+def _is_degenerate_vlm_palette(palette: PosterPaletteSpec) -> bool:
+    """VLM이 예시/기본값만 복사한 palette인지 검사."""
+
+    fields = (
+        palette.primary_text,
+        palette.primary_stroke,
+        palette.store_text,
+        palette.store_stroke,
+        palette.badge_text,
+        palette.badge_outline,
+    )
+    if all(all(channel >= 250 for channel in rgb) for rgb in fields):
+        return True
+    return len(set(fields)) == 1
+
+
+def _text_bg_contrast_ok(
+    text_rgb: tuple[int, int, int],
+    background_rgb: tuple[int, int, int],
+    *,
+    min_delta: float = 42.0,
+) -> bool:
+    return abs(_relative_luminance(text_rgb) - _relative_luminance(background_rgb)) >= min_delta
 
 
 def _get_rembg_session():

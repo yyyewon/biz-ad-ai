@@ -57,13 +57,17 @@ Return ONLY one JSON object (no markdown) for text overlay design:
 }
 
 Rules:
+- Analyze the TOP background area (not the food) for headline/menu/price colors.
+- Analyze the BOTTOM-RIGHT background for store name colors.
+- NEVER set every RGB field to [255, 255, 255] or identical values.
+- On light/beige backgrounds use DARK text (e.g. [60, 40, 30]); on dark backgrounds use LIGHT text.
 - Text colors should harmonize with the BACKGROUND hue (not food colors).
 - Ratios are 0.0-1.0 relative to image width/height.
 - typography.headline_size_ratio should be smaller than typography.menu_size_ratio.
 - typography.badge_style must be "outline" or "filled".
 - layout.price_anchor must be "menu_right" or "layout".
-- scrim.max_alpha is 0-150 (0 means no scrim).
-- Use readable contrast; stroke can be white or a darker hue variant.
+- scrim.max_alpha is 0-150 (use 60-120 on busy or light backgrounds).
+- Use readable contrast; stroke must contrast with both text and background.
 """
 
 
@@ -348,13 +352,19 @@ def _ensure_gptq_runtime(model_id: str) -> None:
         return
 
     try:
-        from gptqmodel import patch_hf
-
-        patch_hf()
+        import gptqmodel  # noqa: F401 — 5.8+ HF 네이티브 연동 등록
     except ImportError as exc:
         raise ImportError(
             "GPTQ VLM requires `pip install optimum gptqmodel qwen-vl-utils`"
         ) from exc
+
+    # gptqmodel <5.8: patch_hf 필요. 5.8+는 제거됨(네이티브 HF/Optimum 연동).
+    try:
+        from gptqmodel import patch_hf
+
+        patch_hf()
+    except ImportError:
+        logger.debug("gptqmodel patch_hf skipped (native HF integration)")
 
 
 def _get_vlm_model(*, model_id: str, settings: dict):

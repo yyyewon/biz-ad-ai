@@ -59,7 +59,7 @@ filelock==3.29.6
     #   torch
 flatbuffers==25.12.19
     # via onnxruntime-gpu
-fsspec==2026.6.0
+fsspec==2026.4.0
     # via
     #   huggingface-hub
     #   torch
@@ -131,7 +131,7 @@ networkx==3.6.1
     #   torch
 numba==0.66.0
     # via pymatting
-numpy==2.4.6
+numpy==2.2.6
     # via
     #   -r backend/requirements.in
     #   accelerate
@@ -229,7 +229,7 @@ regex==2026.6.28
     # via
     #   diffusers
     #   transformers
-rembg[gpu]==2.0.76
+rembg[gpu]==2.0.67
     # via -r backend/requirements.in
 requests==2.34.2
     # via
@@ -324,9 +324,7 @@ win32-setctime==1.2.0
     # via loguru
 zipp==4.1.0
     # via importlib-metadata
-
-# Poster VLM GPTQ runtime (pip-compile on Windows may skip; resolved at install on Linux GPU)
-gptqmodel>=2.4.0
+gptqmodel==5.8.0
     # via -r backend/requirements.in
 
 # The following packages are considered to be unsafe in a requirements file:

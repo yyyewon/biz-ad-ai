@@ -19,10 +19,11 @@ ENV HF_HOME=/models/hf-cache
 ENV HF_HUB_CACHE=/models/hf-cache/hub
 ENV U2NET_HOME=/models/u2net
 
-# 의존성 설치
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# 의존성 설치 (torch 먼저 → gptqmodel은 빌드 시 torch 필요)
+COPY requirements-torch.txt requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements-torch.txt && \
+    pip install --no-cache-dir -r requirements.txt --no-build-isolation
 
 # 소스 전체 복사
 COPY . .

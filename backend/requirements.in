@@ -1,6 +1,5 @@
-# =========================
-# Backend API
-# =========================
+# GPU VM 설치: bash backend/scripts/install_requirements.sh
+# (pip install -r requirements.txt 단독은 gptqmodel 빌드 실패 가능)
 fastapi
 uvicorn[standard]
 python-multipart
@@ -47,16 +46,20 @@ openai
 # Poster design VLM (Qwen2-VL GPTQ)
 qwen-vl-utils
 optimum
-gptqmodel>=2.4.0
+gptqmodel==5.8.0
 
 # pytest traceback / terminal output formatting
 Pygments
 
 # Image background removal (poster layout analysis)
-rembg[gpu]
+# 2.0.76 은 numpy>=2.3 요구 → gptqmodel 5.8(numpy==2.2.6)과 충돌
+rembg[gpu]==2.0.67
 
-# numba/pymatting compatibility for rembg
-numpy<2.5
+# numba/pymatting compatibility for rembg; gptqmodel 5.8 pins numpy==2.2.6
+numpy==2.2.6
+
+# gptqmodel→datasets 는 fsspec<=2026.4.0 요구 (torch compile 시 2026.6.0 과 충돌)
+fsspec==2026.4.0
 
 # TestClient dependency for Starlette/FastAPI tests
 httpx2
