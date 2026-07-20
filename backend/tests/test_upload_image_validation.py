@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import json
+import re
 from io import BytesIO
 
 import pytest
@@ -43,6 +45,21 @@ def _override_image_ad_login(user_id: int = 123):
     }
 
 
+def _parse_sse_events(response_text: str) -> list[dict]:
+    """SSE 응답 본문에서 data: 라인들을 파싱해 이벤트 dict 목록을 반환한다."""
+    events = []
+    for line in response_text.split("\n"):
+        line = line.strip()
+        if line.startswith("data:"):
+            payload_str = line[len("data:"):].strip()
+            if payload_str:
+                try:
+                    events.append(json.loads(payload_str))
+                except json.JSONDecodeError:
+                    pass
+    return events
+
+
 def test_generate_endpoint_rejects_too_large_image(monkeypatch):
     from app.utils import upload_image_validator
 
@@ -63,12 +80,13 @@ def test_generate_endpoint_rejects_too_large_image(monkeypatch):
         },
     )
 
-    body = response.json()
-
-    assert response.status_code == 413
-    assert body["success"] is False
-    assert body["data"] is None
-    assert body["error"]["code"] == "IMAGE_FILE_TOO_LARGE"
+    # 엔드포인트는 SSE StreamingResponse를 반환하므로
+    # 200 응답 안에 error 이벤트가 포함된다.
+    assert response.status_code == 200
+    events = _parse_sse_events(response.text)
+    error_event = next((e for e in events if e.get("event") == "error"), None)
+    assert error_event is not None
+    assert error_event["code"] == "IMAGE_FILE_TOO_LARGE"
 
 
 def test_generate_endpoint_rejects_corrupted_image():
@@ -87,12 +105,11 @@ def test_generate_endpoint_rejects_corrupted_image():
         },
     )
 
-    body = response.json()
-
-    assert response.status_code == 400
-    assert body["success"] is False
-    assert body["data"] is None
-    assert body["error"]["code"] == "INVALID_IMAGE_FILE"
+    assert response.status_code == 200
+    events = _parse_sse_events(response.text)
+    error_event = next((e for e in events if e.get("event") == "error"), None)
+    assert error_event is not None
+    assert error_event["code"] == "INVALID_IMAGE_FILE"
 
 
 def test_generate_endpoint_rejects_gif_image():
@@ -111,12 +128,11 @@ def test_generate_endpoint_rejects_gif_image():
         },
     )
 
-    body = response.json()
-
-    assert response.status_code == 415
-    assert body["success"] is False
-    assert body["data"] is None
-    assert body["error"]["code"] == "UNSUPPORTED_IMAGE_FORMAT"
+    assert response.status_code == 200
+    events = _parse_sse_events(response.text)
+    error_event = next((e for e in events if e.get("event") == "error"), None)
+    assert error_event is not None
+    assert error_event["code"] == "UNSUPPORTED_IMAGE_FORMAT"
 
 
 def test_image_ad_endpoint_rejects_gif_base64():

@@ -15,6 +15,7 @@ from app.core.model_config import get_model_settings, get_provider_name
 from app.services.providers.openai_image_provider import OpenAIImageProvider
 from app.services.providers.openai_text_provider import OpenAITextProvider
 from app.services.providers.hf_image_provider import HFImageProvider
+from app.services.providers.base import ImageGenerationProvider
 
 
 def get_text_provider() -> OpenAITextProvider:
@@ -54,7 +55,7 @@ def get_text_provider() -> OpenAITextProvider:
     )
 
 
-def get_image_provider() -> OpenAIImageProvider:
+def get_image_provider() -> ImageGenerationProvider:
     """
     active_profile 기준 이미지 생성 provider를 반환한다.
     """

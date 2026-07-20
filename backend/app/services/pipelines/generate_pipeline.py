@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from loguru import logger
 
@@ -57,6 +57,26 @@ def _safe_model_info(role: str) -> dict[str, str]:
             "provider": "unknown",
             "model": "unknown",
         }
+
+
+# 진행 상황 콜백 타입: 이벤트 dict를 받아 비동기로 처리한다(SSE 큐에 push).
+ProgressCallback = Callable[[dict[str, Any]], Awaitable[None]]
+
+
+async def _emit_progress(
+    on_progress: ProgressCallback | None,
+    event: dict[str, Any],
+) -> None:
+    """
+    진행 상황 콜백을 안전하게 호출한다.
+    콜백이 없거나 예외가 발생해도 파이프라인 흐름에 영향을 주지 않는다.
+    """
+    if on_progress is None:
+        return
+    try:
+        await on_progress(event)
+    except Exception as exc:
+        logger.warning("generate_pipeline_progress_callback_failed | error={}", str(exc))
 
 
 def _build_image_payload(
@@ -191,6 +211,7 @@ async def run_generate_pipeline(
     price: str = "",
     store_location: str = "",
     image_bytes: bytes | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """
     통합 광고 생성 파이프라인.
@@ -201,6 +222,11 @@ async def run_generate_pipeline(
     3. 업로드 이미지 bytes를 image_pipeline에 직접 전달
     4. 광고 이미지 3장 생성
     5. 생성 이미지 base64를 응답에 포함
+
+    on_progress:
+        진행 상황을 프론트엔드로 스트리밍(SSE)하기 위한 비동기 콜백.
+        text/image 트랙의 시작·진행·완료 시점에 이벤트 dict를 전달한다.
+        None이면 진행 상황 보고를 생략한다.
     """
 
     pipeline_request_id = f"gen-{uuid.uuid4().hex[:8]}"
@@ -243,34 +269,79 @@ async def run_generate_pipeline(
             image_model_info = _safe_model_info("image_generation")
 
             async def _run_text_stage() -> str:
-                with measure_stage(
-                    pipeline="ad_generate",
-                    stage="text_generation",
-                    request_id=pipeline_request_id,
-                    profile=profile_name,
-                    provider=text_model_info["provider"],
-                    model=text_model_info["model"],
-                    extra={
-                        "store_name": store_name,
-                        "menu_name": menu_name,
-                        "has_image": True,
-                        "food_type": resolved_food_type,
+                await _emit_progress(
+                    on_progress,
+                    {
+                        "event": "stage",
+                        "track": "text",
+                        "status": "start",
+                        "label": "광고 문구를 생성 중이에요",
                     },
-                ):
-                    return await run_text_pipeline(
-                        store_name=store_name,
-                        menu_name=menu_name,
-                        purpose=purpose,
-                        llm_request=llm_request,
-                        tone=tone,
-                        food=food,
-                        price=price,
-                        store_location=store_location,
+                )
+                try:
+                    with measure_stage(
+                        pipeline="ad_generate",
+                        stage="text_generation",
+                        request_id=pipeline_request_id,
+                        profile=profile_name,
+                        provider=text_model_info["provider"],
+                        model=text_model_info["model"],
+                        extra={
+                            "store_name": store_name,
+                            "menu_name": menu_name,
+                            "has_image": True,
+                            "food_type": resolved_food_type,
+                        },
+                    ):
+                        return await run_text_pipeline(
+                            store_name=store_name,
+                            menu_name=menu_name,
+                            purpose=purpose,
+                            llm_request=llm_request,
+                            tone=tone,
+                            food=food,
+                            price=price,
+                            store_location=store_location,
+                        )
+                finally:
+                    await _emit_progress(
+                        on_progress,
+                        {
+                            "event": "stage",
+                            "track": "text",
+                            "status": "done",
+                            "label": "광고 문구가 완성됐어요",
+                        },
                     )
 
             text_task = asyncio.create_task(_run_text_stage())
 
             try:
+                await _emit_progress(
+                    on_progress,
+                    {
+                        "event": "stage",
+                        "track": "image",
+                        "status": "start",
+                        "label": "이미지를 생성 중이에요 (0/{})".format(image_payload.num_images),
+                        "current": 0,
+                        "total": image_payload.num_images,
+                    },
+                )
+
+                async def _on_variant_done(done_count: int, total: int) -> None:
+                    await _emit_progress(
+                        on_progress,
+                        {
+                            "event": "stage",
+                            "track": "image",
+                            "status": "progress",
+                            "label": "이미지를 생성 중이에요 ({}/{})".format(done_count, total),
+                            "current": done_count,
+                            "total": total,
+                        },
+                    )
+
                 with measure_stage(
                     pipeline="ad_generate",
                     stage="image_generation",
@@ -286,6 +357,7 @@ async def run_generate_pipeline(
                     image_result = await generate_image_ads(
                         payload=image_payload,
                         source_image_bytes=image_bytes,
+                        on_variant_done=_on_variant_done,
                     )
 
                 _record_image_pipeline_stage_metrics(
@@ -319,6 +391,18 @@ async def run_generate_pipeline(
                 image_generation = _build_image_generation_response(image_result)
                 image_generation_success = True
 
+                await _emit_progress(
+                    on_progress,
+                    {
+                        "event": "stage",
+                        "track": "image",
+                        "status": "done",
+                        "label": "이미지가 완성됐어요 ({0}/{0})".format(image_payload.num_images),
+                        "current": image_payload.num_images,
+                        "total": image_payload.num_images,
+                    },
+                )
+
             except Exception as exc:
                 logger.exception(
                     "image_generation_failed_in_generate_pipeline | request_id={} | error={}",
@@ -326,8 +410,10 @@ async def run_generate_pipeline(
                     str(exc),
                 )
 
-                fallback_b64 = encode_image_bytes_to_base64(image_bytes)
-                images = [fallback_b64, fallback_b64, fallback_b64]
+                # 요청3: 이미지 생성 실패 시 원본 이미지를 노출하지 않는다.
+                # 과거처럼 업로드 원본을 fallback으로 반환하는 대신, 빈 이미지 결과와
+                # 실패 상태만 남겨 프론트엔드가 에러 화면(재시도/이전 단계)을 띄우게 한다.
+                images = []
 
                 partial_success = True
                 image_generation_success = False
@@ -337,7 +423,7 @@ async def run_generate_pipeline(
                 warnings.append(
                     {
                         "code": error_code,
-                        "message": "포스터 생성 실패로 fallback 이미지를 반환했습니다.",
+                        "message": "이미지 생성에 실패했어요. 잠시 후 다시 시도해 주세요.",
                         "detail": {
                             "request_id": pipeline_request_id,
                             "error_type": exc.__class__.__name__,
@@ -346,30 +432,60 @@ async def run_generate_pipeline(
                     }
                 )
 
+                await _emit_progress(
+                    on_progress,
+                    {
+                        "event": "stage",
+                        "track": "image",
+                        "status": "failed",
+                        "label": "이미지 생성에 실패했어요",
+                    },
+                )
+
             caption = await text_task
         else:
-            with measure_stage(
-                pipeline="ad_generate",
-                stage="text_generation",
-                request_id=pipeline_request_id,
-                profile=profile_name,
-                provider=text_model_info["provider"],
-                model=text_model_info["model"],
-                extra={
-                    "store_name": store_name,
-                    "menu_name": menu_name,
-                    "has_image": False,
+            await _emit_progress(
+                on_progress,
+                {
+                    "event": "stage",
+                    "track": "text",
+                    "status": "start",
+                    "label": "광고 문구를 생성 중이에요",
                 },
-            ):
-                caption = await run_text_pipeline(
-                    store_name=store_name,
-                    menu_name=menu_name,
-                    purpose=purpose,
-                    llm_request=llm_request,
-                    tone=tone,
-                    food=food,
-                    price=price,
-                    store_location=store_location,
+            )
+            try:
+                with measure_stage(
+                    pipeline="ad_generate",
+                    stage="text_generation",
+                    request_id=pipeline_request_id,
+                    profile=profile_name,
+                    provider=text_model_info["provider"],
+                    model=text_model_info["model"],
+                    extra={
+                        "store_name": store_name,
+                        "menu_name": menu_name,
+                        "has_image": False,
+                    },
+                ):
+                    caption = await run_text_pipeline(
+                        store_name=store_name,
+                        menu_name=menu_name,
+                        purpose=purpose,
+                        llm_request=llm_request,
+                        tone=tone,
+                        food=food,
+                        price=price,
+                        store_location=store_location,
+                    )
+            finally:
+                await _emit_progress(
+                    on_progress,
+                    {
+                        "event": "stage",
+                        "track": "text",
+                        "status": "done",
+                        "label": "광고 문구가 완성됐어요",
+                    },
                 )
 
         response: dict[str, Any] = {

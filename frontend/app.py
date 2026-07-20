@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 import streamlit as st
 
-from core.state import init_state
+from core.state import init_state, persist_state
 from core.api_client import check_backend_health
 from core.auth import (
     init_auth_state,
     check_auth_status_from_cookies,
+    apply_saved_business_info,
     is_logged_in,
     is_dev_guest_mode,
     sync_usage,
@@ -46,8 +47,10 @@ def _render_login_section() -> None:
         user = st.session_state.auth.get("user") or {}
         nickname = user.get("nickname") or "사용자"
         usage = user.get("daily_usage") or {}
-        used = usage.get("used", 0)
+        server_used = usage.get("used", 0)
         limit = usage.get("limit", 3)
+        local_count = st.session_state.get("local_generation_count", 0)
+        used = max(server_used, local_count)
 
         st.success(f"{nickname}님 환영해요 👋")
         st.caption(f"오늘 생성 {used}/{limit}회 사용")
@@ -59,6 +62,11 @@ def _render_login_section() -> None:
         st.caption("메인 화면에서 카카오 로그인 후 이용할 수 있어요.")
         if st.session_state.mock_mode:
             st.caption("지금은 목업 모드라 로그인 없이 체험 중이에요.")
+
+    # 목업/게스트 모드에서도 로컬 생성 횟수 표시
+    if not is_logged_in() and (st.session_state.mock_mode or is_dev_guest_mode()):
+        local_count = st.session_state.get("local_generation_count", 0)
+        st.caption(f"로컬 생성 횟수: {local_count}회")
 
 
 def _render_dev_tools() -> None:
@@ -89,6 +97,12 @@ def _render_sidebar() -> None:
             "목업 모드 (백엔드 없이 테스트)",
             key="mock_mode",
         )
+        if st.session_state.mock_mode:
+            st.toggle(
+                "이미지 생성 실패 시뮬레이션 (목업)",
+                key="simulate_image_failure",
+                help="Step 3에서 이미지 생성 실패 화면을 확인할 때 사용해요.",
+            )
         if is_logged_in():
             st.session_state.dev_guest_mode = False
 
@@ -124,8 +138,20 @@ def _render_sidebar() -> None:
 
 def main() -> None:
     init_state()
+
+    # persist_state를 st.rerun 후에도 호출되도록 main() 마다 실행
+    persist_state()
     init_auth_state()
     check_auth_status_from_cookies(st.context.cookies)
+
+    # 사이드바 렌더링 전에 최신 사용량 및 저장된 가게 정보 동기화
+    sync_usage(st.context.cookies)
+
+    current_step = st.session_state.step
+    previous_step = st.session_state.get("last_rendered_step")
+    entering_step_one = current_step == 1 and previous_step != 1
+    apply_saved_business_info(force=entering_step_one)
+    st.session_state.last_rendered_step = current_step
 
     _inject_css()
     _render_sidebar()
@@ -139,8 +165,6 @@ def main() -> None:
     if not authenticated:
         step_login.render()
         return
-
-    sync_usage(st.context.cookies)
 
     render_topbar(
         mock_mode=st.session_state.mock_mode,

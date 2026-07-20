@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from loguru import logger
 
@@ -136,6 +136,7 @@ async def generate_image_ads(
     payload: ImageAdRequest,
     source_image_bytes: bytes,
     seed: Optional[int] = None,
+    on_variant_done: Callable[[int, int], Awaitable[None]] | None = None,
 ) -> ImageAdResponse:
     """
     이미지 광고 생성 파이프라인.
@@ -145,7 +146,11 @@ async def generate_image_ads(
     - 전처리 source/mask/poster 이미지를 서버 디스크에 저장하지 않는다.
     - provider는 list[bytes]를 반환한다.
     - API 응답용 이미지는 base64 문자열로 변환한다.
-    - 포스터/스튜디오/인스타피드 유형별로 num_images 개수만큼 asyncio.gather로 병렬 실행한다.
+    - 포스터/스튜디오/인스타피드 유형별로 num_images 개수만큼 병렬 실행한다.
+
+    on_variant_done:
+        각 variant 생성이 완료될 때마다 (done_count, total) 로 호출되는 비동기 콜백.
+        프론트엔드 진행률 표시(SSE)용이며, None이면 호출하지 않는다.
     """
 
     started = time.perf_counter()
@@ -256,12 +261,29 @@ async def generate_image_ads(
 
             return idx, variant, variant_outputs[0], variant_prompt
 
-        variant_results = await asyncio.gather(
-            *[
-                _generate_variant_image(idx)
-                for idx in range(payload.num_images)
-            ]
-        )
+        # asyncio.gather 대신 as_completed를 사용해 각 variant가 완료되는 즉시
+        # 진행률 콜백을 호출한다. 최종 결과는 idx 기준으로 정렬해 순서를 보존한다.
+        tasks = [
+            asyncio.create_task(_generate_variant_image(idx))
+            for idx in range(payload.num_images)
+        ]
+        variant_results: list[tuple[int, ImageVariantType, bytes, str]] = []
+
+        for completed in asyncio.as_completed(tasks):
+            result = await completed
+            variant_results.append(result)
+
+            if on_variant_done is not None:
+                try:
+                    await on_variant_done(len(variant_results), payload.num_images)
+                except Exception as exc:
+                    logger.warning(
+                        "image_variant_progress_callback_failed | error={}",
+                        str(exc),
+                    )
+
+        # 완료 순서와 무관하게 idx 오름차순으로 정렬해 일관된 결과 순서 유지
+        variant_results.sort(key=lambda item: item[0])
 
         poster_image_bytes: list[bytes] = []
         applied_variants: list[ImageVariantType] = []

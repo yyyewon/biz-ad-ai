@@ -7,7 +7,7 @@ import threading
 import time
 import streamlit as st
 
-from core.state import prev_step, reset_all
+from core.state import prev_step, reset_all, increment_local_generation_count
 from core.api_client import generate_ad
 from core.auth import is_logged_in, refresh_me, is_quota_exceeded, get_daily_usage, is_dev_guest_mode
 from core.config import KAKAO_LOGIN_ENDPOINT
@@ -69,14 +69,98 @@ def _render_generation_loading_ui() -> tuple[object, object, float, object]:
             '<div class="rg-card-title">⏳ 광고 콘텐츠를 생성하는 중이에요</div>',
             unsafe_allow_html=True,
         )
-        st.caption("문구와 이미지를 준비하는 동안, 진행 상황을 상단에서 확인할 수 있어요.")
+        st.caption("문구와 이미지를 준비하는 동안, 실시간 진행 상황을 확인할 수 있어요.")
 
         message_placeholder = st.empty()
         progress_bar = st.progress(5)
         start_time = time.monotonic()
 
-        message_placeholder.markdown("**0초 경과**")
+        message_placeholder.markdown(
+            '<div class="rg-generation-status">잠시만 기다려 주세요...</div>',
+            unsafe_allow_html=True,
+        )
         return loading_container, message_placeholder, progress_bar, start_time
+
+
+def _compute_progress_from_stages(stages: dict, *, thread_alive: bool = True) -> int:
+    """
+    트랙별 상태(stage_text/stage_image)로부터 진행률(%)을 계산한다.
+    - text 완료 시 50%
+    - image 진행률에 따라 50% ~ 88%
+    - 두 트랙 모두 완료 후 서버 마무리 작업 중에는 88~95%
+    """
+    progress = 5
+    text_status = stages.get("text_status")
+    if text_status == "done":
+        progress = 50
+    elif text_status == "start":
+        progress = max(progress, 20)
+
+    img_current = stages.get("image_current") or 0
+    img_total = stages.get("image_total") or 0
+    img_status = stages.get("image_status")
+    if img_total and img_status in ("progress", "done"):
+        progress = 50 + int((img_current / img_total) * 38)
+    elif img_status == "start":
+        progress = max(progress, 50)
+    elif img_status == "failed":
+        progress = max(progress, 88)
+
+    text_done = text_status == "done"
+    image_finished = img_status in ("done", "failed")
+    if text_done and image_finished and thread_alive:
+        progress = max(progress, 92)
+
+    cap = 95 if thread_alive else 100
+    return min(cap, max(5, progress))
+
+
+def _format_stage_lines(stages: dict) -> str:
+    """
+    트랙별 상태를 사용자용 진행 문장으로 변환한다.
+    한 트랙이라도 진행 중이면 해당 라벨을, 완료면 '완성'을 표시한다.
+    """
+    lines: list[str] = []
+
+    text_status = stages.get("text_status")
+    if text_status == "start":
+        lines.append("✍️ 광고 문구를 생성 중이에요")
+    elif text_status == "done":
+        lines.append("✅ 광고 문구가 완성됐어요")
+
+    img_status = stages.get("image_status")
+    if img_status == "start":
+        lines.append("🎨 이미지를 생성 중이에요 (0/{})".format(stages.get("image_total") or 3))
+    elif img_status == "progress":
+        lines.append(
+            "🎨 이미지를 생성 중이에요 ({}/{})".format(
+                stages.get("image_current") or 0,
+                stages.get("image_total") or 3,
+            )
+        )
+    elif img_status == "done":
+        lines.append("✅ 이미지가 완성됐어요")
+    elif img_status == "failed":
+        lines.append("⚠️ 이미지 생성에 실패했어요")
+
+    text_done = text_status == "done"
+    image_finished = img_status in ("done", "failed")
+    if text_done and image_finished:
+        lines.append("📦 결과를 준비하고 있어요")
+
+    if not lines:
+        return "잠시만 기다려 주세요..."
+    return "\n".join(lines)
+
+
+def _render_stage_status(message_placeholder, stages: dict) -> None:
+    """진행 문장을 덜 눈에 띄는 스타일로 표시한다."""
+    lines = _format_stage_lines(stages).split("\n")
+    html_lines = "".join(f"<div>{line}</div>" for line in lines)
+    message_placeholder.markdown(
+        f'<div class="rg-generation-status">{html_lines}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _run_generation(loading_container=None, message_placeholder=None, progress_bar=None, start_time=None) -> None:
@@ -88,8 +172,28 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
     if loading_container is None or message_placeholder is None or progress_bar is None or start_time is None:
         loading_container, message_placeholder, progress_bar, start_time = _render_generation_loading_ui()
 
+    # SSE 단계 이벤트를 스레드 간 공유하기 위한 상태.
+    # on_stage 콜백은 백그라운드 스레드에서 호출되므로 dict에 직접 갱신한다.
+    # 메인 스레드는 time.sleep 폴링으로 이 dict를 읽어 화면을 갱신한다.
+    stage_state: dict = {
+        "text_status": None,
+        "image_status": None,
+        "image_current": 0,
+        "image_total": 3,
+    }
+
     result_holder: dict[str, object] = {}
-    error_holder: dict[str, Exception] = {}
+    error_holder: dict[Exception] = {}
+
+    def _on_stage(event: dict) -> None:
+        track = event.get("track")
+        status = event.get("status")
+        if not track or not status:
+            return
+        stage_state[f"{track}_status"] = status
+        if track == "image":
+            stage_state["image_current"] = event.get("current") or stage_state["image_current"]
+            stage_state["image_total"] = event.get("total") or stage_state["image_total"]
 
     def _run_generate_ad() -> None:
         try:
@@ -107,6 +211,7 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
                 llm_request=u["llm_request"],
                 cookies=st.context.cookies,
                 mock=mock,
+                on_stage=_on_stage,
             )
         except Exception as exc:  # pragma: no cover - defensive
             error_holder["error"] = exc
@@ -115,9 +220,8 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
     generation_thread.start()
 
     while generation_thread.is_alive():
-        elapsed = max(1, int(time.monotonic() - start_time))
-        progress_value = min(95, max(5, int((elapsed / 80.0) * 95)))
-        message_placeholder.markdown(f"**{elapsed}초 경과**")
+        progress_value = _compute_progress_from_stages(stage_state, thread_alive=True)
+        _render_stage_status(message_placeholder, stage_state)
         progress_bar.progress(progress_value)
         time.sleep(0.2)
 
@@ -128,10 +232,8 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
 
     result = result_holder.get("result")
 
-    elapsed = max(1, int(time.monotonic() - start_time))
-    message_placeholder.markdown(f"**{elapsed}초 경과**")
+    # 종료 직전 마지막 상태 표시 후 닫기
     progress_bar.progress(100)
-
     if loading_container is not None:
         loading_container.empty()
 
@@ -142,10 +244,10 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
             error_code=result.get("error_code"),
         )
         if not mock and result.get("error_code") == "DAILY_LIMIT_EXCEEDED":
-            refresh_me(st.context.cookies) 
+            refresh_me(st.context.cookies)
         st.rerun()
         return
-    
+
 
     st.session_state.generation.update(
         status="done",
@@ -158,6 +260,9 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
 
     if not mock:
         refresh_me(st.context.cookies)
+
+    # 로컬 생성 횟수 증가 (모든 모드에서 UI에 즉시 반영)
+    increment_local_generation_count()
 
     st.rerun()
 

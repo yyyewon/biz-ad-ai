@@ -39,3 +39,24 @@ def get_user_by_id(user_id: int) -> dict | None:
         return dict(row) if row else None
     finally:
         conn.close()
+
+
+def update_user_business_info(
+    user_id: int,
+    store_name: str | None,
+    store_location: str | None,
+) -> None:
+    """
+    유저가 마지막으로 입력한 가게 이름/위치를 저장한다.
+    다음 생성 화면에서 자동 입력되며, 유저가 값을 바꾸면 여기서 업데이트된다.
+    빈 문자열은 빈 문자열 그대로 저장한다(과거 값을 지우는 의도).
+    """
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE users SET store_name = ?, store_location = ? WHERE id = ?",
+            ((store_name or "").strip(), (store_location or "").strip(), user_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
