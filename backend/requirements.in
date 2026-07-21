@@ -81,3 +81,10 @@ httpx2
 # =========================
 # 자체 세션 토큰(JWT) 발급/검증
 PyJWT
+
+# =========================
+# Food Classification
+# =========================
+# CLIP 기반 zero-shot 이미지 분류 (food_classifier_provider.py)
+torch
+transformers

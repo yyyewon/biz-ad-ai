@@ -34,6 +34,7 @@ GENERATE_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/generate"
 TEXT_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/ad/text"
 IMAGE_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/ad/image"
 HEALTH_ENDPOINT = f"{API_BASE_URL}/api/v1/health"
+CLASSIFY_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/classify-food"
 
 # --------------------------------------------------------------
 # 소셜 로그인 / 사용자 정보
@@ -82,6 +83,8 @@ PURPOSE_OPTIONS = [
     "매장 분위기 소개",
     "오픈 소식 알림",
 ]
+
+
 
 MAX_UPLOAD_MB = 15
 ALLOWED_IMAGE_TYPES = ["jpg", "jpeg", "png", "webp"]

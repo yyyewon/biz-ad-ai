@@ -355,15 +355,30 @@ def composite_poster_text(
                 stroke_width=max(1, stroke_width - 1),
             )
             cursor_y += line_h + line_gap
+    # 메뉴명이 지나치게 길어 3줄 이상 넘어가면 폰트 사이즈 자동 다운스케일링
+    menu_text = overlay_copy.menu_name
+    menu_lines = _wrap_text(menu_text, font=menu_font, max_width=max_text_width, draw=draw)
+    
+    while len(menu_lines) > 2 and menu_ratio > 0.05:
+        menu_ratio -= 0.008
+        menu_font = _scale_overlay_font(
+            image,
+            TextOverlayRole.POSTER_MENU,
+            menu_ratio,
+            food_type=food_type,
+            variant="poster",
+        )
+        menu_lines = _wrap_text(menu_text, font=menu_font, max_width=max_text_width, draw=draw)
 
     menu_start_y = cursor_y
-    menu_lines = _wrap_text(
-        overlay_copy.menu_name,
-        font=menu_font,
-        max_width=max_text_width,
-        draw=draw,
-    )
+
+    max_menu_line_w = 0
+
     for line in menu_lines:
+        line_w = int(draw.textlength(line, font=menu_font))
+        if line_w > max_menu_line_w:
+            max_menu_line_w = line_w
+
         line_h = _draw_centered_line(
             draw,
             text=line,
@@ -378,11 +393,28 @@ def composite_poster_text(
 
     menu_end_y = cursor_y
 
+    # 가격 Pill 뱃지 충돌 방지 동적 위치 계산
     if overlay_copy.price_text:
-        badge_cx = int(width * 0.76)
-        badge_cy = int((menu_start_y + menu_end_y) / 2)
-        if badge_cy < int(height * 0.12):
-            badge_cy = int(height * 0.16)
+        # 메뉴판의 우측 끝 절대 좌표 계산 (중앙 정렬이므로)
+        menu_max_right = (width + max_menu_line_w) // 2
+        
+        # 가격 텍스트 가로 길이 측정 및 뱃지 여유 폭 예측
+        price_text_w = int(draw.textlength(overlay_copy.price_text, font=price_font))
+        estimated_pill_w = price_text_w + int(width * 0.06) 
+
+        # 메뉴 우측 끝과 가격 배지가 충돌하는지 검사 (여유 마진 92% 기준)
+        if menu_max_right + (estimated_pill_w // 2) > int(width * 0.92):
+            # [Case A] 메뉴가 너무 길어 우측 배지와 겹칠 때 -> 메뉴 아래쪽 중앙에 배치
+            badge_cx = width // 2
+            badge_cy = menu_end_y + int(height * 0.02)
+            # 배지가 아래로 내려왔으므로 가이드라인 하한선 배치 스킵하고 고정 마진 확보
+        else:
+            # [Case B] 우측에 여유가 있을 때 -> 기존처럼 우측에 배치하되 메뉴 길이에 맞춰 밀어내기
+            badge_cx = max(int(width * 0.76), menu_max_right + (estimated_pill_w // 2) + int(width * 0.02))
+            badge_cy = int((menu_start_y + menu_end_y) / 2)
+            if badge_cy < int(height * 0.12):
+                badge_cy = int(height * 0.16)
+
         _draw_price_pill_badge(
             draw,
             text=overlay_copy.price_text,

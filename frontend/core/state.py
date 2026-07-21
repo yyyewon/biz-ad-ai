@@ -77,6 +77,8 @@ def is_business_info_valid() -> bool:
 def set_upload(image_bytes: bytes | None, image_name: str | None) -> None:
     st.session_state.upload["image_bytes"] = image_bytes
     st.session_state.upload["image_name"] = image_name
+    if image_bytes is None:
+        st.session_state.pop("_classified_file_id", None)
 
 
 def set_style(food: str | None, tone: str | None, image_request: str, llm_request: str) -> None:
@@ -116,4 +118,5 @@ def reset_all() -> None:
     """
     for key in ("business", "upload", "generation", "step"):
         del st.session_state[key]
+    st.session_state.pop("_classified_file_id", None)
     init_state()

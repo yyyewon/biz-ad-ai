@@ -309,6 +309,12 @@ GENERATE_ENDPOINT_FAILED = ErrorSpec(
     status_code=500,
 )
 
+FOOD_CLASSIFICATION_ENDPOINT_FAILED = ErrorSpec(
+    code="FOOD_CLASSIFICATION_ENDPOINT_FAILED",
+    message="음식 이미지 분류 API 처리 중 오류가 발생했습니다.",
+    status_code=500,
+)
+
 # ============================================================
 # Upload validation errors
 # ============================================================
