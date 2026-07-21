@@ -39,3 +39,19 @@ def get_user_by_id(user_id: int) -> dict | None:
         return dict(row) if row else None
     finally:
         conn.close()
+
+
+def update_user_business_info(
+    user_id: int,
+    store_name: str | None,
+    store_location: str | None,
+) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE users SET store_name = ?, store_location = ? WHERE id = ?",
+            ((store_name or "").strip(), (store_location or "").strip(), user_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()

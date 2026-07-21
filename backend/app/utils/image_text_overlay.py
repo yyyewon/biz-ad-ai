@@ -358,7 +358,7 @@ def composite_poster_text(
     # 메뉴명이 지나치게 길어 3줄 이상 넘어가면 폰트 사이즈 자동 다운스케일링
     menu_text = overlay_copy.menu_name
     menu_lines = _wrap_text(menu_text, font=menu_font, max_width=max_text_width, draw=draw)
-    
+
     while len(menu_lines) > 2 and menu_ratio > 0.05:
         menu_ratio -= 0.008
         menu_font = _scale_overlay_font(
@@ -397,10 +397,10 @@ def composite_poster_text(
     if overlay_copy.price_text:
         # 메뉴판의 우측 끝 절대 좌표 계산 (중앙 정렬이므로)
         menu_max_right = (width + max_menu_line_w) // 2
-        
+
         # 가격 텍스트 가로 길이 측정 및 뱃지 여유 폭 예측
         price_text_w = int(draw.textlength(overlay_copy.price_text, font=price_font))
-        estimated_pill_w = price_text_w + int(width * 0.06) 
+        estimated_pill_w = price_text_w + int(width * 0.06)
 
         # 메뉴 우측 끝과 가격 배지가 충돌하는지 검사 (여유 마진 92% 기준)
         if menu_max_right + (estimated_pill_w // 2) > int(width * 0.92):

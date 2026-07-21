@@ -1,8 +1,7 @@
 # backend/app/services/providers/food_classifier_provider.py
 import io
 import threading
-import torch
-from transformers import pipeline
+
 from PIL import Image
 from loguru import logger
 
@@ -46,6 +45,9 @@ class FoodClassifierProvider:
             if self._classifier is not None:
                 return
             try:
+                import torch
+                from transformers import pipeline
+
                 device = 0 if torch.cuda.is_available() else -1
                 logger.info(
                     "food_classifier | Loading CLIP model on device: {}",

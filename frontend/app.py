@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 import streamlit as st
 
-from core.state import init_state
+from core.state import init_state, persist_business_state
 from core.api_client import check_backend_health
 from core.auth import (
     init_auth_state,
     check_auth_status_from_cookies,
+    apply_saved_business_info,
     is_logged_in,
     is_dev_guest_mode,
     sync_usage,
@@ -89,6 +90,12 @@ def _render_sidebar() -> None:
             "목업 모드 (백엔드 없이 테스트)",
             key="mock_mode",
         )
+        if st.session_state.mock_mode:
+            st.toggle(
+                "이미지 생성 실패 시뮬레이션 (목업)",
+                key="simulate_image_failure",
+                help="Step 3에서 이미지 생성 실패 화면을 확인할 때 사용해요.",
+            )
         if is_logged_in():
             st.session_state.dev_guest_mode = False
 
@@ -124,8 +131,18 @@ def _render_sidebar() -> None:
 
 def main() -> None:
     init_state()
+
+    persist_business_state()
     init_auth_state()
     check_auth_status_from_cookies(st.context.cookies)
+
+    sync_usage(st.context.cookies)
+
+    current_step = st.session_state.step
+    previous_step = st.session_state.get("last_rendered_step")
+    entering_step_one = current_step == 1 and previous_step != 1
+    apply_saved_business_info(force=entering_step_one)
+    st.session_state.last_rendered_step = current_step
 
     _inject_css()
     _render_sidebar()
@@ -139,8 +156,6 @@ def main() -> None:
     if not authenticated:
         step_login.render()
         return
-
-    sync_usage(st.context.cookies)
 
     render_topbar(
         mock_mode=st.session_state.mock_mode,

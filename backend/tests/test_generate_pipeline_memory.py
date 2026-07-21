@@ -57,7 +57,7 @@ def test_run_generate_pipeline_with_image_uses_memory_bytes(monkeypatch):
     async def fake_run_text_pipeline(**kwargs):
         return "생성된 광고 문구"
 
-    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
+    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None, on_variant_done=None):
         calls["image_payload"] = payload
         calls["source_image_bytes"] = source_image_bytes
 
@@ -137,7 +137,7 @@ def test_run_generate_pipeline_image_failure_returns_fallback(monkeypatch):
     async def fake_run_text_pipeline(**kwargs):
         return "생성된 광고 문구"
 
-    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
+    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None, on_variant_done=None):
         raise RuntimeError("image generation failed")
 
     monkeypatch.setattr(
@@ -168,6 +168,5 @@ def test_run_generate_pipeline_image_failure_returns_fallback(monkeypatch):
     assert result["partial_success"] is True
     assert result["image_generation_success"] is False
     assert len(result["warnings"]) == 1
-    assert len(result["images"]) == 3
-
-    assert decode_base64_to_image_bytes(result["images"][0]) == source_bytes
+    # 요청3: 이미지 생성 실패 시 원본을 반환하지 않고 빈 images를 반환한다.
+    assert result["images"] == []

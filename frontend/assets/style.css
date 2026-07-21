@@ -173,6 +173,17 @@ hr { border-color: var(--rg-line) !important; }
   margin-bottom: 1rem;
 }
 
+.rg-generation-status {
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--rg-ink-soft);
+  line-height: 1.55;
+}
+
+.rg-generation-status div + div {
+  margin-top: 0.35rem;
+}
+
 .rg-eyebrow {
   display: inline-block;
   font-family: var(--rg-font-mono);

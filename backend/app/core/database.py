@@ -26,6 +26,14 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    existing_columns = {
+        row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in existing_columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 def init_db() -> None:
     """
     서버 시작 시 1회 호출해서 테이블이 없으면 생성
@@ -57,6 +65,10 @@ def init_db() -> None:
             )
             """
         )
+
+        _ensure_column(conn, "users", "store_name", "TEXT")
+        _ensure_column(conn, "users", "store_location", "TEXT")
+
         conn.commit()
     finally:
         conn.close()

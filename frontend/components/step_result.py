@@ -3,19 +3,28 @@ Step 3: 생성 결과 확인
 """
 from __future__ import annotations
 import hashlib
+import logging
 import threading
 import time
 import streamlit as st
 
-from core.state import prev_step, reset_all
+from core.state import (
+    prev_step,
+    reset_all,
+    set_generation_error,
+    set_generation_loading,
+    set_generation_result,
+)
 from core.api_client import generate_ad
 from core.auth import is_logged_in, refresh_me, is_quota_exceeded, get_daily_usage, is_dev_guest_mode
 from core.config import KAKAO_LOGIN_ENDPOINT
 from components.ui_kit import phone_preview, feed_grid, alert, quota_exceeded_banner
 
 
+logger = logging.getLogger(__name__)
+
+
 def _preview_feed_image(images: list[bytes]) -> bytes | None:
-    """게시물 미리보기용 — 3번(릴스) 이미지 우선."""
     if not images:
         return None
     if len(images) >= 3:
@@ -69,27 +78,145 @@ def _render_generation_loading_ui() -> tuple[object, object, float, object]:
             '<div class="rg-card-title">⏳ 광고 콘텐츠를 생성하는 중이에요</div>',
             unsafe_allow_html=True,
         )
-        st.caption("문구와 이미지를 준비하는 동안, 진행 상황을 상단에서 확인할 수 있어요.")
+        st.caption("문구와 이미지를 준비하는 동안, 실시간 진행 상황을 확인할 수 있어요.")
 
         message_placeholder = st.empty()
         progress_bar = st.progress(5)
         start_time = time.monotonic()
 
-        message_placeholder.markdown("**0초 경과**")
+        message_placeholder.markdown(
+            '<div class="rg-generation-status">잠시만 기다려 주세요...</div>',
+            unsafe_allow_html=True,
+        )
         return loading_container, message_placeholder, progress_bar, start_time
+
+
+def _compute_progress_from_stages(stages: dict, *, thread_alive: bool = True) -> int:
+    """
+    트랙별 상태(stage_text/stage_image)로부터 진행률(%)을계산
+    """
+    progress = 5
+    text_status = stages.get("text_status")
+    if text_status == "done":
+        progress = 50
+    elif text_status == "start":
+        progress = max(progress, 20)
+
+    img_current = stages.get("image_current") or 0
+    img_total = stages.get("image_total") or 0
+    img_status = stages.get("image_status")
+    if img_total and img_status in ("progress", "done"):
+        progress = 50 + int((img_current / img_total) * 38)
+    elif img_status == "start":
+        progress = max(progress, 50)
+    elif img_status == "failed":
+        progress = max(progress, 88)
+
+    text_done = text_status == "done"
+    image_finished = img_status in ("done", "failed")
+    if text_done and image_finished and thread_alive:
+        progress = max(progress, 92)
+
+    cap = 95 if thread_alive else 100
+    return min(cap, max(5, progress))
+
+
+def _format_stage_lines(stages: dict) -> str:
+    """
+    트랙별 상태를 사용자용 진행 문장으로 변환
+    """
+    lines: list[str] = []
+
+    text_status = stages.get("text_status")
+    if text_status == "start":
+        lines.append("✍️ 광고 문구를 생성 중이에요")
+    elif text_status == "done":
+        lines.append("✅ 광고 문구가 완성됐어요")
+    elif text_status == "failed":
+        lines.append("⚠️ 광고 문구 생성에 실패했어요")
+
+    img_status = stages.get("image_status")
+    if img_status == "start":
+        lines.append("🎨 이미지를 생성 중이에요 (0/{})".format(stages.get("image_total") or 3))
+    elif img_status == "progress":
+        lines.append(
+            "🎨 이미지를 생성 중이에요 ({}/{})".format(
+                stages.get("image_current") or 0,
+                stages.get("image_total") or 3,
+            )
+        )
+    elif img_status == "done":
+        lines.append("✅ 이미지가 완성됐어요")
+    elif img_status == "failed":
+        lines.append("⚠️ 이미지 생성에 실패했어요")
+
+    text_done = text_status == "done"
+    image_finished = img_status in ("done", "failed")
+    if text_done and image_finished:
+        lines.append("📦 결과를 준비하고 있어요")
+
+    if not lines:
+        return "잠시만 기다려 주세요..."
+    return "\n".join(lines)
+
+
+def _render_stage_status(message_placeholder, stages: dict) -> None:
+    lines = _format_stage_lines(stages).split("\n")
+    html_lines = "".join(f"<div>{line}</div>" for line in lines)
+    message_placeholder.markdown(
+        f'<div class="rg-generation-status">{html_lines}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _capture_generation_cookies(*, mock: bool) -> dict | None:
+    """
+    메인 Streamlit 스레드에서 로그인 쿠키를 복사해 생성 작업에 전달
+    """
+    if mock or not is_logged_in():
+        return None
+    return dict(st.context.cookies)
+
+
+def _should_start_generation(generation: dict, current_signature: tuple) -> bool:
+    status = generation.get("status")
+    if status == "loading":
+        return False
+    if status == "idle":
+        return True
+    return generation.get("signature") != current_signature
 
 
 def _run_generation(loading_container=None, message_placeholder=None, progress_bar=None, start_time=None) -> None:
     b = st.session_state.business
     u = st.session_state.upload
     mock = st.session_state.mock_mode
+    request_cookies = _capture_generation_cookies(mock=mock)
+    attempt_signature = _input_signature()
 
-    st.session_state.generation.update(status="loading", error_message="")
+    set_generation_loading(attempt_signature)
     if loading_container is None or message_placeholder is None or progress_bar is None or start_time is None:
         loading_container, message_placeholder, progress_bar, start_time = _render_generation_loading_ui()
 
+    stage_state: dict = {
+        "text_status": None,
+        "image_status": None,
+        "image_current": 0,
+        "image_total": 3,
+    }
+
     result_holder: dict[str, object] = {}
     error_holder: dict[str, Exception] = {}
+
+    def _on_stage(event: dict) -> None:
+        track = event.get("track")
+        status = event.get("status")
+        if not track or not status:
+            return
+        stage_state[f"{track}_status"] = status
+        if track == "image":
+            stage_state["image_current"] = event.get("current") or stage_state["image_current"]
+            stage_state["image_total"] = event.get("total") or stage_state["image_total"]
 
     def _run_generate_ad() -> None:
         try:
@@ -105,59 +232,70 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
                 tone=u["tone"],
                 image_request=u["image_request"],
                 llm_request=u["llm_request"],
-                cookies=st.context.cookies,
+                cookies=request_cookies,
                 mock=mock,
+                on_stage=_on_stage,
             )
-        except Exception as exc:  # pragma: no cover - defensive
+        except Exception as exc:
+            logger.exception("generation_client_failed")
             error_holder["error"] = exc
 
     generation_thread = threading.Thread(target=_run_generate_ad, daemon=True)
     generation_thread.start()
 
     while generation_thread.is_alive():
-        elapsed = max(1, int(time.monotonic() - start_time))
-        progress_value = min(95, max(5, int((elapsed / 80.0) * 95)))
-        message_placeholder.markdown(f"**{elapsed}초 경과**")
+        progress_value = _compute_progress_from_stages(stage_state, thread_alive=True)
+        _render_stage_status(message_placeholder, stage_state)
         progress_bar.progress(progress_value)
         time.sleep(0.2)
 
     generation_thread.join()
 
     if "error" in error_holder:
-        raise error_holder["error"]
+        set_generation_error(
+            "생성 요청을 처리하는 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.",
+            "GENERATION_CLIENT_ERROR",
+        )
+        st.rerun()
+        return
 
     result = result_holder.get("result")
 
-    elapsed = max(1, int(time.monotonic() - start_time))
-    message_placeholder.markdown(f"**{elapsed}초 경과**")
     progress_bar.progress(100)
-
     if loading_container is not None:
         loading_container.empty()
 
-    if not result["ok"]:
-        st.session_state.generation.update(
-            status="error",
-            error_message=result["error"],
-            error_code=result.get("error_code"),
+    if not isinstance(result, dict):
+        logger.error(
+            "generation_response_invalid | response_type=%s",
+            type(result).__name__,
         )
-        if not mock and result.get("error_code") == "DAILY_LIMIT_EXCEEDED":
-            refresh_me(st.context.cookies) 
+        set_generation_error(
+            "서버 응답을 확인할 수 없어요. 잠시 후 다시 시도해 주세요.",
+            "INVALID_GENERATION_RESPONSE",
+        )
         st.rerun()
         return
-    
 
-    st.session_state.generation.update(
-        status="done",
-        caption=result["data"]["caption"],
-        images=result["data"]["images"],
-        error_message="",
-        error_code=None,
-        signature=_input_signature(),
+    if not result.get("ok"):
+        set_generation_error(
+            result.get("error") or "생성에 실패했어요.",
+            result.get("error_code"),
+        )
+        if request_cookies and result.get("error_code") == "DAILY_LIMIT_EXCEEDED":
+            refresh_me(request_cookies)
+        st.rerun()
+        return
+
+    data = result.get("data") or {}
+    set_generation_result(
+        data.get("caption", ""),
+        data.get("images") or [],
+        signature=attempt_signature,
     )
 
-    if not mock:
-        refresh_me(st.context.cookies)
+    if request_cookies:
+        refresh_me(request_cookies)
 
     st.rerun()
 
@@ -171,7 +309,7 @@ def render() -> None:
     gen = st.session_state.generation
     current_sig = _input_signature()
 
-    needs_new_generation = gen["status"] == "idle" or gen.get("signature") != current_sig
+    needs_new_generation = _should_start_generation(gen, current_sig)
 
     if needs_new_generation:
         if is_quota_exceeded():
@@ -245,12 +383,10 @@ def render() -> None:
                 unsafe_allow_html=True,
             )
             if gen["images"]:
-                # 이미지 개수만큼 탭 생성 (예: 이미지 1, 이미지 2, 이미지 3)
                 tabs = st.tabs([f"이미지 {i+1}" for i in range(len(gen["images"]))])
                 
                 for idx, tab in enumerate(tabs):
                     with tab:
-                        # 각 탭 안에 이미지와 다운로드 버튼을 매핑
                         st.image(gen["images"][idx], width="stretch")
                         
                         st.download_button(
@@ -260,7 +396,7 @@ def render() -> None:
                             mime="image/png",
                             type="primary",
                             width="stretch",
-                            key=f"download_btn_{idx}"  # 고유 키 필수
+                            key=f"download_btn_{idx}"
                         )
 
     footer_left, footer_right = st.columns(2)

@@ -142,6 +142,12 @@ OPENAI_API_KEY_MISSING = ErrorSpec(
     status_code=500,
 )
 
+OPENAI_AUTHENTICATION_FAILED = ErrorSpec(
+    code="OPENAI_AUTHENTICATION_FAILED",
+    message="AI 서비스 인증 또는 접근 권한을 확인할 수 없습니다.",
+    status_code=500,
+)
+
 OPENAI_TEXT_GENERATION_FAILED = ErrorSpec(
     code="OPENAI_TEXT_GENERATION_FAILED",
     message="OpenAI 텍스트 생성 중 오류가 발생했습니다.",

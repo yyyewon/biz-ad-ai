@@ -174,6 +174,8 @@ async def me(current_user: dict = Depends(get_current_user)):
             "provider": current_user["provider"],
             "email": current_user["email"],
             "nickname": current_user["nickname"],
+            "store_name": current_user.get("store_name") or "",
+            "store_location": current_user.get("store_location") or "",
             "daily_usage": usage,
         }
     )

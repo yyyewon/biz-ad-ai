@@ -48,6 +48,7 @@ def test_generate_pipeline_does_not_pass_output_path_arguments(monkeypatch):
             images=[poster_b64],
             poster_images=[poster_b64],
             image_bytes_list=[poster_bytes],
+            applied_variants=["studio"],
         )
 
     monkeypatch.setattr(
@@ -119,7 +120,10 @@ def test_generate_pipeline_fallback_does_not_create_file_path_response(monkeypat
     assert result["caption"] == "생성된 광고 문구"
     assert result["partial_success"] is True
     assert result["image_generation_success"] is False
-    assert len(result["images"]) == 3
+    assert len(result["warnings"]) == 1
+
+    # 요청3: 이미지 생성 실패 시 원본을 반환하지 않고 빈 images를 반환한다.
+    assert result["images"] == []
 
     assert "image_path" not in result
     assert "download_url" not in result

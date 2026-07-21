@@ -5,7 +5,7 @@ from __future__ import annotations
 import streamlit as st
 from core.config import PURPOSE_OPTIONS
 from core.state import set_business_info, next_step
-from core.auth import is_quota_exceeded, get_daily_usage
+from core.auth import is_quota_exceeded, get_daily_usage, is_logged_in, save_business_info
 from components.ui_kit import quota_exceeded_banner
 
 
@@ -25,8 +25,9 @@ def render() -> None:
             quota_exceeded_banner(limit=usage.get("limit"))
 
         business = st.session_state.business
+        form_epoch = st.session_state.get("business_form_epoch", 0)
 
-        with st.form("business_info_form", border=False):
+        with st.form(f"business_info_form_{form_epoch}", border=False):
             row1_col1, row1_col2 = st.columns(2, gap="small")
             with row1_col1:
                 store_name = st.text_input(
@@ -62,7 +63,6 @@ def render() -> None:
                     max_chars=30,
                 )
 
-            # 홍보 목적 선택 구역
             st.markdown('<div style="margin-top: 0.5rem;"></div>', unsafe_allow_html=True)
             purpose = st.pills(
                 "홍보 목적",
@@ -90,5 +90,13 @@ def render() -> None:
             st.warning("가게 이름, 메뉴 이름, 위치, 가격, 홍보 목적을 모두 입력해 주세요.")
             return
         set_business_info(store_name, menu_name, store_location, price, purpose)
+
+        if is_logged_in():
+            save_business_info(
+                cookies=st.context.cookies,
+                store_name=store_name.strip(),
+                store_location=store_location.strip(),
+            )
+
         next_step()
         st.rerun()

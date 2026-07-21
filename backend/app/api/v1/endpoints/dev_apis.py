@@ -306,7 +306,7 @@ async def create_image_ad(
                 "error": str(exc),
             },
         ) from exc
-    
+
 
 @router.post(
     "/classify-food",

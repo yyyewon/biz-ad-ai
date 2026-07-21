@@ -18,12 +18,13 @@ import os
 from typing import Any
 
 from loguru import logger
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, AuthenticationError, PermissionDeniedError
 
 from app.core import error_constants as errors
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.model_config import get_model_settings, get_provider_section
+from app.services.providers.openai_utils import validate_openai_api_key
 
 
 class OpenAITextProvider:
@@ -46,17 +47,11 @@ class OpenAITextProvider:
 
         self.model_name = str(model_name or resolved["model_name"])
         self.model_settings = model_settings or resolved["settings"]
-        self.api_key = api_key or self._resolve_api_key()
-
-        if not self.api_key:
-            raise AppException(
-                errors.OPENAI_API_KEY_MISSING,
-                detail={
-                    "provider": "openai",
-                    "role": "text_generation",
-                    "model": self.model_name,
-                },
-            )
+        self.api_key = validate_openai_api_key(
+            api_key or self._resolve_api_key(),
+            role="text_generation",
+            model=self.model_name,
+        )
 
         self.client = AsyncOpenAI(api_key=self.api_key)
 
@@ -119,6 +114,23 @@ class OpenAITextProvider:
 
         except AppException:
             raise
+
+        except (AuthenticationError, PermissionDeniedError) as exc:
+            logger.error(
+                "openai_text_authentication_failed | model={} | api_type={} | status_code={}",
+                self.model_name,
+                api_type,
+                getattr(exc, "status_code", None),
+            )
+            raise AppException(
+                errors.OPENAI_AUTHENTICATION_FAILED,
+                detail={
+                    "provider": "openai",
+                    "role": "text_generation",
+                    "model": self.model_name,
+                    "status_code": getattr(exc, "status_code", None),
+                },
+            ) from exc
 
         except Exception as exc:
             logger.exception(
