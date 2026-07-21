@@ -65,9 +65,3 @@ httpx2
 # =========================
 PyJWT
 onnxruntime
-
-# =========================
-# Object(food) Detection YOLOv8
-# =========================
-ultralytics
-
