@@ -6,7 +6,7 @@ from __future__ import annotations
 import requests
 import streamlit as st
 
-from core.config import ME_ENDPOINT, DEV_RESET_QUOTA_ENDPOINT, REQUEST_TIMEOUT_AUTH, DEV_GUEST_MODE_DEFAULT
+from core.config import ME_ENDPOINT, SAVE_BUSINESS_INFO_ENDPOINT, DEV_RESET_QUOTA_ENDPOINT, REQUEST_TIMEOUT_AUTH, DEV_GUEST_MODE_DEFAULT
 
 
 def init_auth_state() -> None:
@@ -57,6 +57,9 @@ def refresh_me(cookies: dict) -> None:
     """
     로그인된 상태에서 오늘 생성 사용량 등 최신 정보를 다시 가져오기
     """
+    if not is_logged_in():
+        return
+
     try:
         res = requests.get(
             ME_ENDPOINT,
@@ -69,9 +72,38 @@ def refresh_me(cookies: dict) -> None:
         pass
 
 
+def apply_saved_business_info(*, force: bool = False) -> None:
+    """
+    DB에 저장된 가게 이름/위치를 입력 폼에 자동 입력
+    """
+    if not is_logged_in():
+        return
+
+    user = st.session_state.auth.get("user") or {}
+    user_id = user.get("id")
+    saved_store_name = (user.get("store_name") or "").strip()
+    saved_store_location = (user.get("store_location") or "").strip()
+
+    business = st.session_state.business
+    loaded_user_id = st.session_state.get("business_info_loaded_user_id")
+    replace_existing = force or loaded_user_id != user_id
+    changed = False
+
+    if replace_existing or not business.get("store_name"):
+        changed = business.get("store_name") != saved_store_name
+        business["store_name"] = saved_store_name
+    if replace_existing or not business.get("store_location"):
+        changed = changed or business.get("store_location") != saved_store_location
+        business["store_location"] = saved_store_location
+
+    st.session_state.business_info_loaded_user_id = user_id
+    if changed:
+        st.session_state.business_form_epoch = st.session_state.get("business_form_epoch", 0) + 1
+
+
 def request_refresh_token(cookies: dict) -> bool:
     """
-    401 발생 시 쿠키를 실어 서버에 토큰 재발급을 요청합니다.
+    401 발생 시 쿠키를 실어 서버에 토큰 재발급 요청
     """
     try:
         refresh_endpoint = ME_ENDPOINT.replace("/me", "/refresh")
@@ -91,7 +123,7 @@ def request_refresh_token(cookies: dict) -> bool:
 
 def logout_session() -> None:
     """
-    프론트엔드 세션 상태 초기화한다
+    프론트엔드 세션 상태 초기화
     """
     st.session_state.auth = {"is_logged_in": False, "user": None}
     st.query_params.clear()
@@ -111,7 +143,7 @@ def is_quota_exceeded() -> bool:
     """
     오늘 생성 가능 횟수를 모두 사용했는지 확인
     """
-    if st.session_state.get("mock_mode"):
+    if st.session_state.get("mock_mode") or not is_logged_in():
         return False
     usage = get_daily_usage()
     if not usage:
@@ -153,3 +185,29 @@ def reset_quota_for_testing(cookies: dict) -> tuple[bool, str]:
     except ValueError:
         message = "초기화에 실패했어요."
     return False, message
+
+
+def save_business_info(cookies: dict, store_name: str, store_location: str) -> bool:
+    """
+    Step 1에서 입력한 가게 이름/위치를 DB에 저장
+    """
+    if not is_logged_in():
+        return False
+    try:
+        res = requests.post(
+            SAVE_BUSINESS_INFO_ENDPOINT,
+            data={"store_name": store_name, "store_location": store_location},
+            cookies=cookies,
+            timeout=REQUEST_TIMEOUT_AUTH,
+        )
+        if res.status_code != 200:
+            return False
+
+        data = res.json().get("data") or {}
+        user = st.session_state.auth.get("user")
+        if user is not None:
+            user["store_name"] = data.get("store_name", store_name.strip())
+            user["store_location"] = data.get("store_location", store_location.strip())
+        return True
+    except requests.exceptions.RequestException:
+        return False

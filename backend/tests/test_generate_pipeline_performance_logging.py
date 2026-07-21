@@ -64,7 +64,7 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
         fake_run_text_pipeline,
     )
 
-    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
+    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None, on_variant_done=None):
         assert source_image_bytes == source_bytes
 
         return ImageAdResponse(
@@ -81,6 +81,7 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
             images=[poster_b64],
             poster_images=[poster_b64],
             image_bytes_list=[poster_bytes],
+            applied_variants=["studio"],
         )
 
     monkeypatch.setattr(
@@ -172,7 +173,7 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
         fake_run_text_pipeline,
     )
 
-    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None):
+    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None, on_variant_done=None):
         raise RuntimeError("image generation failed")
 
     monkeypatch.setattr(
@@ -196,6 +197,7 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
 
     assert result["partial_success"] is True
     assert result["image_generation_success"] is False
+    assert result["images"] == []
 
     total_pipeline_calls = [
         call

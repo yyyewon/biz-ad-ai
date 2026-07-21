@@ -817,6 +817,7 @@ def composite_poster_text(
 
     menu_end_y = cursor_y
 
+    # 가격 Pill 뱃지 충돌 방지 동적 위치 계산
     if overlay_copy.price_text:
         price_font = _scale_overlay_font(
             image,

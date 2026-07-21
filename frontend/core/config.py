@@ -34,12 +34,14 @@ GENERATE_ENDPOINT = f"{API_BASE_URL}/api/v1/ad/generate"
 TEXT_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/ad/text"
 IMAGE_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/ad/image"
 HEALTH_ENDPOINT = f"{API_BASE_URL}/api/v1/health"
+CLASSIFY_ENDPOINT = f"{API_BASE_URL}/api/v1/dev/classify-food"
 
 # --------------------------------------------------------------
 # 소셜 로그인 / 사용자 정보
 # --------------------------------------------------------------
 KAKAO_LOGIN_ENDPOINT = f"{API_BROWSER_BASE_URL}/api/v1/auth/kakao/login"
 ME_ENDPOINT = f"{API_BASE_URL}/api/v1/auth/me"
+SAVE_BUSINESS_INFO_ENDPOINT = f"{API_BASE_URL}/api/v1/auth/business-info"
 LOGOUT_ENDPOINT = f"{API_BROWSER_BASE_URL}/api/v1/auth/logout"
 DEV_RESET_QUOTA_ENDPOINT = f"{API_BASE_URL}/api/v1/auth/dev/reset-quota"
 
@@ -84,6 +86,8 @@ PURPOSE_OPTIONS = [
     "매장 분위기 소개",
     "오픈 소식 알림",
 ]
+
+
 
 MAX_UPLOAD_MB = 15
 ALLOWED_IMAGE_TYPES = ["jpg", "jpeg", "png", "webp"]

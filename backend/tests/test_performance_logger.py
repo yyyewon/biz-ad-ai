@@ -39,7 +39,7 @@ image_preprocess:
 logging:
   performance:
     enabled: true
-    path: "{performance_log_path}"
+    path: {json.dumps(str(performance_log_path))}
     include_extra: true
 openai:
   text_generation:

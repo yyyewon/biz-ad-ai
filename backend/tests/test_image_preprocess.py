@@ -1,9 +1,11 @@
 import base64
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.main import app
 from app.api.v1.endpoints import dev_apis
+from app.utils.image_bytes import pil_image_to_png_bytes
 
 
 client = TestClient(app)
@@ -19,9 +21,10 @@ def test_image_preprocess_success(monkeypatch):
     """
 
     fake_processed_bytes = b"processed-image-bytes"
+    input_image_bytes = pil_image_to_png_bytes(Image.new("RGB", (16, 16), "white"))
 
     def fake_preprocess(image_bytes: bytes) -> bytes:
-        assert image_bytes == b"input-image-bytes"
+        assert image_bytes == input_image_bytes
         return fake_processed_bytes
 
     monkeypatch.setattr(
@@ -35,7 +38,7 @@ def test_image_preprocess_success(monkeypatch):
         files={
             "file": (
                 "sample.png",
-                b"input-image-bytes",
+                input_image_bytes,
                 "image/png",
             )
         },

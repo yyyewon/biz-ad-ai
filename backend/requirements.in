@@ -32,16 +32,23 @@ httpx
 # =========================
 # AI Providers / PyTorch (GPU / CUDA)
 # =========================
---extra-index-url https://download.pytorch.org/whl/cu124
-
-torch
-torchvision
-torchaudio
+# torch/torchvision/torchaudio는 install_requirements.sh 1단계(requirements-torch.txt)에서 선설치
+#
+# HuggingFace / Diffusers 기반 이미지 생성
+# - SDXL Lightning 4-step
+# - xformers attention optimization
+#
+# 주의:
+# - xformers는 torch 버전 호환성이 민감하므로 임의 업그레이드하지 않음
+openai
 diffusers
 transformers
 accelerate
+safetensors
+huggingface-hub
 sentencepiece
-openai
+protobuf
+xformers==0.0.29.post2
 
 # Poster design VLM (Qwen2-VL GPTQ)
 qwen-vl-utils

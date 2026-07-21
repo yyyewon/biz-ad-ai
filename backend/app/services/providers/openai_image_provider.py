@@ -19,13 +19,14 @@ from typing import Any
 import os
 
 from loguru import logger
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, AuthenticationError, PermissionDeniedError
 
 from app.core import error_constants as errors
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.model_config import get_model_settings, get_provider_section
 from app.services.providers.base import ImageGenerationProvider, ImageRenderMode
+from app.services.providers.openai_utils import validate_openai_api_key
 from app.utils.image_bytes import bytes_to_named_file, decode_base64_to_image_bytes
 
 
@@ -64,17 +65,11 @@ class OpenAIImageProvider(ImageGenerationProvider):
         self._output_format = str(output_format or self._settings.get("output_format", "png"))
         self._input_fidelity = self._settings.get("input_fidelity")
 
-        self._api_key = api_key or self._resolve_api_key()
-
-        if not self._api_key:
-            raise AppException(
-                errors.OPENAI_API_KEY_MISSING,
-                detail={
-                    "provider": "openai",
-                    "role": "image_generation",
-                    "model": self._model,
-                },
-            )
+        self._api_key = validate_openai_api_key(
+            api_key or self._resolve_api_key(),
+            role="image_generation",
+            model=self._model,
+        )
 
         self._client = AsyncOpenAI(api_key=self._api_key)
 
@@ -187,6 +182,23 @@ class OpenAIImageProvider(ImageGenerationProvider):
         except AppException:
             raise
 
+        except (AuthenticationError, PermissionDeniedError) as exc:
+            logger.error(
+                "openai_image_authentication_failed | model={} | size={} | status_code={}",
+                self._model,
+                self._size,
+                getattr(exc, "status_code", None),
+            )
+            raise AppException(
+                errors.OPENAI_AUTHENTICATION_FAILED,
+                detail={
+                    "provider": "openai",
+                    "role": "image_generation",
+                    "model": self._model,
+                    "status_code": getattr(exc, "status_code", None),
+                },
+            ) from exc
+
         except Exception as exc:
             logger.exception(
                 "openai_image_generation_failed | model={} | size={} | error={}",
@@ -245,6 +257,23 @@ class OpenAIImageProvider(ImageGenerationProvider):
 
         except AppException:
             raise
+
+        except (AuthenticationError, PermissionDeniedError) as exc:
+            logger.error(
+                "openai_background_authentication_failed | model={} | size={} | status_code={}",
+                self._model,
+                self._size,
+                getattr(exc, "status_code", None),
+            )
+            raise AppException(
+                errors.OPENAI_AUTHENTICATION_FAILED,
+                detail={
+                    "provider": "openai",
+                    "role": "image_generation",
+                    "model": self._model,
+                    "status_code": getattr(exc, "status_code", None),
+                },
+            ) from exc
 
         except Exception as exc:
             logger.exception(

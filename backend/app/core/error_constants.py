@@ -142,6 +142,12 @@ OPENAI_API_KEY_MISSING = ErrorSpec(
     status_code=500,
 )
 
+OPENAI_AUTHENTICATION_FAILED = ErrorSpec(
+    code="OPENAI_AUTHENTICATION_FAILED",
+    message="AI 서비스 인증 또는 접근 권한을 확인할 수 없습니다.",
+    status_code=500,
+)
+
 OPENAI_TEXT_GENERATION_FAILED = ErrorSpec(
     code="OPENAI_TEXT_GENERATION_FAILED",
     message="OpenAI 텍스트 생성 중 오류가 발생했습니다.",
@@ -306,6 +312,12 @@ IMAGE_PREPROCESS_EMPTY_RESULT = ErrorSpec(
 GENERATE_ENDPOINT_FAILED = ErrorSpec(
     code="GENERATE_ENDPOINT_FAILED",
     message="통합 광고 생성 API 처리 중 오류가 발생했습니다.",
+    status_code=500,
+)
+
+FOOD_CLASSIFICATION_ENDPOINT_FAILED = ErrorSpec(
+    code="FOOD_CLASSIFICATION_ENDPOINT_FAILED",
+    message="음식 이미지 분류 API 처리 중 오류가 발생했습니다.",
     status_code=500,
 )
 

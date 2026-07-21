@@ -288,6 +288,8 @@ transformers==5.13.0
     # via
     #   -r backend/requirements.in
     #   optimum
+xformers==0.0.29.post2
+    # via -r backend/requirements.in
 truststore==0.10.4
     # via
     #   httpcore2

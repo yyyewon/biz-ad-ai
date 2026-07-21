@@ -1,3 +1,4 @@
+#biz-ad-ai\frontend\components\step_upload.py
 """
 Step 2: 사진 업로드 & 음식 유형/톤 선택
 """
@@ -8,6 +9,7 @@ from core.upload_validation import validate_upload_image_file
 from core.auth import get_daily_usage, is_quota_exceeded
 from core.state import set_upload, set_style, is_upload_step_valid, next_step, prev_step
 from components.ui_kit import phone_preview, quota_exceeded_banner
+from core.api_client import classify_food
 
 
 def render() -> None:
@@ -45,8 +47,26 @@ def render() -> None:
                     set_upload(None, None)
                 else:
                     set_upload(image_bytes, uploaded_file.name)
+
+                    if st.session_state.get("_classified_file_id") != uploaded_file.file_id:
+                        with st.spinner("음식 종류를 분석하고 있어요..."):
+                            result = classify_food(
+                                image_bytes=image_bytes,
+                                image_name=uploaded_file.name,
+                                cookies=st.context.cookies,
+                                mock=st.session_state.mock_mode,
+                            )
+
+                        st.session_state["_classified_file_id"] = uploaded_file.file_id
+
+                        if result["ok"] and result.get("predicted_food") in FOOD_OPTIONS:
+                            # pills 위젯이 아직 생성되기 전이므로 session_state 값을 직접 세팅해도 안전
+                            st.session_state["upload_food_type"] = result["predicted_food"]
+                            st.session_state.upload["food"] = result["predicted_food"]
+                        # 실패하거나 예상 밖 값이면 조용히 넘어감 (사용자가 직접 선택)
             else:
                 set_upload(None, "")
+                st.session_state.pop("_classified_file_id", None)
 
             food = st.pills(
                 "음식 형태",

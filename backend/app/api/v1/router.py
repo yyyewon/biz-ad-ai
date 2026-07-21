@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, dev_apis, generate_ad, health
+from app.api.v1.endpoints import auth, business_info, dev_apis, generate_ad, health
 
 api_router = APIRouter()
 
@@ -29,4 +29,11 @@ api_router.include_router(
 api_router.include_router(
     dev_apis.router,
     prefix="/dev",
+)
+
+# 가게 정보 저장 API
+api_router.include_router(
+    business_info.router,
+    prefix="/auth",
+    tags=["Business Info"],
 )
