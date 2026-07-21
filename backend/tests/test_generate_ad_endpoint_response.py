@@ -1,7 +1,11 @@
 import asyncio
 import json
 
+import pytest
+
 from app.api.v1.endpoints import generate_ad
+from app.core import error_constants as errors
+from app.core.exceptions import AppException
 
 
 class DummyLimiterSlot:
@@ -15,6 +19,83 @@ class DummyLimiterSlot:
 class DummyLimiter:
     def slot(self):
         return DummyLimiterSlot()
+
+
+def test_sse_app_exception_payload_uses_common_format_and_sanitizes_detail():
+    event = generate_ad._error_event_payload(
+        AppException(
+            errors.OPENAI_TEXT_GENERATION_FAILED,
+            detail={
+                "request_id": "req-123",
+                "provider": "openai",
+                "model": "internal-model",
+                "error": "sensitive upstream response",
+            },
+        )
+    )
+
+    assert event == {
+        "event": "error",
+        "data": {
+            "success": False,
+            "data": None,
+            "error": {
+                "code": errors.OPENAI_TEXT_GENERATION_FAILED.code,
+                "message": errors.OPENAI_TEXT_GENERATION_FAILED.message,
+                "detail": {"request_id": "req-123"},
+            },
+        },
+    }
+
+
+def test_sse_unhandled_exception_payload_does_not_expose_internal_error():
+    event = generate_ad._error_event_payload(
+        RuntimeError("database password and internal path")
+    )
+
+    assert event["event"] == "error"
+    assert event["data"]["error"] == {
+        "code": errors.GENERATE_ENDPOINT_FAILED.code,
+        "message": errors.GENERATE_ENDPOINT_FAILED.message,
+        "detail": None,
+    }
+    assert "database password" not in json.dumps(event)
+
+
+def test_generate_ad_endpoint_propagates_quota_error_before_streaming(monkeypatch):
+    async def reject_quota(_user_id):
+        raise AppException(
+            code="DAILY_LIMIT_EXCEEDED",
+            message="하루 생성 가능 횟수를 모두 사용했어요.",
+            status_code=429,
+        )
+
+    monkeypatch.setattr(
+        generate_ad,
+        "ensure_daily_quota_available_async",
+        reject_quota,
+    )
+
+    async def run_test():
+        with pytest.raises(AppException) as exc_info:
+            await generate_ad.generate_ad_endpoint(
+                store_name="테스트가게",
+                menu_name="김밥",
+                purpose="홍보",
+                food="",
+                tone="",
+                price="",
+                store_location="",
+                image_request="",
+                llm_request="",
+                image=None,
+                current_user={"id": 42},
+            )
+
+        assert exc_info.value.code == "DAILY_LIMIT_EXCEEDED"
+        assert exc_info.value.status_code == 429
+
+    asyncio.run(run_test())
 
 
 def test_generate_ad_endpoint_wraps_pipeline_result_with_success_response(monkeypatch):

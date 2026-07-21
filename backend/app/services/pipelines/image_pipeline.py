@@ -68,7 +68,7 @@ def _prepare_edit_source_bytes(
     return pil_image_to_png_bytes(image)
 
 
-POSTER_RETRY_SUFFIXES: list[str] = [
+POSTER_EMPTY_RESULT_RETRY_SUFFIXES: list[str] = [
     "",
     "retry: zero text in image, no menu title, no price, no store label, no STORE/NAME words, food+bg only",
     "final retry: completely blank text zones, no Korean or English letters or numbers in image pixels",
@@ -90,44 +90,38 @@ async def _generate_poster_with_retries(
     negative_prompt: str | None = None,
     img2img_strength: float | None = None,
 ) -> list[bytes]:
-    last_error: Exception | None = None
-
-    for attempt_idx, suffix in enumerate(POSTER_RETRY_SUFFIXES):
+    for attempt_idx, suffix in enumerate(POSTER_EMPTY_RESULT_RETRY_SUFFIXES):
         retry_prompt = f"{base_prompt}, {suffix}" if suffix else base_prompt
 
-        try:
-            generate_kwargs = {
-                "input_image_bytes": source_image_bytes,
-                "mask_image_bytes": mask_image_bytes,
-                "prompt": retry_prompt,
-                "num_images": 1,
-                "size": size,
-                "render_mode": render_mode,
-            }
-            if negative_prompt is not None:
-                generate_kwargs["negative_prompt"] = negative_prompt
-            if img2img_strength is not None:
-                generate_kwargs["img2img_strength"] = img2img_strength
+        generate_kwargs = {
+            "input_image_bytes": source_image_bytes,
+            "mask_image_bytes": mask_image_bytes,
+            "prompt": retry_prompt,
+            "num_images": 1,
+            "size": size,
+            "render_mode": render_mode,
+        }
+        if negative_prompt is not None:
+            generate_kwargs["negative_prompt"] = negative_prompt
+        if img2img_strength is not None:
+            generate_kwargs["img2img_strength"] = img2img_strength
 
-            image_bytes_list = await provider.generate(**generate_kwargs)
+        image_bytes_list = await provider.generate(**generate_kwargs)
 
-            if image_bytes_list:
-                return image_bytes_list
+        if image_bytes_list:
+            return image_bytes_list
 
-        except Exception as exc:
-            last_error = exc
-            logger.warning(
-                "poster_generation_attempt_failed | attempt={} | render_mode={} | error={}",
-                attempt_idx + 1,
-                render_mode,
-                str(exc),
-            )
+        logger.warning(
+            "poster_generation_empty_result | attempt={} | render_mode={}",
+            attempt_idx + 1,
+            render_mode,
+        )
 
     raise AppException(
         errors.IMAGE_POSTER_RETRY_FAILED,
         detail={
-            "attempt_count": len(POSTER_RETRY_SUFFIXES),
-            "last_error": str(last_error) if last_error else None,
+            "attempt_count": len(POSTER_EMPTY_RESULT_RETRY_SUFFIXES),
+            "reason": "empty_result",
         },
     )
 
@@ -267,18 +261,25 @@ async def generate_image_ads(
         ]
         variant_results: list[tuple[int, ImageVariantType, bytes, str]] = []
 
-        for completed in asyncio.as_completed(tasks):
-            result = await completed
-            variant_results.append(result)
+        try:
+            for completed in asyncio.as_completed(tasks):
+                result = await completed
+                variant_results.append(result)
 
-            if on_variant_done is not None:
-                try:
-                    await on_variant_done(len(variant_results), payload.num_images)
-                except Exception as exc:
-                    logger.warning(
-                        "image_variant_progress_callback_failed | error={}",
-                        str(exc),
-                    )
+                if on_variant_done is not None:
+                    try:
+                        await on_variant_done(len(variant_results), payload.num_images)
+                    except Exception as exc:
+                        logger.warning(
+                            "image_variant_progress_callback_failed | error={}",
+                            str(exc),
+                        )
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+
+            await asyncio.gather(*tasks, return_exceptions=True)
 
         variant_results.sort(key=lambda item: item[0])
 

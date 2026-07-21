@@ -135,10 +135,16 @@ def generate_ad(
             if kind == "result":
                 return _build_result(event.get("data") or {})
             if kind == "error":
+                response = event.get("data") or {}
+                error = response.get("error") or {}
                 return {
                     "ok": False,
-                    "error": event.get("message") or "생성에 실패했어요.",
-                    "error_code": event.get("code"),
+                    "error": (
+                        error.get("message")
+                        or event.get("message")
+                        or "생성에 실패했어요."
+                    ),
+                    "error_code": error.get("code") or event.get("code"),
                 }
             if kind == "stage" and on_stage is not None:
                 try:

@@ -80,6 +80,7 @@ def init_state() -> None:
             "images": [],
             "error_message": "",
             "error_code": None,     # 예: DAILY_LIMIT_EXCEEDED, GENERATION_BUSY 등
+            "signature": None,
         },
         "mock_mode": MOCK_MODE_DEFAULT,
 
@@ -149,8 +150,15 @@ def is_upload_step_valid() -> bool:
 # ---------------------------------------------------------------
 # 생성 결과
 # ---------------------------------------------------------------
-def set_generation_loading() -> None:
-    st.session_state.generation.update({"status": "loading", "error_message": ""})
+def set_generation_loading(signature: tuple | None = None) -> None:
+    update = {
+        "status": "loading",
+        "error_message": "",
+        "error_code": None,
+    }
+    if signature is not None:
+        update["signature"] = signature
+    st.session_state.generation.update(update)
 
 
 def set_generation_error(message: str, code: str | None = None) -> None:
@@ -159,10 +167,23 @@ def set_generation_error(message: str, code: str | None = None) -> None:
     )
 
 
-def set_generation_result(caption: str, images: list[dict]) -> None:
+def set_generation_result(
+    caption: str,
+    images: list[bytes],
+    *,
+    signature: tuple | None = None,
+) -> None:
     st.session_state.generation.update(
-        {"status": "done", "caption": caption, "images": images, "error_message": "", "error_code": None}
+        {
+            "status": "done",
+            "caption": caption,
+            "images": images,
+            "error_message": "",
+            "error_code": None,
+        }
     )
+    if signature is not None:
+        st.session_state.generation["signature"] = signature
 
 
 def reset_all() -> None:

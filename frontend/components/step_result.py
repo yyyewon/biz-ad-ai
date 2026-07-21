@@ -3,15 +3,25 @@ Step 3: 생성 결과 확인
 """
 from __future__ import annotations
 import hashlib
+import logging
 import threading
 import time
 import streamlit as st
 
-from core.state import prev_step, reset_all
+from core.state import (
+    prev_step,
+    reset_all,
+    set_generation_error,
+    set_generation_loading,
+    set_generation_result,
+)
 from core.api_client import generate_ad
 from core.auth import is_logged_in, refresh_me, is_quota_exceeded, get_daily_usage, is_dev_guest_mode
 from core.config import KAKAO_LOGIN_ENDPOINT
 from components.ui_kit import phone_preview, feed_grid, alert, quota_exceeded_banner
+
+
+logger = logging.getLogger(__name__)
 
 
 def _preview_feed_image(images: list[bytes]) -> bytes | None:
@@ -122,6 +132,8 @@ def _format_stage_lines(stages: dict) -> str:
         lines.append("✍️ 광고 문구를 생성 중이에요")
     elif text_status == "done":
         lines.append("✅ 광고 문구가 완성됐어요")
+    elif text_status == "failed":
+        lines.append("⚠️ 광고 문구 생성에 실패했어요")
 
     img_status = stages.get("image_status")
     if img_status == "start":
@@ -166,13 +178,23 @@ def _capture_generation_cookies(*, mock: bool) -> dict | None:
     return dict(st.context.cookies)
 
 
+def _should_start_generation(generation: dict, current_signature: tuple) -> bool:
+    status = generation.get("status")
+    if status == "loading":
+        return False
+    if status == "idle":
+        return True
+    return generation.get("signature") != current_signature
+
+
 def _run_generation(loading_container=None, message_placeholder=None, progress_bar=None, start_time=None) -> None:
     b = st.session_state.business
     u = st.session_state.upload
     mock = st.session_state.mock_mode
     request_cookies = _capture_generation_cookies(mock=mock)
+    attempt_signature = _input_signature()
 
-    st.session_state.generation.update(status="loading", error_message="")
+    set_generation_loading(attempt_signature)
     if loading_container is None or message_placeholder is None or progress_bar is None or start_time is None:
         loading_container, message_placeholder, progress_bar, start_time = _render_generation_loading_ui()
 
@@ -184,7 +206,7 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
     }
 
     result_holder: dict[str, object] = {}
-    error_holder: dict[Exception] = {}
+    error_holder: dict[str, Exception] = {}
 
     def _on_stage(event: dict) -> None:
         track = event.get("track")
@@ -215,6 +237,7 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
                 on_stage=_on_stage,
             )
         except Exception as exc:
+            logger.exception("generation_client_failed")
             error_holder["error"] = exc
 
     generation_thread = threading.Thread(target=_run_generate_ad, daemon=True)
@@ -229,7 +252,12 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
     generation_thread.join()
 
     if "error" in error_holder:
-        raise error_holder["error"]
+        set_generation_error(
+            "생성 요청을 처리하는 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.",
+            "GENERATION_CLIENT_ERROR",
+        )
+        st.rerun()
+        return
 
     result = result_holder.get("result")
 
@@ -237,25 +265,33 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
     if loading_container is not None:
         loading_container.empty()
 
-    if not result["ok"]:
-        st.session_state.generation.update(
-            status="error",
-            error_message=result["error"],
-            error_code=result.get("error_code"),
+    if not isinstance(result, dict):
+        logger.error(
+            "generation_response_invalid | response_type=%s",
+            type(result).__name__,
+        )
+        set_generation_error(
+            "서버 응답을 확인할 수 없어요. 잠시 후 다시 시도해 주세요.",
+            "INVALID_GENERATION_RESPONSE",
+        )
+        st.rerun()
+        return
+
+    if not result.get("ok"):
+        set_generation_error(
+            result.get("error") or "생성에 실패했어요.",
+            result.get("error_code"),
         )
         if request_cookies and result.get("error_code") == "DAILY_LIMIT_EXCEEDED":
             refresh_me(request_cookies)
         st.rerun()
         return
 
-
-    st.session_state.generation.update(
-        status="done",
-        caption=result["data"]["caption"],
-        images=result["data"]["images"],
-        error_message="",
-        error_code=None,
-        signature=_input_signature(),
+    data = result.get("data") or {}
+    set_generation_result(
+        data.get("caption", ""),
+        data.get("images") or [],
+        signature=attempt_signature,
     )
 
     if request_cookies:
@@ -273,7 +309,7 @@ def render() -> None:
     gen = st.session_state.generation
     current_sig = _input_signature()
 
-    needs_new_generation = gen["status"] == "idle" or gen.get("signature") != current_sig
+    needs_new_generation = _should_start_generation(gen, current_sig)
 
     if needs_new_generation:
         if is_quota_exceeded():

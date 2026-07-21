@@ -14,6 +14,7 @@ from app.core.deps import get_current_user_optional
 from app.core.exceptions import AppException
 from app.core.quota import ensure_daily_quota_available_async, increment_daily_usage_async
 from app.core.user_repository import update_user_business_info
+from app.schemas.common import error_response
 from app.services.pipelines.generate_pipeline import run_generate_pipeline
 from app.utils.upload_image_validator import validate_uploaded_image_bytes
 
@@ -40,36 +41,27 @@ def _error_event_payload(exc: Exception) -> dict[str, Any]:
     예외를 프론트엔드용 SSE error 이벤트로 변환
     """
     if isinstance(exc, AppException):
-        return {
-            "event": "error",
-            "code": exc.code,
-            "message": exc.message,
-            "detail": exc.detail,
-        }
+        public_detail = None
+        if isinstance(exc.detail, dict) and exc.detail.get("request_id"):
+            public_detail = {"request_id": exc.detail["request_id"]}
+
+        payload = error_response(
+            code=exc.code,
+            message=exc.message,
+            detail=public_detail,
+        )
+    else:
+        spec = errors.GENERATE_ENDPOINT_FAILED
+        payload = error_response(
+            code=spec.code,
+            message=spec.message,
+            detail=None,
+        )
+
     return {
         "event": "error",
-        "code": "GENERATE_ENDPOINT_FAILED",
-        "message": "광고 생성 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.",
-        "detail": {
-            "error_type": exc.__class__.__name__,
-            "error": str(exc),
-        },
+        "data": payload,
     }
-
-
-def _single_event_streaming_response(event: dict[str, Any]) -> StreamingResponse:
-    """
-    하나의 이벤트만 보내고 닫는 SSE 응답
-    """
-
-    async def _stream() -> AsyncIterator[str]:
-        yield _sse(event)
-
-    return StreamingResponse(
-        _stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 @router.post("/generate")
@@ -92,22 +84,14 @@ async def generate_ad_endpoint(
     image_bytes = None
     if image and image.filename:
         image_bytes = await image.read()
-        try:
-            validate_uploaded_image_bytes(
-                image_bytes,
-                filename=image.filename,
-                content_type=image.content_type,
-            )
-        except AppException as exc:
-            validation_payload = _error_event_payload(exc)
-            return _single_event_streaming_response(validation_payload)
+        validate_uploaded_image_bytes(
+            image_bytes,
+            filename=image.filename,
+            content_type=image.content_type,
+        )
 
     if current_user:
-        try:
-            await ensure_daily_quota_available_async(current_user["id"])
-        except AppException as exc:
-            quota_payload = _error_event_payload(exc)
-            return _single_event_streaming_response(quota_payload)
+        await ensure_daily_quota_available_async(current_user["id"])
 
         update_user_business_info(
             user_id=current_user["id"],
@@ -205,6 +189,8 @@ async def generate_ad_endpoint(
                 pipeline_task.cancel()
                 try:
                     await pipeline_task
+                except asyncio.CancelledError:
+                    pass
                 except Exception:
                     pass
 

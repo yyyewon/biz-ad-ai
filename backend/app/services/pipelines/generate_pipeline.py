@@ -216,11 +216,6 @@ async def run_generate_pipeline(
     3. 업로드 이미지 bytes를 image_pipeline에 직접 전달
     4. 광고 이미지 3장 생성
     5. 생성 이미지 base64를 응답에 포함
-
-    on_progress:
-        진행 상황을 프론트엔드로 스트리밍(SSE)하기 위한 비동기 콜백.
-        text/image 트랙의 시작·진행·완료 시점에 이벤트 dict를 전달한다.
-        None이면 진행 상황 보고를 생략한다.
     """
 
     pipeline_request_id = f"gen-{uuid.uuid4().hex[:8]}"
@@ -245,6 +240,7 @@ async def run_generate_pipeline(
         warnings: list[dict[str, Any]] = []
         partial_success = False
         image_generation_success: bool | None = None
+        image_error_type: str | None = None
 
         if image_bytes:
             resolved_food_type = require_food_type(food)
@@ -287,7 +283,7 @@ async def run_generate_pipeline(
                             "food_type": resolved_food_type,
                         },
                     ):
-                        return await run_text_pipeline(
+                        caption = await run_text_pipeline(
                             store_name=store_name,
                             menu_name=menu_name,
                             purpose=purpose,
@@ -297,7 +293,18 @@ async def run_generate_pipeline(
                             price=price,
                             store_location=store_location,
                         )
-                finally:
+                except Exception:
+                    await _emit_progress(
+                        on_progress,
+                        {
+                            "event": "stage",
+                            "track": "text",
+                            "status": "failed",
+                            "label": "광고 문구 생성에 실패했어요",
+                        },
+                    )
+                    raise
+                else:
                     await _emit_progress(
                         on_progress,
                         {
@@ -307,6 +314,7 @@ async def run_generate_pipeline(
                             "label": "광고 문구가 완성됐어요",
                         },
                     )
+                    return caption
 
             text_task = asyncio.create_task(_run_text_stage())
 
@@ -397,6 +405,12 @@ async def run_generate_pipeline(
                     },
                 )
 
+            except asyncio.CancelledError:
+                if not text_task.done():
+                    text_task.cancel()
+                await asyncio.gather(text_task, return_exceptions=True)
+                raise
+
             except Exception as exc:
                 logger.exception(
                     "image_generation_failed_in_generate_pipeline | request_id={} | error={}",
@@ -404,13 +418,11 @@ async def run_generate_pipeline(
                     str(exc),
                 )
 
-                # 요청3: 이미지 생성 실패 시 원본 이미지를 노출하지 않는다.
-                # 과거처럼 업로드 원본을 fallback으로 반환하는 대신, 빈 이미지 결과와
-                # 실패 상태만 남겨 프론트엔드가 에러 화면(재시도/이전 단계)을 띄우게 한다.
                 images = []
 
                 partial_success = True
                 image_generation_success = False
+                image_error_type = exc.__class__.__name__
 
                 error_code = exc.code if isinstance(exc, AppException) else "UNHANDLED_EXCEPTION"
 
@@ -420,8 +432,6 @@ async def run_generate_pipeline(
                         "message": "이미지 생성에 실패했어요. 잠시 후 다시 시도해 주세요.",
                         "detail": {
                             "request_id": pipeline_request_id,
-                            "error_type": exc.__class__.__name__,
-                            "error": str(exc),
                         },
                     }
                 )
@@ -436,7 +446,13 @@ async def run_generate_pipeline(
                     },
                 )
 
-            caption = await text_task
+            try:
+                caption = await text_task
+            except asyncio.CancelledError:
+                if not text_task.done():
+                    text_task.cancel()
+                await asyncio.gather(text_task, return_exceptions=True)
+                raise
         else:
             await _emit_progress(
                 on_progress,
@@ -471,7 +487,18 @@ async def run_generate_pipeline(
                         price=price,
                         store_location=store_location,
                     )
-            finally:
+            except Exception:
+                await _emit_progress(
+                    on_progress,
+                    {
+                        "event": "stage",
+                        "track": "text",
+                        "status": "failed",
+                        "label": "광고 문구 생성에 실패했어요",
+                    },
+                )
+                raise
+            else:
                 await _emit_progress(
                     on_progress,
                     {
@@ -498,7 +525,7 @@ async def run_generate_pipeline(
 
         total_success = not partial_success
         total_error_code = warnings[0]["code"] if warnings else None
-        total_error_type = warnings[0]["detail"]["error_type"] if warnings else None
+        total_error_type = image_error_type if warnings else None
 
         _record_total_pipeline_metric(
             pipeline_request_id=pipeline_request_id,

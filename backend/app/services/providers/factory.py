@@ -9,7 +9,6 @@ Provider factory.
 from __future__ import annotations
 
 from app.core import error_constants as errors
-from app.core.config import get_settings
 from app.core.exceptions import AppException
 from app.core.model_config import get_model_settings, get_provider_name
 from app.services.providers.openai_image_provider import OpenAIImageProvider
@@ -64,8 +63,6 @@ def get_image_provider() -> ImageGenerationProvider:
     provider_name = get_provider_name("image_generation")
 
     if provider_name == "openai":
-        settings = get_settings()
-
         resolved = get_model_settings(
             role="image_generation",
             provider_name="openai",
@@ -73,7 +70,6 @@ def get_image_provider() -> ImageGenerationProvider:
         model_settings = resolved["settings"]
 
         return OpenAIImageProvider(
-            api_key=settings.openai_api_key,
             model=resolved["model_name"],
             size=model_settings.get("size"),
             quality=model_settings.get("quality"),
