@@ -39,9 +39,6 @@ httpx
 # AI Providers / PyTorch
 # =========================
 
-torch
-torchvision
-torchaudio
 diffusers
 transformers
 accelerate
