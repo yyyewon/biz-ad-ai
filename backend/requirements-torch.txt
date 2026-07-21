@@ -1,7 +1,9 @@
 # PyTorch (GPU VM) — install_requirements.sh 1단계 전용
 # 단독 설치: pip install -r backend/requirements-torch.txt
+#
+# gptqmodel 5.8 (torch>=2.8) 테스트 스택
 --extra-index-url https://download.pytorch.org/whl/cu124
 
-torch==2.12.1
-torchvision==0.27.1
-torchaudio==2.11.0
+torch==2.8.0
+torchvision==0.23.0
+torchaudio==2.8.0

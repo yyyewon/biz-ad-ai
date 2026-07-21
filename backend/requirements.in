@@ -33,13 +33,10 @@ httpx
 # AI Providers / PyTorch (GPU / CUDA)
 # =========================
 # torch/torchvision/torchaudio는 install_requirements.sh 1단계(requirements-torch.txt)에서 선설치
+# torch 2.8.0 (gptqmodel VLM) + xformers 0.0.32.post2 (torch 2.8.0 공식 wheel)
 #
 # HuggingFace / Diffusers 기반 이미지 생성
 # - SDXL Lightning 4-step
-# - xformers attention optimization
-#
-# 주의:
-# - xformers는 torch 버전 호환성이 민감하므로 임의 업그레이드하지 않음
 openai
 diffusers
 transformers
@@ -48,9 +45,9 @@ safetensors
 huggingface-hub
 sentencepiece
 protobuf
-xformers==0.0.29.post2
+xformers==0.0.32.post2
 
-# Poster design VLM (Qwen2-VL GPTQ)
+# Poster design VLM (Qwen2-VL GPTQ) — torch>=2.8 필요
 qwen-vl-utils
 optimum
 gptqmodel==5.8.0
@@ -61,6 +58,8 @@ Pygments
 # Image background removal (poster layout analysis)
 # 2.0.76 은 numpy>=2.3 요구 → gptqmodel 5.8(numpy==2.2.6)과 충돌
 rembg[gpu]==2.0.67
+# 1.27+ 는 CUDA 13 빌드 → torch 2.8.0+cu128 환경에서 libcudart.so.13 오류
+onnxruntime-gpu==1.26.0
 
 # numba/pymatting compatibility for rembg; gptqmodel 5.8 pins numpy==2.2.6
 numpy==2.2.6

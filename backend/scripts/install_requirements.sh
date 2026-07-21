@@ -26,7 +26,8 @@ source .venv/bin/activate
 echo "[install] python: $(which python)"
 echo "[install] pip:    $(which python -m pip)"
 
-python -m pip install -U pip setuptools wheel
+python -m pip install -U pip wheel
+python -m pip install "setuptools>=75,<82"
 
 echo "[install] 1/5 torch..."
 python -m pip install -r "$BACKEND/requirements-torch.txt"
