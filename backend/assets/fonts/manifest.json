@@ -41,25 +41,22 @@
       "poster_store": { "weight": 400 }
     },
     "정중·신뢰": {
-      "font": "noto_sans_kr",
-      "poster_headline": { "weight": 400 },
-      "poster_menu": { "weight": 500 },
-      "poster_price": { "weight": 500 },
-      "poster_store": { "weight": 400 }
+      "poster_headline": { "font": "noto_serif_kr", "weight": 400 },
+      "poster_menu": { "font": "noto_serif_kr", "weight": 700 },
+      "poster_price": { "font": "noto_sans_kr", "weight": 600 },
+      "poster_store": { "font": "noto_sans_kr", "weight": 400 }
     },
     "고급·감성": {
-      "font": "noto_serif_kr",
-      "poster_headline": { "weight": 400 },
-      "poster_menu": { "weight": 600 },
-      "poster_price": { "weight": 500 },
-      "poster_store": { "weight": 300 }
+      "poster_headline": { "font": "noto_serif_kr", "weight": 400 },
+      "poster_menu": { "font": "noto_serif_kr", "weight": 700 },
+      "poster_price": { "font": "noto_sans_kr", "weight": 600 },
+      "poster_store": { "font": "noto_sans_kr", "weight": 400 }
     },
     "유머·이벤트": {
-      "font": "jua",
-      "poster_headline": { "weight": 400 },
-      "poster_menu": { "weight": 400 },
-      "poster_price": { "weight": 400 },
-      "poster_store": { "weight": 400 },
+      "poster_headline": { "font": "jua", "weight": 400 },
+      "poster_menu": { "font": "jua", "weight": 400 },
+      "poster_price": { "font": "noto_sans_kr", "weight": 700 },
+      "poster_store": { "font": "noto_sans_kr", "weight": 500 },
       "poster_template": {
         "badge_style": "filled",
         "menu_size_ratio": 0.090

@@ -12,6 +12,8 @@ from typing import Any, Literal
 from app.utils.font_registry import _get_tone_block, _load_manifest, _normalize_tone
 
 PosterBadgeStyle = Literal["outline", "filled"]
+PosterComposition = Literal["editorial", "centered", "framed"]
+PosterPriceStyle = Literal["label", "ticket", "stamp"]
 
 _DEFAULT_TEMPLATE: dict[str, Any] = {
     "headline_size_ratio": 0.050,
@@ -19,7 +21,7 @@ _DEFAULT_TEMPLATE: dict[str, Any] = {
     "sticker_size_ratio": 0.028,
     "menu_size_ratio": 0.112,
     "price_size_ratio": 0.042,
-    "store_size_ratio": 0.046,
+    "store_size_ratio": 0.034,
     "headline_stroke_delta": 0,
     "headline_menu_gap_ratio": 0.014,
     "badge_style": "filled",
@@ -28,33 +30,57 @@ _DEFAULT_TEMPLATE: dict[str, Any] = {
     "badge_outline_width_ratio": 0.0034,
     "price_cx_ratio": 0.76,
     "price_anchor": "top_right",
+    "composition": "editorial",
+    "price_style": "label",
+    "menu_overlap_ratio": 0.12,
 }
 
 _TONE_TEMPLATE_DEFAULTS: dict[str, dict[str, Any]] = {
     "캐주얼·친근": {
         "headline_size_ratio": 0.052,
-        "menu_size_ratio": 0.114,
+        "menu_size_ratio": 0.108,
+        "price_size_ratio": 0.036,
+        "store_size_ratio": 0.032,
         "badge_style": "filled",
+        "composition": "centered",
+        "price_style": "ticket",
+        "menu_overlap_ratio": 0.04,
     },
     "정중·신뢰": {
-        "headline_size_ratio": 0.048,
-        "menu_size_ratio": 0.102,
+        "headline_size_ratio": 0.046,
+        "menu_size_ratio": 0.098,
+        "price_size_ratio": 0.034,
+        "store_size_ratio": 0.032,
         "badge_style": "filled",
         "badge_outline_width_ratio": 0.0030,
+        "composition": "framed",
+        "price_style": "ticket",
+        "menu_overlap_ratio": 0.02,
     },
     "고급·감성": {
-        "headline_size_ratio": 0.046,
-        "menu_size_ratio": 0.106,
+        "headline_size_ratio": 0.042,
+        "subline_size_ratio": 0.030,
+        "menu_size_ratio": 0.124,
+        "price_size_ratio": 0.038,
+        "store_size_ratio": 0.031,
         "headline_menu_gap_ratio": 0.018,
         "badge_style": "filled",
         "badge_pad_x_ratio": 0.036,
+        "composition": "editorial",
+        "price_style": "label",
+        "menu_overlap_ratio": 0.08,
     },
     "유머·이벤트": {
         "headline_size_ratio": 0.054,
-        "menu_size_ratio": 0.110,
+        "menu_size_ratio": 0.106,
+        "price_size_ratio": 0.035,
+        "store_size_ratio": 0.032,
         "badge_style": "filled",
         "badge_pad_x_ratio": 0.034,
         "badge_pad_y_ratio": 0.017,
+        "composition": "centered",
+        "price_style": "stamp",
+        "menu_overlap_ratio": 0.06,
     },
 }
 
@@ -77,6 +103,9 @@ class PosterTemplateSpec:
     badge_outline_width_ratio: float
     price_cx_ratio: float
     price_anchor: Literal["layout", "menu_right", "food_top_right", "top_right"]
+    composition: PosterComposition
+    price_style: PosterPriceStyle
+    menu_overlap_ratio: float
 
 
 def resolve_poster_template(tone: str | None = None) -> PosterTemplateSpec:
@@ -102,6 +131,14 @@ def resolve_poster_template(tone: str | None = None) -> PosterTemplateSpec:
     if price_anchor not in ("layout", "menu_right", "food_top_right", "top_right"):
         price_anchor = "top_right"
 
+    composition = str(merged.get("composition", "editorial"))
+    if composition not in ("editorial", "centered", "framed"):
+        composition = "editorial"
+
+    price_style = str(merged.get("price_style", "label"))
+    if price_style not in ("label", "ticket", "stamp"):
+        price_style = "label"
+
     return PosterTemplateSpec(
         headline_size_ratio=float(merged["headline_size_ratio"]),
         subline_size_ratio=float(merged["subline_size_ratio"]),
@@ -117,6 +154,9 @@ def resolve_poster_template(tone: str | None = None) -> PosterTemplateSpec:
         badge_outline_width_ratio=float(merged["badge_outline_width_ratio"]),
         price_cx_ratio=float(merged["price_cx_ratio"]),
         price_anchor=price_anchor,  # type: ignore[arg-type]
+        composition=composition,  # type: ignore[arg-type]
+        price_style=price_style,  # type: ignore[arg-type]
+        menu_overlap_ratio=max(0.0, min(0.24, float(merged["menu_overlap_ratio"]))),
     )
 
 
@@ -126,12 +166,13 @@ _RATIO_BOUNDS: dict[str, tuple[float, float]] = {
     "sticker_size_ratio": (0.022, 0.034),
     "menu_size_ratio": (0.082, 0.128),
     "price_size_ratio": (0.030, 0.048),
-    "store_size_ratio": (0.032, 0.052),
+    "store_size_ratio": (0.028, 0.044),
     "headline_menu_gap_ratio": (0.008, 0.030),
     "badge_pad_x_ratio": (0.020, 0.045),
     "badge_pad_y_ratio": (0.008, 0.020),
     "badge_outline_width_ratio": (0.0020, 0.0050),
     "price_cx_ratio": (0.55, 0.88),
+    "menu_overlap_ratio": (0.0, 0.24),
 }
 
 
@@ -156,6 +197,9 @@ def apply_template_overrides(
         "badge_outline_width_ratio": base.badge_outline_width_ratio,
         "price_cx_ratio": base.price_cx_ratio,
         "price_anchor": base.price_anchor,
+        "composition": base.composition,
+        "price_style": base.price_style,
+        "menu_overlap_ratio": base.menu_overlap_ratio,
     }
     merged.update(overrides)
 
@@ -177,6 +221,14 @@ def apply_template_overrides(
     if price_anchor not in ("layout", "menu_right", "food_top_right", "top_right"):
         price_anchor = "top_right"
 
+    composition = str(merged.get("composition", "editorial"))
+    if composition not in ("editorial", "centered", "framed"):
+        composition = "editorial"
+
+    price_style = str(merged.get("price_style", "label"))
+    if price_style not in ("label", "ticket", "stamp"):
+        price_style = "label"
+
     return PosterTemplateSpec(
         headline_size_ratio=float(merged["headline_size_ratio"]),
         subline_size_ratio=float(merged["subline_size_ratio"]),
@@ -192,6 +244,9 @@ def apply_template_overrides(
         badge_outline_width_ratio=float(merged["badge_outline_width_ratio"]),
         price_cx_ratio=float(merged["price_cx_ratio"]),
         price_anchor=price_anchor,  # type: ignore[arg-type]
+        composition=composition,  # type: ignore[arg-type]
+        price_style=price_style,  # type: ignore[arg-type]
+        menu_overlap_ratio=float(merged["menu_overlap_ratio"]),
     )
 
 
@@ -219,5 +274,8 @@ def resolve_poster_template_for_layout(
             "badge_pad_x_ratio": vlm_template.badge_pad_x_ratio,
             "badge_pad_y_ratio": vlm_template.badge_pad_y_ratio,
             "badge_outline_width_ratio": vlm_template.badge_outline_width_ratio,
+            "composition": vlm_template.composition,
+            "price_style": vlm_template.price_style,
+            "menu_overlap_ratio": vlm_template.menu_overlap_ratio,
         },
     )

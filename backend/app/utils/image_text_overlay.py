@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from loguru import logger
@@ -26,6 +27,7 @@ from app.utils.poster_layout import (
 from app.utils.poster_template import (
     PosterTemplateSpec,
     _RATIO_BOUNDS,
+    apply_template_overrides,
     resolve_poster_template_for_layout,
 )
 from app.utils.poster_taglines import resolve_poster_copy
@@ -430,6 +432,433 @@ def _measure_menu_block_height(
     return total
 
 
+def _text_box(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    *,
+    stroke_width: int = 0,
+) -> tuple[int, int]:
+    """렌더링 bbox 기준 텍스트 크기. 한글과 영문 혼용 시 metrics 오차를 피한다."""
+
+    left, top, right, bottom = draw.textbbox(
+        (0, 0),
+        text,
+        font=font,
+        anchor="lt",
+        stroke_width=stroke_width,
+    )
+    return max(1, right - left), max(1, bottom - top)
+
+
+def _fit_poster_font(
+    image: Image.Image,
+    *,
+    role: TextOverlayRole,
+    ratio: float,
+    text: str,
+    max_width: int,
+    max_lines: int,
+    draw: ImageDraw.ImageDraw,
+    tone: str | None,
+    food_type: str | None,
+) -> tuple[ImageFont.FreeTypeFont, list[str], float]:
+    min_ratio = _RATIO_BOUNDS["menu_size_ratio"][0] if role == TextOverlayRole.POSTER_MENU else 0.018
+    current_ratio = ratio
+    lines: list[str] = []
+
+    for _ in range(_MAX_FONT_SHRINK_STEPS + 1):
+        font = _scale_overlay_font(
+            image,
+            role,
+            current_ratio,
+            tone=tone,
+            food_type=food_type,
+            variant="poster",
+        )
+        lines = _wrap_text(text, font=font, max_width=max_width, draw=draw)
+        widest = max((draw.textlength(line, font=font) for line in lines), default=0)
+        if len(lines) <= max_lines and widest <= max_width:
+            return font, lines, current_ratio
+        current_ratio = max(min_ratio, current_ratio * _MENU_FONT_SHRINK_FACTOR)
+
+    return font, lines[:max_lines], current_ratio
+
+
+def _draw_text_lines(
+    draw: ImageDraw.ImageDraw,
+    *,
+    lines: list[str],
+    font: ImageFont.FreeTypeFont,
+    x: int,
+    y: int,
+    align: str,
+    fill: tuple[int, int, int],
+    gap: int,
+    stroke_fill: tuple[int, int, int] | None = None,
+    stroke_width: int = 0,
+) -> tuple[int, int, int]:
+    """텍스트 여러 줄을 그리고 (끝 y, 최대 폭, 전체 높이)를 반환한다."""
+
+    cursor_y = y
+    max_width = 0
+    anchor = "mt" if align == "center" else "lt"
+    for line in lines:
+        line_width, line_height = _text_box(draw, line, font)
+        draw.text(
+            (x, cursor_y),
+            line,
+            font=font,
+            fill=fill,
+            anchor=anchor,
+            stroke_fill=stroke_fill,
+            stroke_width=stroke_width,
+        )
+        cursor_y += line_height + gap
+        max_width = max(max_width, line_width)
+
+    if lines:
+        cursor_y -= gap
+    return cursor_y, max_width, max(0, cursor_y - y)
+
+
+def _draw_tracked_text(
+    draw: ImageDraw.ImageDraw,
+    *,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    x: int,
+    y: int,
+    tracking: int,
+    fill: tuple[int, int, int] | tuple[int, int, int, int],
+    align: str = "left",
+) -> tuple[int, int]:
+    """Pillow에 없는 자간 제어를 문자 단위 advance로 구현한다."""
+
+    if not text:
+        return 0, 0
+
+    advances = [float(draw.textlength(char, font=font)) for char in text]
+    total_width = int(sum(advances) + tracking * max(0, len(text) - 1))
+    cursor_x = float(x - total_width / 2) if align == "center" else float(x)
+    _, text_height = _text_box(draw, text, font)
+
+    for char, advance in zip(text, advances, strict=False):
+        draw.text((int(cursor_x), y), char, font=font, fill=fill, anchor="lt")
+        cursor_x += advance + tracking
+    return total_width, text_height
+
+
+def _draw_four_point_star(
+    draw: ImageDraw.ImageDraw,
+    *,
+    center: tuple[int, int],
+    radius: int,
+    fill: tuple[int, int, int, int],
+) -> None:
+    cx, cy = center
+    inner = max(1, int(radius * 0.16))
+    points = [
+        (cx, cy - radius),
+        (cx + inner, cy - inner),
+        (cx + radius, cy),
+        (cx + inner, cy + inner),
+        (cx, cy + radius),
+        (cx - inner, cy + inner),
+        (cx - radius, cy),
+        (cx - inner, cy - inner),
+    ]
+    draw.polygon(points, fill=fill)
+
+
+def _draw_poster_ornaments(
+    image: Image.Image,
+    *,
+    template: PosterTemplateSpec,
+    palette: PosterPaletteSpec,
+) -> Image.Image:
+    """템플릿 계열별 인쇄 포스터 장식을 반투명 벡터로 그린다."""
+
+    width, height = image.size
+    overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    accent = (*palette.accent_text, 92)
+    muted = (*palette.primary_text, 54)
+    margin = max(18, int(width * 0.038))
+
+    if template.composition == "framed":
+        draw.rectangle(
+            (margin, margin, width - margin, height - margin),
+            outline=accent,
+            width=max(1, int(width * 0.0022)),
+        )
+        inner = margin + max(7, int(width * 0.009))
+        corner = int(width * 0.070)
+        for sx, sy in ((1, 1), (-1, 1), (1, -1), (-1, -1)):
+            ox = inner if sx > 0 else width - inner
+            oy = inner if sy > 0 else height - inner
+            draw.line((ox, oy, ox + sx * corner, oy), fill=muted, width=1)
+            draw.line((ox, oy, ox, oy + sy * corner), fill=muted, width=1)
+
+    elif template.composition == "centered":
+        for rx, ry, scale in (
+            (0.12, 0.115, 0.014),
+            (0.87, 0.245, 0.010),
+        ):
+            _draw_four_point_star(
+                draw,
+                center=(int(width * rx), int(height * ry)),
+                radius=max(4, int(width * scale)),
+                fill=accent,
+            )
+        wave_w = int(width * 0.095)
+        wave_h = int(width * 0.035)
+        for side_x in (margin, width - margin - wave_w):
+            for offset in range(2):
+                top = int(height * 0.295) + offset * int(wave_h * 0.52)
+                draw.arc(
+                    (side_x, top, side_x + wave_w, top + wave_h),
+                    start=195,
+                    end=345,
+                    fill=muted,
+                    width=max(1, int(width * 0.0018)),
+                )
+
+    else:
+        rule_y = int(height * 0.047)
+        draw.line(
+            (margin, rule_y, width - margin, rule_y),
+            fill=muted,
+            width=max(1, int(width * 0.0015)),
+        )
+        circle_r = int(width * 0.115)
+        circle_cx = width - margin - circle_r
+        circle_cy = int(height * 0.405)
+        draw.ellipse(
+            (
+                circle_cx - circle_r,
+                circle_cy - circle_r,
+                circle_cx + circle_r,
+                circle_cy + circle_r,
+            ),
+            outline=muted,
+            width=max(1, int(width * 0.0015)),
+        )
+
+    return Image.alpha_composite(image, overlay)
+
+
+def _price_component_metrics(
+    image: Image.Image,
+    *,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    template: PosterTemplateSpec,
+) -> tuple[int, int]:
+    draw = ImageDraw.Draw(image)
+    text_width, text_height = _text_box(draw, text, font)
+    pad_x = max(12, int(image.width * template.badge_pad_x_ratio * 0.72))
+    pad_y = max(6, int(image.width * template.badge_pad_y_ratio * 0.54))
+    if template.price_style == "stamp":
+        pad_x = max(pad_x, int(image.width * 0.026))
+        pad_y = max(pad_y, int(image.width * 0.016))
+    return text_width + pad_x * 2, text_height + pad_y * 2
+
+
+def _format_price_text(text: str) -> str:
+    stripped = (text or "").strip()
+    match = re.fullmatch(r"([0-9][0-9,]*)\s*원", stripped)
+    if match is None:
+        return stripped
+    digits = match.group(1).replace(",", "")
+    return f"{int(digits):,}원"
+
+
+def _draw_price_component(
+    image: Image.Image,
+    *,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    center_x: int,
+    center_y: int,
+    palette: PosterPaletteSpec,
+    template: PosterTemplateSpec,
+) -> tuple[int, int]:
+    """UI pill 대신 라벨, 티켓, 스탬프 세 종류의 가격표를 그린다."""
+
+    draw = ImageDraw.Draw(image)
+    text_width, text_height = _text_box(draw, text, font)
+    badge_w, badge_h = _price_component_metrics(
+        image,
+        text=text,
+        font=font,
+        template=template,
+    )
+    pad_x = max(12, int(image.width * template.badge_pad_x_ratio * 0.72))
+    left = int(center_x - badge_w / 2)
+    top = int(center_y - badge_h / 2)
+    right = left + badge_w
+    bottom = top + badge_h
+    outline_w = max(2, int(image.width * template.badge_outline_width_ratio * 0.7))
+
+    if template.price_style == "stamp":
+        draw.ellipse((left, top, right, bottom), outline=palette.badge_outline, width=outline_w)
+        inset = max(4, outline_w * 2)
+        draw.ellipse(
+            (left + inset, top + inset, right - inset, bottom - inset),
+            outline=palette.badge_outline,
+            width=max(1, outline_w // 2),
+        )
+        draw.text(
+            (center_x, center_y),
+            text,
+            font=font,
+            fill=palette.badge_text,
+            anchor="mm",
+        )
+        return badge_w, badge_h
+
+    if template.price_style == "ticket":
+        # 가격은 별도의 UI 버튼이 아니라 메뉴명에 붙는 작은 메타 정보로 보이게 한다.
+        dot_r = max(2, int(badge_h * 0.055))
+        arm = max(8, int(image.width * 0.018))
+        for dot_x, direction in ((left + pad_x // 2, -1), (right - pad_x // 2, 1)):
+            draw.ellipse(
+                (dot_x - dot_r, center_y - dot_r, dot_x + dot_r, center_y + dot_r),
+                fill=palette.badge_outline,
+            )
+            line_end = dot_x + direction * arm
+            draw.line(
+                (dot_x + direction * (dot_r + 3), center_y, line_end, center_y),
+                fill=(*palette.badge_outline, 150),
+                width=max(1, outline_w // 2),
+            )
+        draw.text(
+            (center_x, center_y),
+            text,
+            font=font,
+            fill=palette.badge_text,
+            anchor="mm",
+        )
+        return badge_w, badge_h
+
+    line_gap = max(4, int(image.width * 0.006))
+    draw.line(
+        (left, top + line_gap, right, top + line_gap),
+        fill=palette.badge_outline,
+        width=outline_w,
+    )
+    draw.line(
+        (left, bottom - line_gap, right, bottom - line_gap),
+        fill=palette.badge_outline,
+        width=outline_w,
+    )
+    draw.text(
+        (center_x, center_y),
+        text,
+        font=font,
+        fill=palette.badge_text,
+        anchor="mm",
+    )
+    return badge_w, badge_h
+
+
+def _restore_food_foreground(
+    image: Image.Image,
+    *,
+    source: Image.Image,
+    alpha: Image.Image | None,
+) -> Image.Image:
+    """메인 제목을 음식 뒤로 보내기 위해 원본 foreground를 같은 위치에 다시 덮는다."""
+
+    if alpha is None or alpha.size != image.size or alpha.getbbox() is None:
+        return image
+    foreground = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    foreground.paste(source, (0, 0), alpha)
+    return Image.alpha_composite(image, foreground)
+
+
+def _draw_poster_footer(
+    image: Image.Image,
+    *,
+    store_name: str,
+    menu_name: str,
+    store_font: ImageFont.FreeTypeFont,
+    palette: PosterPaletteSpec,
+    template: PosterTemplateSpec,
+    layout: PosterLayoutSpec,
+) -> None:
+    if not store_name:
+        return
+
+    draw = ImageDraw.Draw(image)
+    margin = max(24, int(image.width * 0.065))
+    baseline_y = image.height - max(layout.store_margin_bottom, int(image.height * 0.045))
+    _, text_h = _text_box(draw, store_name, store_font)
+    text_y = baseline_y - text_h
+    store_w, _ = _text_box(draw, store_name, store_font)
+    text_x, text_y = layout.clamp_store_position(
+        x=margin,
+        y=text_y,
+        text_width=store_w,
+        text_height=text_h,
+    )
+    rule_y = text_y - max(8, int(image.height * 0.008))
+    footer_color = _resolve_footer_color(image, palette.store_text, text_y)
+    draw.line(
+        (margin, rule_y, image.width - margin, rule_y),
+        fill=(*footer_color, 150),
+        width=max(1, int(image.width * 0.0015)),
+    )
+    draw.text((text_x, text_y), store_name, font=store_font, fill=footer_color, anchor="lt")
+
+    footer_font = load_overlay_font(
+        TextOverlayRole.POSTER_STORE,
+        max(12, int(image.width * 0.019)),
+        variant="poster",
+    )
+    menu_w, _ = _text_box(draw, menu_name, footer_font)
+    draw.text(
+        (image.width - margin - menu_w, text_y),
+        menu_name,
+        font=footer_font,
+        fill=footer_color,
+        anchor="lt",
+    )
+
+
+def _wcag_luminance(rgb: tuple[int, int, int]) -> float:
+    channels: list[float] = []
+    for value in rgb:
+        normalized = value / 255.0
+        channels.append(
+            normalized / 12.92
+            if normalized <= 0.04045
+            else ((normalized + 0.055) / 1.055) ** 2.4
+        )
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _contrast_ratio(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
+    light = max(_wcag_luminance(a), _wcag_luminance(b))
+    dark = min(_wcag_luminance(a), _wcag_luminance(b))
+    return (light + 0.05) / (dark + 0.05)
+
+
+def _resolve_footer_color(
+    image: Image.Image,
+    preferred: tuple[int, int, int],
+    y: int,
+) -> tuple[int, int, int]:
+    rgb = image.convert("RGB")
+    xs = [int(image.width * ratio) for ratio in (0.08, 0.22, 0.50, 0.78, 0.92)]
+    ys = [max(0, min(image.height - 1, y + offset)) for offset in (-8, 0, 8)]
+    samples = [rgb.getpixel((x, sample_y)) for sample_y in ys for x in xs]
+    background = tuple(sum(pixel[channel] for pixel in samples) // len(samples) for channel in range(3))
+    candidates = (preferred, (42, 34, 28), (246, 240, 228))
+    return max(candidates, key=lambda color: _contrast_ratio(color, background))
+
+
 def _resolve_price_badge_placement(
     *,
     width: int,
@@ -634,14 +1063,11 @@ def composite_poster_text(
     *,
     tone: str | None = None,
     food_type: str | None = None,
+    design_style: str | None = None,
     layout: PosterLayoutSpec | None = None,
 ) -> bytes:
-    """
-    포스터 PIL 합성:
-    - rembg 기반 LayoutSpec으로 headline/menu/pill/store 배치
-    - 배경 mask 색·scrim은 layout 분석 결과 사용
-    - 정렬: 카피·메뉴 좌측 열, 가격 pill 우상단, 가게명 우하단 (위치는 규칙 고정)
-    """
+    """톤에 따라 editorial, centered, framed 구성을 적용하는 포스터 렌더러."""
+
     image = image_bytes_to_pil(image_bytes).convert("RGBA")
     if layout is None:
         layout = analyze_poster_layout(image.convert("RGB"))
@@ -651,22 +1077,59 @@ def composite_poster_text(
         scrim_height=layout.scrim_height,
         max_alpha=layout.scrim_max_alpha,
     )
+    foreground_source = image.copy()
     palette = layout.palette
     template = resolve_poster_template_for_layout(
         tone,
         vlm_template=layout.vlm_template,
     )
+    if design_style in {"editorial", "centered", "framed"}:
+        price_style = "label" if design_style == "editorial" else "ticket"
+        template = apply_template_overrides(
+            template,
+            {
+                "composition": design_style,
+                "price_style": price_style,
+            },
+        )
+    image = _draw_poster_ornaments(
+        image,
+        template=template,
+        palette=palette,
+    )
+    # 장식은 음식 뒤에, 모든 핵심 정보는 음식 앞에 둔다. 세로로 긴 음료에서도
+    # 메뉴명이 컵 뒤로 사라지지 않게 하는 레이어 순서다.
+    image = _restore_food_foreground(
+        image,
+        source=foreground_source,
+        alpha=(
+            layout.foreground_alpha
+            if layout.food_bbox is not None and not layout.used_fallback
+            else None
+        ),
+    )
     draw = ImageDraw.Draw(image)
 
     width, height = image.size
-    text_margin_x = _poster_text_margin_x(width)
-    copy_max_width = min(
-        layout.max_text_width,
-        int(width * _COPY_COLUMN_MAX_WIDTH_RATIO) - text_margin_x,
-        width - text_margin_x * 2,
+    centered = template.composition == "centered"
+    text_margin_x = max(
+        30,
+        int(width * 0.065),
     )
-    menu_max_width = layout.max_text_width
-    line_gap = layout.line_gap
+    copy_max_width = int(width * (0.76 if centered else 0.58))
+    menu_max_width = int(
+        width
+        * (
+            0.84
+            if centered
+            else 0.70
+            if template.composition == "editorial"
+            else 0.68
+        )
+    )
+    line_gap = max(7, int(height * 0.009))
+    align = "center" if centered else "left"
+    anchor_x = width // 2 if centered else text_margin_x
 
     headline_font = _scale_overlay_font(
         image,
@@ -678,7 +1141,7 @@ def composite_poster_text(
     )
     subline_font = _scale_overlay_font(
         image,
-        TextOverlayRole.POSTER_HEADLINE,
+        TextOverlayRole.POSTER_PRICE,
         template.subline_size_ratio,
         tone=tone,
         food_type=food_type,
@@ -700,179 +1163,180 @@ def composite_poster_text(
         food_type=food_type,
         variant="poster",
     )
-
-    copy_block_height = _measure_copy_block_height(
-        sticker=overlay_copy.sticker,
-        headline=overlay_copy.headline,
-        subline=overlay_copy.subline,
-        sticker_font=sticker_font,
-        headline_font=headline_font,
-        subline_font=subline_font,
-        copy_max_width=copy_max_width,
-        line_gap=line_gap,
-        image_width=width,
-        draw=draw,
-    )
-    copy_y = max(
-        layout.content_top_y,
-        int(height * 0.03),
-    )
-    menu_plan = _resolve_poster_menu_placement(
-        layout=layout,
-        template=template,
-        image=image,
-        menu_name=overlay_copy.menu_name,
+    menu_font, menu_lines, resolved_menu_ratio = _fit_poster_font(
+        image,
+        role=TextOverlayRole.POSTER_MENU,
+        ratio=template.menu_size_ratio,
+        text=overlay_copy.menu_name,
+        max_width=menu_max_width,
+        max_lines=2,
         draw=draw,
         tone=tone,
         food_type=food_type,
-        text_margin_x=text_margin_x,
-        copy_max_width=copy_max_width,
-        line_gap=line_gap,
-        copy_y=copy_y,
-        copy_block_height=copy_block_height,
     )
-    menu_font = menu_plan.menu_font
-    price_font = menu_plan.price_font
-    menu_lines = menu_plan.menu_lines
-    menu_start_y = menu_plan.menu_start_y
-
-    logger.info(
-        "poster_menu_layout | mode=copy_column | font_scale={:.2f} | overlaps_food={}",
-        menu_plan.font_scale,
-        menu_plan.overlaps_food,
+    price_font = _scale_overlay_font(
+        image,
+        TextOverlayRole.POSTER_PRICE,
+        template.price_size_ratio * (resolved_menu_ratio / template.menu_size_ratio),
+        tone=tone,
+        food_type=food_type,
+        variant="poster",
     )
 
-    cursor_y = copy_y
+    cursor_y = max(
+        layout.content_top_y,
+        int(height * (0.062 if template.composition == "framed" else 0.055)),
+    )
     sticker_text = (overlay_copy.sticker or "").strip()
     if sticker_text:
-        sticker_h = _draw_poster_sticker_badge(
+        _, sticker_h = _draw_tracked_text(
             draw,
             text=sticker_text,
             font=sticker_font,
-            left_x=text_margin_x,
-            top_y=cursor_y,
-            image_width=width,
-            palette=palette,
+            x=anchor_x,
+            y=cursor_y,
+            tracking=max(2, int(width * 0.0045)),
+            fill=palette.accent_text,
+            align=align,
         )
-        cursor_y += sticker_h + line_gap
+        cursor_y += sticker_h + max(line_gap, int(height * 0.012))
 
     if overlay_copy.headline:
-        for line in _wrap_text(
+        headline_lines = _wrap_text(
             overlay_copy.headline,
             font=headline_font,
             max_width=copy_max_width,
             draw=draw,
-        ):
-            line_h = _draw_left_line(
-                draw,
-                text=line,
-                font=headline_font,
-                x=text_margin_x,
-                y=cursor_y,
-                fill=palette.primary_text,
-            )
-            cursor_y += line_h + line_gap
+        )
+        cursor_y, _, _ = _draw_text_lines(
+            draw,
+            lines=headline_lines,
+            font=headline_font,
+            x=anchor_x,
+            y=cursor_y,
+            align=align,
+            fill=palette.primary_text,
+            gap=max(3, line_gap // 2),
+        )
+        cursor_y += max(line_gap, int(height * 0.010))
 
     subline_text = (overlay_copy.subline or "").strip()
     if subline_text:
-        if overlay_copy.headline:
-            cursor_y += max(0, line_gap // 2)
-        for line in _wrap_text(
+        subline_lines = _wrap_text(
             subline_text,
             font=subline_font,
             max_width=copy_max_width,
             draw=draw,
-        ):
-            line_h = _draw_left_line(
-                draw,
-                text=line,
-                font=subline_font,
-                x=text_margin_x,
-                y=cursor_y,
-                fill=palette.primary_text,
-            )
-            cursor_y += line_h + line_gap
-
-    cursor_y = menu_start_y
-    for line in menu_lines:
-        if menu_plan.menu_align == "left":
-            line_h = _draw_left_line(
-                draw,
-                text=line,
-                font=menu_font,
-                x=menu_plan.menu_x,
-                y=cursor_y,
-                fill=palette.accent_text,
-            )
-        else:
-            line_h = _draw_centered_line(
-                draw,
-                text=line,
-                font=menu_font,
-                y=cursor_y,
-                image_width=width,
-                fill=palette.accent_text,
-            )
-        cursor_y += line_h + line_gap
-
-    menu_end_y = cursor_y
-
-    # 가격 Pill 뱃지 충돌 방지 동적 위치 계산
-    if overlay_copy.price_text:
-        price_font = _scale_overlay_font(
-            image,
-            TextOverlayRole.POSTER_PRICE,
-            template.price_size_ratio * menu_plan.font_scale,
-            tone=tone,
-            food_type=food_type,
-            variant="poster",
         )
-        badge_cx, badge_cy, badge_w, badge_h = _resolve_price_badge_placement(
-            width=width,
-            menu_lines=menu_lines,
-            menu_font=menu_font,
-            menu_start_y=menu_start_y,
-            menu_end_y=menu_end_y,
-            price_text=overlay_copy.price_text,
-            price_font=price_font,
-            layout=layout,
-            template=template,
-            draw=draw,
-            menu_layout_mode=menu_plan.layout_mode,
-            menu_align=menu_plan.menu_align,
-            menu_x=menu_plan.menu_x,
-        )
-
-        _draw_price_pill_badge(
+        cursor_y, _, _ = _draw_text_lines(
             draw,
-            text=overlay_copy.price_text,
+            lines=subline_lines,
+            font=subline_font,
+            x=anchor_x,
+            y=cursor_y,
+            align=align,
+            fill=palette.primary_text,
+            gap=max(2, line_gap // 3),
+        )
+
+    cursor_y += max(line_gap, int(height * template.headline_menu_gap_ratio))
+    menu_line_gap = max(4, int(height * 0.004))
+    measured_menu_h = sum(_text_box(draw, line, menu_font)[1] for line in menu_lines)
+    measured_menu_h += menu_line_gap * max(0, len(menu_lines) - 1)
+    food_top = layout.food_visual_top
+    if food_top is None and layout.food_bbox:
+        food_top = layout.food_bbox[1]
+
+    menu_start_y = cursor_y
+    if template.composition == "editorial" and food_top is not None:
+        overlap_target = int(
+            food_top - measured_menu_h * (1.0 - template.menu_overlap_ratio)
+        )
+        menu_start_y = max(cursor_y, overlap_target)
+
+    menu_overlaps_food = bool(
+        food_top is not None and menu_start_y + measured_menu_h > food_top
+    )
+    menu_end_y, menu_drawn_width, menu_block_height = _draw_text_lines(
+        draw,
+        lines=menu_lines,
+        font=menu_font,
+        x=anchor_x,
+        y=menu_start_y,
+        align=align,
+        fill=palette.accent_text,
+        gap=menu_line_gap,
+        stroke_fill=palette.primary_stroke if menu_overlaps_food else None,
+        stroke_width=max(1, int(width * 0.0014)) if menu_overlaps_food else 0,
+    )
+
+    if overlay_copy.price_text:
+        price_draw = ImageDraw.Draw(image)
+        price_text = _format_price_text(overlay_copy.price_text)
+        badge_w, badge_h = _price_component_metrics(
+            image,
+            text=price_text,
+            font=price_font,
+            template=template,
+        )
+        lockup_gap = max(12, int(height * 0.012))
+
+        if template.composition == "centered":
+            if template.price_style == "stamp":
+                badge_cx = int(width // 2 + min(menu_drawn_width * 0.24, width * 0.16))
+                lockup_gap = max(10, int(height * 0.008))
+            else:
+                badge_cx = width // 2
+            badge_cy = int(menu_end_y + lockup_gap + badge_h / 2)
+        else:
+            content_right = width - text_margin_x
+            menu_right = anchor_x + menu_drawn_width
+            price_left = content_right - badge_w
+            same_row_gap = max(18, int(width * 0.022))
+            if price_left >= menu_right + same_row_gap:
+                badge_cx = price_left + badge_w // 2
+                badge_cy = int(menu_start_y + menu_block_height / 2)
+                connector_left = menu_right + same_row_gap // 2
+                connector_right = price_left - same_row_gap // 2
+                if connector_right > connector_left:
+                    price_draw.line(
+                        (connector_left, badge_cy, connector_right, badge_cy),
+                        fill=(*palette.badge_outline, 105),
+                        width=max(1, int(width * 0.0012)),
+                    )
+            else:
+                badge_cx = text_margin_x + badge_w // 2
+                badge_cy = int(menu_end_y + lockup_gap + badge_h / 2)
+
+        _draw_price_component(
+            image,
+            text=price_text,
             font=price_font,
             center_x=badge_cx,
             center_y=badge_cy,
-            image_width=width,
             palette=palette,
             template=template,
         )
 
-    if overlay_copy.store_name:
-        text_width = int(draw.textlength(overlay_copy.store_name, font=store_font))
-        ascent, descent = store_font.getmetrics()
-        line_height = ascent + descent
-        store_x = width - layout.store_margin_right - text_width
-        store_y = height - layout.store_margin_bottom - line_height
-        store_x, store_y = layout.clamp_store_position(
-            x=store_x,
-            y=store_y,
-            text_width=text_width,
-            text_height=line_height,
-        )
-        draw.text(
-            (store_x, store_y),
-            overlay_copy.store_name,
-            font=store_font,
-            fill=palette.store_text,
-        )
+    _draw_poster_footer(
+        image,
+        store_name=overlay_copy.store_name,
+        menu_name=overlay_copy.menu_name,
+        store_font=store_font,
+        palette=palette,
+        template=template,
+        layout=layout,
+    )
 
+    logger.info(
+        "poster_design_applied | composition={} | price_style={} | menu_ratio={:.3f} | "
+        "menu_width={} | foreground_layered={}",
+        template.composition,
+        template.price_style,
+        resolved_menu_ratio,
+        menu_drawn_width,
+        layout.foreground_alpha is not None and not layout.used_fallback,
+    )
     return pil_image_to_png_bytes(image.convert("RGB"))
 
 
@@ -985,6 +1449,7 @@ def apply_variant_text_overlay(
                 build_poster_overlay_copy(payload),
                 tone=payload.tone,
                 food_type=food_type,
+                design_style=payload.layout_type,
             )
         return image_bytes
     except Exception as exc:

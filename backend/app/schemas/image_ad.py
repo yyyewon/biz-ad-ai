@@ -58,7 +58,10 @@ class ImageAdRequest(BaseModel):
     price_text: Optional[str] = Field(default=None, description="포스터 가격 문구")
     layout_type: Optional[str] = Field(
         default=None,
-        description="(레거시) 포스터 레이아웃 타입. 신규 생성은 image variant(poster/studio/instagram_feed) 기준",
+        description=(
+            "포스터 디자인 선택(editorial, centered, framed). "
+            "미지정 시 tone에 맞춰 자동 선택"
+        ),
     )
     generation_mode: GenerationMode = Field(
         default="direct_poster",

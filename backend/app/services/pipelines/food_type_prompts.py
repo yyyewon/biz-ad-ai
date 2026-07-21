@@ -42,7 +42,7 @@ FOOD_TYPE_SCENE_HINTS: dict[FoodType, str] = {
 
 VARIANT_DIRECTION_HINTS: dict[ImageVariantType, str] = {
     "studio": "polish casual food photo into clean studio shot, faithful food, better light/bg",
-    "poster": "4:5 menu promo poster, empty top bg + food hero in lower half only, PIL text overlay",
+    "poster": "2:3 menu promo poster, empty top bg + food hero in lower half only, PIL text overlay",
     "instagram_feed": "reels mood, preserve store bg, extreme food closeup",
 }
 
@@ -282,11 +282,12 @@ _STUDIO_TEMPLATE = _STUDIO_PHOTO_TEMPLATE.replace("{_NEGATIVE_STUDIO}", _NEGATIV
 # =============================================================================
 
 _POSTER_LAYOUT_RULES = (
-    "LAYOUT 4:5 1024x1536: upper 42-45% flat solid-color empty zone only (headline/menu added in PIL later), "
+    "LAYOUT 2:3 portrait 1024x1536: upper 38-44% quiet designed background zone (headline/menu added later), "
     "food hero anchored in LOWER half (vertical center of food below 62% height), "
     "never center food in frame, food base near bottom 10-15% margin on simple surface, "
-    "keep top-left clear for headline, upper-center clear for large menu title, "
-    "keep bottom-right 18%x14% corner empty for store name, price zone upper-right above food shoulder. "
+    "keep both top-left and upper-center calm enough for adaptive editorial typography, "
+    "keep the bottom 8% calm for a full-width store footer but continue the same background naturally, "
+    "with no footer panel, color band, or hard horizontal split. "
     "{store_footer_line}"
 )
 
@@ -300,7 +301,7 @@ QUALITY: {realism_rules}
 MOOD: appetizing commercial promo atmosphere, TONE: {tone}
 CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no labels
 PRESERVE: preserve food shape/vessel, redesign bg/lighting only, typography is post-process overlay not in image
-NEG: {_NEGATIVE_POSTER}, no cafe interior, no restaurant room, no wood wall, no photo backdrop, no brand copy
+NEG: {_NEGATIVE_POSTER}, no cafe interior, no restaurant room, no wood wall, no photo backdrop, no brand copy, no footer strip, no lower color block, no hard horizontal band
 """.strip()
 
 # --- poster food tags ---
