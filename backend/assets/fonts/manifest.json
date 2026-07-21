@@ -4,6 +4,16 @@
       "filename": "NotoSansKR-Variable.ttf",
       "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf",
       "license": "OFL-1.1"
+    },
+    "noto_serif_kr": {
+      "filename": "NotoSerifKR-Variable.ttf",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifkr/NotoSerifKR%5Bwght%5D.ttf",
+      "license": "OFL-1.1"
+    },
+    "jua": {
+      "filename": "Jua-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/jua/Jua-Regular.ttf",
+      "license": "OFL-1.1"
     }
   },
   "roles": {
@@ -21,6 +31,40 @@
     "poster_store": { "weight": 400 },
     "reels_hook_lead": { "weight": 400 },
     "reels_hook": { "weight": 800 }
+  },
+  "tone_overrides": {
+    "캐주얼·친근": {
+      "font": "noto_sans_kr",
+      "poster_headline": { "weight": 500 },
+      "poster_menu": { "weight": 700 },
+      "poster_price": { "weight": 600 },
+      "poster_store": { "weight": 400 }
+    },
+    "정중·신뢰": {
+      "font": "noto_sans_kr",
+      "poster_headline": { "weight": 400 },
+      "poster_menu": { "weight": 500 },
+      "poster_price": { "weight": 500 },
+      "poster_store": { "weight": 400 }
+    },
+    "고급·감성": {
+      "font": "noto_serif_kr",
+      "poster_headline": { "weight": 400 },
+      "poster_menu": { "weight": 600 },
+      "poster_price": { "weight": 500 },
+      "poster_store": { "weight": 300 }
+    },
+    "유머·이벤트": {
+      "font": "jua",
+      "poster_headline": { "weight": 400 },
+      "poster_menu": { "weight": 400 },
+      "poster_price": { "weight": 400 },
+      "poster_store": { "weight": 400 },
+      "poster_template": {
+        "badge_style": "filled",
+        "menu_size_ratio": 0.090
+      }
+    }
   },
   "food_type_overrides": {}
 }

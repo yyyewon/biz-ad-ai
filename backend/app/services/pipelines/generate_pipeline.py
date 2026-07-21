@@ -19,7 +19,7 @@ from app.services.pipelines.food_type_resolver import require_food_type
 from app.services.pipelines.image_pipeline import generate_image_ads
 from app.services.pipelines.text_pipeline import run_text_pipeline
 from app.utils.image_bytes import encode_image_bytes_to_base64
-from app.utils.poster_taglines import resolve_poster_headline_from_purpose
+from app.utils.poster_taglines import resolve_poster_headline
 from app.utils.performance_logger import measure_stage, record_performance_metric
 
 
@@ -244,7 +244,7 @@ async def run_generate_pipeline(
 
         if image_bytes:
             resolved_food_type = require_food_type(food)
-            poster_headline = resolve_poster_headline_from_purpose(purpose)
+            poster_headline = resolve_poster_headline(purpose, tone)
             image_payload = _build_image_payload(
                 store_name=store_name,
                 menu_name=menu_name,

@@ -1,64 +1,43 @@
-# =========================
-# Backend API
-# =========================
-# FastAPI 서버와 API 실행에 필요한 패키지
+# GPU VM 설치: bash backend/scripts/install_requirements.sh
+# (pip install -r requirements.txt 단독은 gptqmodel 빌드 실패 가능)
 fastapi
 uvicorn[standard]
-
-# 이미지 업로드 multipart/form-data 처리를 위한 패키지
 python-multipart
-
 
 # =========================
 # Config / Environment
 # =========================
-# .env 및 환경변수 로딩
 python-dotenv
 pydantic-settings
-
-# config/model.yaml 로딩
 PyYAML
-
 
 # =========================
 # Logging
 # =========================
-# 서버 요청, 에러, 추론 시간 로그 관리
 loguru
-
 
 # =========================
 # Image Processing
 # =========================
-# 이미지 bytes 변환, 크기 후처리, hash 계산 보조
 pillow
 
-# 폰트 번들 설치: pip install 후 `python scripts/setup_fonts.py`
-
+# 폰트 번들: pip install 후 `python scripts/setup_fonts.py`
 
 # =========================
 # Testing
 # =========================
-# 단위 테스트 및 FastAPI TestClient 테스트
 pytest
 httpx
 
-
 # =========================
-# AI Providers
+# AI Providers / PyTorch (GPU / CUDA)
 # =========================
-# OpenAI API 연동
-openai
-
+# torch/torchvision/torchaudio는 install_requirements.sh 1단계(requirements-torch.txt)에서 선설치
+# torch 2.8.0 (gptqmodel VLM) + xformers 0.0.32.post2 (torch 2.8.0 공식 wheel)
+#
 # HuggingFace / Diffusers 기반 이미지 생성
 # - SDXL Lightning 4-step
-# - IP-Adapter
-# - xformers attention optimization
-#
-# 주의:
-# - torch 2.6.0 + CUDA 12.4 환경에서 xformers 0.0.29.post2 조합을 테스트 완료
-# - xformers는 torch 버전 호환성이 민감하므로 임의 업그레이드하지 않음
-torch==2.6.0
+openai
 diffusers
 transformers
 accelerate
@@ -66,12 +45,27 @@ safetensors
 huggingface-hub
 sentencepiece
 protobuf
-xformers==0.0.29.post2
+xformers==0.0.32.post2
+
+# Poster design VLM (Qwen2-VL GPTQ) — torch>=2.8 필요
+qwen-vl-utils
+optimum
+gptqmodel==5.8.0
 
 # pytest traceback / terminal output formatting
 Pygments
 
-numpy<2.5
+# Image background removal (poster layout analysis)
+# 2.0.76 은 numpy>=2.3 요구 → gptqmodel 5.8(numpy==2.2.6)과 충돌
+rembg[gpu]==2.0.67
+# 1.27+ 는 CUDA 13 빌드 → torch 2.8.0+cu128 환경에서 libcudart.so.13 오류
+onnxruntime-gpu==1.26.0
+
+# numba/pymatting compatibility for rembg; gptqmodel 5.8 pins numpy==2.2.6
+numpy==2.2.6
+
+# gptqmodel→datasets 는 fsspec<=2026.4.0 요구 (torch compile 시 2026.6.0 과 충돌)
+fsspec==2026.4.0
 
 # TestClient dependency for Starlette/FastAPI tests
 httpx2
@@ -79,5 +73,4 @@ httpx2
 # =========================
 # Auth / Social Login
 # =========================
-# 자체 세션 토큰(JWT) 발급/검증
 PyJWT

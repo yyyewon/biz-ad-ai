@@ -13,7 +13,7 @@ def _payload(**kwargs) -> ImageAdRequest:
         "menu_name": "고추장 찌개",
         "food_type": "fried",
         "promotion_goal": "신메뉴 홍보",
-        "tone": "친근한",
+        "tone": "캐주얼·친근",
         "extra_notes": "따뜻한 나무 테이블 배경",
         "num_images": 3,
     }
@@ -88,7 +88,7 @@ def test_fried_poster_uses_custom_template_with_pil_rules():
     )
 
     assert "crispy golden fried" in prompt
-    assert "casual dining poster" in prompt
+    assert "warm orange-to-gold solid gradient" in prompt
     assert "zero typography" in prompt
     assert "no readable text" in prompt
     assert "신메뉴" not in prompt

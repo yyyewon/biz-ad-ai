@@ -188,7 +188,7 @@ def test_text_pipeline_uses_text_provider(monkeypatch):
             menu_name="김밥",
             purpose="신메뉴 홍보",
             llm_request="가성비를 강조",
-            tone="친근한",
+            tone="캐주얼·친근",
         )
     )
 

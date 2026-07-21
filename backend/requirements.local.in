@@ -47,15 +47,23 @@ transformers
 accelerate
 sentencepiece
 openai
+# Poster design VLM (Qwen2-VL GPTQ)
+qwen-vl-utils
+optimum
+gptqmodel==5.8.0
 
 # pytest traceback / terminal output formatting
 Pygments
 
-# Image background removal
-rembg
+# 2.0.76 은 numpy>=2.3 → gptqmodel 5.8과 충돌
+rembg==2.0.67
 
 # numba/pymatting compatibility for rembg
-numpy<2.5
+# gptqmodel 5.8 pins numpy==2.2.6
+numpy==2.2.6
+
+# gptqmodel→datasets: fsspec<=2026.4.0
+fsspec==2026.4.0
 
 # TestClient dependency for Starlette/FastAPI tests
 httpx2

@@ -33,6 +33,14 @@ class TextOverlayRole(StrEnum):
     REELS_HOOK = "reels_hook"
 
 
+POSTER_ROLES = frozenset({
+    TextOverlayRole.POSTER_HEADLINE,
+    TextOverlayRole.POSTER_MENU,
+    TextOverlayRole.POSTER_PRICE,
+    TextOverlayRole.POSTER_STORE,
+})
+
+
 # 가변 폰트(wght) 기본값이 100이라 얇게 나오므로 역할별 굵기를 지정한다.
 ROLE_FONT_WEIGHTS: dict[str, int] = {
     TextOverlayRole.POSTER_HEADLINE: 500,
@@ -44,14 +52,61 @@ ROLE_FONT_WEIGHTS: dict[str, int] = {
 }
 
 
+def _normalize_tone(tone: str | None) -> str | None:
+    if tone is None:
+        return None
+    normalized = str(tone).strip()
+    return normalized or None
+
+
+def _get_tone_block(manifest: dict[str, Any], tone: str | None) -> dict[str, Any] | None:
+    tone_key = _normalize_tone(tone)
+    if not tone_key:
+        return None
+
+    tone_block = manifest.get("tone_overrides", {}).get(tone_key)
+    if isinstance(tone_block, dict):
+        return tone_block
+    return None
+
+
+def _resolve_tone_role_style(
+    manifest: dict[str, Any],
+    tone: str | None,
+    role_name: str,
+) -> dict[str, Any] | None:
+    if role_name not in POSTER_ROLES:
+        return None
+
+    tone_block = _get_tone_block(manifest, tone)
+    if tone_block is None:
+        return None
+
+    tone_font = tone_block.get("font")
+    role_style = tone_block.get(role_name)
+
+    merged: dict[str, Any] = {}
+    if isinstance(role_style, dict):
+        merged.update(role_style)
+    if "font" not in merged and tone_font:
+        merged["font"] = tone_font
+
+    return merged or None
+
+
 def _resolve_font_weight(
     role: TextOverlayRole | str,
     *,
+    tone: str | None = None,
     food_type: str | None = None,
     variant: str | None = None,
 ) -> int:
     manifest = _load_manifest()
     role_name = str(role)
+
+    tone_style = _resolve_tone_role_style(manifest, tone, role_name)
+    if tone_style is not None and tone_style.get("weight") is not None:
+        return int(tone_style["weight"])
 
     if food_type:
         food_overrides = manifest.get("food_type_overrides", {}).get(food_type, {})
@@ -83,6 +138,7 @@ def _apply_font_weight(font: ImageFont.FreeTypeFont, weight: int) -> ImageFont.F
     font.set_variation_by_axes([weight])
     return font
 
+
 def _load_manifest() -> dict[str, Any]:
     if not MANIFEST_PATH.is_file():
         raise FileNotFoundError(f"폰트 manifest 파일을 찾을 수 없습니다: {MANIFEST_PATH}")
@@ -96,12 +152,26 @@ def list_font_keys() -> list[str]:
 
 def list_required_font_keys(
     *,
+    tone: str | None = None,
     food_type: str | None = None,
     variant: str | None = None,
 ) -> list[str]:
     manifest = _load_manifest()
     roles = manifest.get("roles", {})
     font_keys = {roles[role] for role in roles}
+
+    tone_key = _normalize_tone(tone)
+    if tone_key:
+        tone_block = manifest.get("tone_overrides", {}).get(tone_key, {})
+        tone_font = tone_block.get("font")
+        if tone_font:
+            font_keys.add(tone_font)
+
+        for role_name, role_style in tone_block.items():
+            if role_name in POSTER_ROLES and isinstance(role_style, dict):
+                font_key = role_style.get("font")
+                if font_key:
+                    font_keys.add(font_key)
 
     if food_type:
         overrides = manifest.get("food_type_overrides", {}).get(food_type, {})
@@ -117,11 +187,16 @@ def list_required_font_keys(
 def resolve_font_key(
     role: TextOverlayRole | str,
     *,
+    tone: str | None = None,
     food_type: str | None = None,
     variant: str | None = None,
 ) -> str:
     manifest = _load_manifest()
     role_name = str(role)
+
+    tone_style = _resolve_tone_role_style(manifest, tone, role_name)
+    if tone_style is not None and tone_style.get("font"):
+        return str(tone_style["font"])
 
     if food_type:
         food_overrides = manifest.get("food_type_overrides", {}).get(food_type, {})
@@ -139,11 +214,17 @@ def resolve_font_key(
 def resolve_font_path(
     role: TextOverlayRole | str,
     *,
+    tone: str | None = None,
     food_type: str | None = None,
     variant: str | None = None,
 ) -> Path:
     manifest = _load_manifest()
-    font_key = resolve_font_key(role, food_type=food_type, variant=variant)
+    font_key = resolve_font_key(
+        role,
+        tone=tone,
+        food_type=food_type,
+        variant=variant,
+    )
     font_entry = manifest["fonts"][font_key]
     return FONTS_DIR / font_entry["filename"]
 
@@ -176,6 +257,7 @@ def _download_font(font_key: str) -> Path:
 def ensure_fonts_installed(
     font_keys: list[str] | None = None,
     *,
+    tone: str | None = None,
     food_type: str | None = None,
     variant: str | None = None,
 ) -> list[Path]:
@@ -183,7 +265,11 @@ def ensure_fonts_installed(
     manifest에 등록된 폰트 파일이 없으면 다운로드한다.
     `python scripts/setup_fonts.py`와 동일한 역할을 한다.
     """
-    keys = font_keys or list_required_font_keys(food_type=food_type, variant=variant)
+    keys = font_keys or list_required_font_keys(
+        tone=tone,
+        food_type=food_type,
+        variant=variant,
+    )
     installed: list[Path] = []
 
     with _download_lock:
@@ -198,19 +284,34 @@ def ensure_fonts_installed(
     return installed
 
 
-@lru_cache(maxsize=64)
+@lru_cache(maxsize=128)
 def load_overlay_font(
     role: TextOverlayRole | str,
     size: int,
     *,
+    tone: str | None = None,
     food_type: str | None = None,
     variant: str | None = None,
 ) -> ImageFont.FreeTypeFont:
-    ensure_fonts_installed(
-        font_keys=[resolve_font_key(role, food_type=food_type, variant=variant)],
+    font_key = resolve_font_key(
+        role,
+        tone=tone,
+        food_type=food_type,
+        variant=variant,
     )
-    font_path = resolve_font_path(role, food_type=food_type, variant=variant)
-    weight = _resolve_font_weight(role, food_type=food_type, variant=variant)
+    ensure_fonts_installed(font_keys=[font_key])
+    font_path = resolve_font_path(
+        role,
+        tone=tone,
+        food_type=food_type,
+        variant=variant,
+    )
+    weight = _resolve_font_weight(
+        role,
+        tone=tone,
+        food_type=food_type,
+        variant=variant,
+    )
 
     try:
         font = ImageFont.truetype(str(font_path), size=size)

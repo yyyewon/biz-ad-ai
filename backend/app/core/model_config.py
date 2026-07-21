@@ -477,6 +477,50 @@ def get_variant_image_size(variant: str) -> str:
     return str(size)
 
 
+def get_poster_design_analysis_config() -> dict[str, Any]:
+    """
+    포스터 VLM 디자인 분석 설정을 반환한다.
+
+    poster_design_analysis.enabled 가 false 이면 VLM을 사용하지 않는다.
+    """
+
+    config = load_model_config()
+    settings = config.get("poster_design_analysis", {})
+
+    if not isinstance(settings, dict):
+        return {"enabled": False}
+
+    return settings
+
+
+def get_poster_design_model_settings() -> dict[str, Any] | None:
+    """
+    활성화된 경우 포스터 VLM 모델 설정을 반환한다.
+    """
+
+    analysis_config = get_poster_design_analysis_config()
+    if not analysis_config.get("enabled"):
+        return None
+
+    provider_name = str(analysis_config.get("provider", "hf"))
+    model_name = analysis_config.get("default_model")
+    models = analysis_config.get("models", {})
+
+    if not model_name or not isinstance(models, dict):
+        return None
+
+    model_settings = models.get(model_name)
+    if not isinstance(model_settings, dict):
+        return None
+
+    return {
+        "provider": provider_name,
+        "model_name": str(model_name),
+        "settings": model_settings,
+        "fallback_to_rules": bool(analysis_config.get("fallback_to_rules", True)),
+    }
+
+
 def get_performance_logging_settings() -> dict[str, Any]:
     """
     성능 로그 설정을 반환한다.

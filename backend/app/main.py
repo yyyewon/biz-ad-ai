@@ -66,9 +66,25 @@ async def _warm_up_food_classifier() -> None:
     except Exception as exc:
         logger.exception("food_classifier_warmup_failed | error={}", str(exc))
 
+async def _warm_up_poster_vlm() -> None:
+    try:
+        from app.utils.poster_vlm import is_poster_vlm_enabled, warm_up_poster_vlm
+
+        if not is_poster_vlm_enabled():
+            return
+
+        logger.info("poster_vlm_warmup_started")
+        await run_in_threadpool(warm_up_poster_vlm)
+        logger.info("poster_vlm_warmup_completed")
+
+    except Exception as exc:
+        logger.exception("poster_vlm_warmup_failed | error={}", str(exc))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _warm_up_hf_image_pipeline()
+    await _warm_up_poster_vlm()
     await _warm_up_food_classifier()
     yield
 

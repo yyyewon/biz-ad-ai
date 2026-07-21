@@ -237,7 +237,7 @@ curl -X POST http://127.0.0.1:8010/api/v1/ad/generate \
   -F "food=빵, 디저트, 케이크" \
   -F "image_request=따뜻한 우드 테이블 배경으로 해주세요" \
   -F "llm_request=이번 주 이벤트 내용을 포함해 주세요" \
-  -F "tone=친근한" \
+  -F "tone=캐주얼·친근" \
   -F "image=@sample_food.png"
 ```
 
@@ -250,7 +250,7 @@ curl -X POST http://127.0.0.1:8010/api/v1/ad/generate \
   -F "menu_name=데몬헌터스 케이크" \
   -F "purpose=신메뉴 홍보" \
   -F "llm_request=캐릭터 컨셉과 디저트 분위기를 살려줘" \
-  -F "tone=친근한"
+  -F "tone=캐주얼·친근"
 ```
 
 ### 5.2 통합 광고 생성 성공 응답
