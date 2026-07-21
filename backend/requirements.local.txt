@@ -23,6 +23,8 @@ attrs==26.1.0
     # via
     #   jsonschema
     #   referencing
+av==18.0.0
+    # via qwen-vl-utils
 certifi==2026.6.17
     # via
     #   httpcore
@@ -76,6 +78,7 @@ huggingface-hub==1.22.0
     # via
     #   accelerate
     #   diffusers
+    #   optimum
     #   tokenizers
     #   transformers
 idna==3.18
@@ -137,14 +140,18 @@ onnxruntime==1.27.0
     # via -r backend/requirements.local.in
 openai==2.44.0
     # via -r backend/requirements.local.in
+optimum==2.2.0
+    # via -r backend/requirements.local.in
 packaging==26.2
     # via
     #   accelerate
     #   huggingface-hub
     #   lazy-loader
     #   onnxruntime
+    #   optimum
     #   pooch
     #   pytest
+    #   qwen-vl-utils
     #   scikit-image
     #   transformers
 pillow==12.3.0
@@ -200,6 +207,8 @@ pyyaml==6.0.3
     #   huggingface-hub
     #   transformers
     #   uvicorn
+qwen-vl-utils==0.0.14
+    # via -r backend/requirements.local.in
 referencing==0.37.0
     # via
     #   jsonschema
@@ -214,6 +223,7 @@ requests==2.34.2
     # via
     #   diffusers
     #   pooch
+    #   qwen-vl-utils
 rich==15.0.0
     # via typer
 rpds-py==2026.6.3
@@ -301,6 +311,7 @@ zipp==4.1.0
     # via importlib-metadata
 gptqmodel==5.8.0
     # via -r backend/requirements.local.in
+    # NOTE: pip-compile cannot resolve gptqmodel without torch pre-installed; keep manual pin.
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools

@@ -15,8 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.local.txt .
 
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.local.txt
+# CPU torch 선설치 후 나머지 설치
+RUN pip install --no-cache-dir --upgrade pip "setuptools>=75,<82" wheel && \
+    pip install --no-cache-dir torch torchvision torchaudio && \
+    pip install --no-cache-dir "numpy==2.2.6" && \
+    pip install --no-cache-dir -r requirements.local.txt --no-build-isolation
 
 COPY . .
 

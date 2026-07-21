@@ -353,6 +353,7 @@ def _ensure_gptq_runtime(model_id: str) -> None:
 
     try:
         import gptqmodel  # noqa: F401 — 5.8+ HF 네이티브 연동 등록
+        import optimum  # noqa: F401 — GPTQ 체크포인트 로딩에 필요
     except ImportError as exc:
         raise ImportError(
             "GPTQ VLM requires `pip install optimum gptqmodel qwen-vl-utils`"
