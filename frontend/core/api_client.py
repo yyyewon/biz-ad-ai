@@ -3,9 +3,11 @@ API 클라이언트 모듈
 """
 from __future__ import annotations
 
-import json
-import time
 import base64
+import json
+import mimetypes
+import time
+
 import requests
 import streamlit as st
 
@@ -14,6 +16,7 @@ from core.config import (
     GENERATE_ENDPOINT,
     HEALTH_ENDPOINT,
     REQUEST_TIMEOUT_GENERATE,
+    CLASSIFY_ENDPOINT,
 )
 
 
@@ -96,7 +99,9 @@ def generate_ad(
             simulate_image_failure=simulate_failure,
         )
 
-    files = {"image": (image_name or "upload.png", image_bytes, "application/octet-stream")}
+    content_type = mimetypes.guess_type(image_name or "upload.jpg")[0] or "image/jpeg"
+    files = {"image": (image_name or "upload.png", image_bytes, content_type)}
+
     payload = {
         "store_name": store_name,
         "menu_name": menu_name,
@@ -317,3 +322,73 @@ def _generate_ad_mock(
             "image_generation": {"status": "SUCCESS"},
         },
     }
+
+
+def classify_food(
+    image_bytes: bytes,
+    image_name: str,
+    cookies: dict | None = None,
+    mock: bool = False,
+) -> dict:
+    """
+    업로드한 이미지를 백엔드의 분류 API에 보내 음식 종류를 판별합니다.
+    """
+
+    if mock:
+        time.sleep(0.5)
+        # 실제 이미지 내용과 무관하게 데모용 고정값 반환
+        return {
+            "ok": True,
+            "predicted_food": "덮밥, 볶음, 비빔",
+        }
+
+    content_type = mimetypes.guess_type(image_name or "upload.jpg")[0] or "image/jpeg"
+    files = {"file": (image_name or "upload.png", image_bytes, content_type)}
+
+    try:
+        res = requests.post(
+            CLASSIFY_ENDPOINT,
+            files=files,
+            cookies=cookies,
+            timeout=10,  # 가벼운 추론이므로 타임아웃은 10초로 지정
+        )
+
+        if res.status_code == 401:
+            if request_refresh_token(cookies):
+                res = requests.post(
+                    CLASSIFY_ENDPOINT,
+                    files=files,
+                    cookies=cookies,
+                    timeout=10,
+                )
+
+        res.raise_for_status()
+        body = res.json()
+
+        if body.get("success") is False:
+            error = body.get("error") or {}
+            return {
+                "ok": False,
+                "error": error.get("message") or "분류에 실패했어요.",
+                "error_code": error.get("code"),
+            }
+
+        data = body.get("data") or {}
+        return {
+            "ok": True,
+            "predicted_food": data.get("predicted_food"),
+        }
+
+    except requests.exceptions.RequestException as exc:
+        fallback = "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요."
+        code = "NETWORK_DISCONNECTED"
+
+        if hasattr(exc, "response") and exc.response is not None:
+            status_code = exc.response.status_code
+            if status_code in [502, 503, 504]:
+                fallback = f"서버가 응답하지 않습니다. 잠시 후 다시 시도해 주세요. (오류 코드: {status_code})"
+                code = f"SERVER_{status_code}"
+            else:
+                fallback, code = _extract_error(exc.response, f"오류 발생: {status_code}")
+
+        return {"ok": False, "error": fallback, "error_code": code}

@@ -55,10 +55,21 @@ async def _warm_up_hf_image_pipeline() -> None:
     except Exception as exc:
         logger.exception("hf_image_pipeline_warmup_failed | error={}", str(exc))
 
+async def _warm_up_food_classifier() -> None:
+    try:
+        from app.services.providers.food_classifier_provider import food_classifier_provider
+
+        logger.info("food_classifier_warmup_started")
+        await run_in_threadpool(food_classifier_provider._ensure_model_loaded)
+        logger.info("food_classifier_warmup_completed")
+
+    except Exception as exc:
+        logger.exception("food_classifier_warmup_failed | error={}", str(exc))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _warm_up_hf_image_pipeline()
+    await _warm_up_food_classifier()
     yield
 
 app = FastAPI(
@@ -67,6 +78,7 @@ app = FastAPI(
     version=settings.app_version,
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 if register_exception_handlers:

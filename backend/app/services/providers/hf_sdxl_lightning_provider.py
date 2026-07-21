@@ -450,8 +450,22 @@ class HFSDXLLightningImageProvider(ImageGenerationProvider):
 
                 # Lightning UNet 생성 및 weight 주입
                 unet = UNet2DConditionModel.from_config(unet_config)
-                state_dict = load_file(lightning_checkpoint_path, device="cpu")
-                unet.load_state_dict(state_dict)
+                state_dict = load_file(lightning_checkpoint_path, device=device)
+
+                # SDXL base UNet config 로드
+                unet_config = UNet2DConditionModel.load_config(
+                    self._base_model_id,
+                    subfolder="unet",
+                    token=self._hf_token,
+                )
+
+                # meta device에서 빈 UNet 구조만 생성 (실제 메모리 할당 없음)
+                with torch.device("meta"):
+                    unet = UNet2DConditionModel.from_config(unet_config)
+
+                # assign=True로 meta 텐서를 실제 GPU 텐서(state_dict)로 바로 교체
+                # (복사가 아니라 할당이라 CPU/GPU에 중복 메모리가 안 생김)
+                unet.load_state_dict(state_dict, assign=True)
                 unet = unet.to(device=device, dtype=dtype)
 
                 # SDXL base pipeline 로드

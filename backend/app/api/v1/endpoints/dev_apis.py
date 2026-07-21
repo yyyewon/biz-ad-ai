@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 from time import perf_counter
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
@@ -18,6 +19,7 @@ from app.services.pipelines.text_pipeline import run_text_pipeline
 from app.utils.image_bytes import decode_base64_to_image_bytes
 from app.utils.upload_image_validator import validate_uploaded_image_bytes
 from app.utils.image_processor import prepare_upload_image
+from app.services.providers.food_classifier_provider import food_classifier_provider
 
 router = APIRouter()
 
@@ -299,6 +301,76 @@ async def create_image_ad(
 
         raise AppException(
             errors.IMAGE_AD_ENDPOINT_FAILED,
+            detail={
+                "error_type": exc.__class__.__name__,
+                "error": str(exc),
+            },
+        ) from exc
+
+
+@router.post(
+    "/classify-food",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Dev - Food Classification"],
+)
+async def classify_food_endpoint(
+    file: UploadFile = File(..., description="분류할 음식 이미지"),
+):
+    """
+    이미지를 받아 어떤 음식 카테고리에 속하는지 분류하여 반환합니다.
+
+    최종 경로:
+    POST /api/v1/dev/classify-food
+    """
+    try:
+        # 1) content_type 기본 체크
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise AppException(
+                errors.INVALID_IMAGE_FILE,
+                detail={"content_type": file.content_type},
+            )
+
+        # 2) 파일 bytes 읽기
+        image_bytes = await file.read()
+
+        if not image_bytes:
+            raise AppException(errors.EMPTY_IMAGE_FILE)
+
+        # 3) 업로드 이미지 유효성 검증
+        validate_uploaded_image_bytes(
+            image_bytes,
+            filename=file.filename or "uploaded_image",
+            content_type=file.content_type,
+        )
+
+
+        logger.info(
+            "classify_food_endpoint_started | filename={} | content_type={}",
+            file.filename,
+            file.content_type,
+        )
+
+        # 4) 분류 수행 (동기 추론이므로 스레드로 위임)
+        predicted_food = await asyncio.to_thread(
+            food_classifier_provider.classify, image_bytes
+        )
+
+        logger.info(
+            "classify_food_endpoint_completed | predicted_food={}",
+            predicted_food,
+        )
+
+        return success_response(data={"predicted_food": predicted_food})
+
+    except AppException:
+        raise
+
+    except Exception as exc:
+        logger.exception("classify_food_endpoint_failed | error={}", str(exc))
+
+        raise AppException(
+            errors.FOOD_CLASSIFICATION_ENDPOINT_FAILED,
             detail={
                 "error_type": exc.__class__.__name__,
                 "error": str(exc),
