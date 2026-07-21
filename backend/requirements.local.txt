@@ -299,6 +299,11 @@ websockets==16.0
     # via uvicorn
 zipp==4.1.0
     # via importlib-metadata
+    
+# Poster design VLM (Qwen2-VL GPTQ)
+qwen-vl-utils==0.0.14
+optimum==2.2.0
+av==18.0.0
 gptqmodel==5.8.0
     # via -r backend/requirements.local.in
 
