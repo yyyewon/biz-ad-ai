@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from app.schemas.food_type import FoodType
 from app.schemas.image_ad import ImageAdRequest, ImageVariantType
-from app.services.pipelines.food_type_prompts import (
-    build_food_variant_prompt,
-    build_variant_negative_prompt,
+from app.services.pipelines.food_type_prompts import build_food_variant_prompt
+from app.services.pipelines.hf_food_type_prompts import (
+    build_hf_food_variant_prompt,
+    build_hf_variant_negative_prompt,
     strip_prompt_neg_line,
 )
 from app.services.providers.base import ImageRenderMode
@@ -66,10 +67,10 @@ def build_hf_variant_prompts(
     *,
     food_type: FoodType,
 ) -> tuple[str, str]:
-    """HF용 (positive_prompt, negative_prompt) — NEG 줄은 negative 파라미터로 분리."""
-    full_prompt = build_variant_prompt(
+    """HF용 (positive_prompt, negative_prompt) — hf_food_type_prompts.py 기준."""
+    full_prompt = build_hf_food_variant_prompt(
         payload,
         variant,
         food_type=food_type,
     )
-    return strip_prompt_neg_line(full_prompt), build_variant_negative_prompt(variant)
+    return strip_prompt_neg_line(full_prompt), build_hf_variant_negative_prompt(variant)
