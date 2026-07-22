@@ -34,6 +34,19 @@ if setup_logger:
 if init_db:
     init_db()
 
+
+def _cuda_memory_allocated_gb() -> float:
+    """Read CUDA memory without importing PyTorch on the HTTP startup path."""
+
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return 0.0
+        return torch.cuda.memory_allocated() / 1024**3
+    except Exception:
+        return 0.0
+
 async def _warm_up_hf_image_pipeline() -> bool:
     from app.core.model_config import get_provider_name
 
@@ -49,9 +62,16 @@ async def _warm_up_hf_image_pipeline() -> bool:
         provider = get_image_provider()
 
         if hasattr(provider, "_load_text2img_pipeline"):
-            logger.info("hf_image_pipeline_warmup_started")
+            before = await run_in_threadpool(_cuda_memory_allocated_gb)
+            logger.info("hf_image_pipeline_warmup_started | vram_before_gb={:.3f}", before)
+
             await run_in_threadpool(provider._load_text2img_pipeline)
-            logger.info("hf_image_pipeline_warmup_completed")
+
+            after = await run_in_threadpool(_cuda_memory_allocated_gb)
+            logger.info(
+                "hf_image_pipeline_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
+                after, after - before
+            )
 
         return True
 
@@ -63,9 +83,16 @@ async def _warm_up_food_classifier() -> bool:
     try:
         from app.services.providers.food_classifier_provider import food_classifier_provider
 
-        logger.info("food_classifier_warmup_started")
+        before = await run_in_threadpool(_cuda_memory_allocated_gb)
+        logger.info("food_classifier_warmup_started | vram_before_gb={:.3f}", before)
+
         await run_in_threadpool(food_classifier_provider._ensure_model_loaded)
-        logger.info("food_classifier_warmup_completed")
+
+        after = await run_in_threadpool(_cuda_memory_allocated_gb)
+        logger.info(
+            "food_classifier_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
+            after, after - before
+        )
         return True
 
     except Exception as exc:
@@ -79,9 +106,16 @@ async def _warm_up_poster_vlm() -> bool:
         if not is_poster_vlm_enabled():
             return True
 
-        logger.info("poster_vlm_warmup_started")
+        before = await run_in_threadpool(_cuda_memory_allocated_gb)
+        logger.info("poster_vlm_warmup_started | vram_before_gb={:.3f}", before)
+
         await run_in_threadpool(warm_up_poster_vlm)
-        logger.info("poster_vlm_warmup_completed")
+
+        after = await run_in_threadpool(_cuda_memory_allocated_gb)
+        logger.info(
+            "poster_vlm_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
+            after, after - before
+        )
         return True
 
     except Exception as exc:
