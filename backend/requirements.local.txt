@@ -246,14 +246,14 @@ tifffile==2026.6.1
     # via scikit-image
 tokenizers==0.22.2
     # via transformers
-torch==2.12.1
+torch==2.8.0
     # via
     #   -r backend/requirements.local.in
     #   accelerate
     #   torchvision
-torchaudio==2.11.0
+torchaudio==2.8.0
     # via -r backend/requirements.local.in
-torchvision==0.27.1
+torchvision==0.23.0
     # via -r backend/requirements.local.in
 tqdm==4.68.3
     # via
@@ -299,6 +299,11 @@ websockets==16.0
     # via uvicorn
 zipp==4.1.0
     # via importlib-metadata
+    
+# Poster design VLM (Qwen2-VL GPTQ)
+qwen-vl-utils==0.0.14
+optimum==2.2.0
+av==18.0.0
 gptqmodel==5.8.0
     # via -r backend/requirements.local.in
 
