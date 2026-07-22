@@ -2,7 +2,7 @@
 컨테이너/VM 시작 시점에 모델 가중치를 미리 다운로드하는 스크립트.
 
 다운로드 대상:
-- HF 이미지 생성 프로필: SDXL Lightning(+base/IP-Adapter) 또는 SD3.5
+- HF 이미지 생성 프로필: SDXL Lightning(+base/IP-Adapter), SD1.5 ControlNet Tile 또는 SD3.5
 - 포스터 파이프라인: rembg u2net + (VLM 활성 시) Qwen2-VL GPTQ
 - 음식 자동분류: CLIP (openai/clip-vit-base-patch32)
 
@@ -185,11 +185,51 @@ def _prefetch_sdxl_lightning_models(hf_token: str) -> bool:
     return ok
 
 
+def _prefetch_sd15_controlnet_tile_models(hf_token: str) -> bool:
+    """SD 1.5 Base 모델과 ControlNet Tile v1.1 가중치를 미리 캐시한다."""
+    try:
+        from huggingface_hub import snapshot_download
+    except Exception as exc:
+        _log(f"huggingface_hub import 실패, SD1.5 ControlNet prefetch 생략: {exc}")
+        return False
+
+    model_settings = _resolve_image_generation_settings()
+    base_model_id = str(
+        model_settings.get("base_model_id") or "runwayml/stable-diffusion-v1-5"
+    ).strip()
+    controlnet_model_id = str(
+        model_settings.get("controlnet_model_id") or "lllyasviel/control_v11f1e_sd15_tile"
+    ).strip()
+
+    ok = True
+    _log(f"SD1.5 base 다운로드 시작 | model_id={base_model_id}")
+    try:
+        snapshot_download(repo_id=base_model_id, token=hf_token or None)
+        _log(f"SD1.5 base 캐시 완료 | model_id={base_model_id}")
+    except Exception as exc:
+        ok = False
+        _log(f"SD1.5 base prefetch 실패 | model_id={base_model_id} | error={exc}")
+
+    _log(f"ControlNet Tile 모델 다운로드 시작 | model_id={controlnet_model_id}")
+    try:
+        snapshot_download(repo_id=controlnet_model_id, token=hf_token or None)
+        _log(f"ControlNet Tile 모델 캐시 완료 | model_id={controlnet_model_id}")
+    except Exception as exc:
+        ok = False
+        _log(f"ControlNet Tile prefetch 실패 | model_id={controlnet_model_id} | error={exc}")
+
+    return ok
+
+
 def _prefetch_hf_image_models(hf_token: str) -> bool:
     model_settings = _resolve_image_generation_settings()
     provider_type = str(model_settings.get("provider_type") or "").strip()
+
     if provider_type == "sdxl_lightning":
         return _prefetch_sdxl_lightning_models(hf_token)
+
+    if provider_type == "sd15_controlnet_tile":
+        return _prefetch_sd15_controlnet_tile_models(hf_token)
 
     model_id = _resolve_image_model_id()
     return _prefetch_diffusion_model(model_id, hf_token)
@@ -292,7 +332,7 @@ def main() -> int:
             "ok" if _prefetch_hf_image_models(hf_token) else "fail"
         )
     else:
-        _log("image_generation provider 가 hf 가 아닙니다. diffusion/SDXL prefetch 생략.")
+        _log("image_generation provider 가 hf 가 아닙니다.")
         results["hf_image_generation"] = "skip"
 
     results["rembg_u2net"] = "ok" if _prefetch_rembg_model() else "fail"

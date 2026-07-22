@@ -38,9 +38,12 @@ async def _warm_up_hf_image_pipeline() -> None:
     from app.core.model_config import get_provider_name
 
     try:
-        if get_provider_name("image_generation") != "hf":
+        provider_name = get_provider_name("image_generation")
+        if provider_name != "hf":
+            logger.info("hf_image_pipeline_warmup_skipped | provider={}", provider_name)
             return
-    except Exception:
+    except Exception as exc:
+        logger.warning("hf_image_pipeline_warmup_skipped | config_error={}", str(exc))
         return
 
     try:
@@ -48,17 +51,27 @@ async def _warm_up_hf_image_pipeline() -> None:
 
         provider = get_image_provider()
 
-        if hasattr(provider, "_load_text2img_pipeline"):
+        # 호출할 워밍업/로드 메서드 이름을 유연하게 찾음
+        load_method = None
+        for method_name in ["warmup", "load_pipeline", "_load_pipeline", "_load_text2img_pipeline", "_load_controlnet_pipeline"]:
+            if hasattr(provider, method_name):
+                load_method = getattr(provider, method_name)
+                break
+
+        if load_method:
             before = torch.cuda.memory_allocated() / 1024**3
             logger.info("hf_image_pipeline_warmup_started | vram_before_gb={:.3f}", before)
 
-            await run_in_threadpool(provider._load_text2img_pipeline)
+            await run_in_threadpool(load_method)
 
             after = torch.cuda.memory_allocated() / 1024**3
             logger.info(
                 "hf_image_pipeline_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
                 after, after - before
             )
+        else:
+            # 메서드를 못 찾았을 때 조용히 넘어가지 않도록 경고 로그 출력
+            logger.warning("hf_image_pipeline_warmup_skipped | no_load_method_found_in_provider={}", type(provider).__name__)
 
     except Exception as exc:
         logger.exception("hf_image_pipeline_warmup_failed | error={}", str(exc))

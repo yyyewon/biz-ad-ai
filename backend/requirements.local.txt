@@ -311,5 +311,9 @@ av==18.0.0
 gptqmodel==5.8.0
     # via -r backend/requirements.local.in
 
+xformers==0.0.32.post2
+    # via -r backend/requirements.in
+
+
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
