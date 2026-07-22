@@ -1,4 +1,7 @@
 import asyncio
+import sys
+import threading
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
@@ -136,6 +139,118 @@ def test_generate_image_ads_cancels_remaining_variant_tasks_on_failure(monkeypat
 
     assert started == 3
     assert cancelled == 2
+
+
+def test_variant_overlay_starts_before_other_provider_calls_finish(monkeypatch):
+    overlay_started = threading.Event()
+    overlay_thread_ids: list[int] = []
+    main_thread_id = threading.get_ident()
+    image_bytes = _sample_source_bytes()
+
+    async def fake_generate_poster_with_retries(*, size, **kwargs):
+        if size == "poster":
+            return [image_bytes]
+
+        while not overlay_started.is_set():
+            await asyncio.sleep(0)
+        return [image_bytes]
+
+    def fake_apply_variant_text_overlay(data, **kwargs):
+        overlay_thread_ids.append(threading.get_ident())
+        overlay_started.set()
+        return data
+
+    monkeypatch.setattr(image_pipeline, "get_image_provider", lambda: object())
+    monkeypatch.setattr(image_pipeline, "get_provider_name", lambda role: "openai")
+    monkeypatch.setattr(
+        image_pipeline,
+        "get_variant_image_size",
+        lambda variant: variant,
+    )
+    monkeypatch.setattr(
+        image_pipeline,
+        "_generate_poster_with_retries",
+        fake_generate_poster_with_retries,
+    )
+    monkeypatch.setattr(
+        image_pipeline,
+        "variant_uses_pil_text_overlay",
+        lambda food_type, variant: variant == "poster",
+    )
+    monkeypatch.setattr(
+        image_pipeline,
+        "apply_variant_text_overlay",
+        fake_apply_variant_text_overlay,
+    )
+
+    payload = ImageAdRequest(
+        store_name="만월",
+        menu_name="데몬헌터스 케이크",
+        food_type="bread_dessert",
+        num_images=3,
+        generation_mode="direct_poster",
+    )
+
+    result = asyncio.run(
+        asyncio.wait_for(
+            generate_image_ads(
+                payload=payload,
+                source_image_bytes=image_bytes,
+            ),
+            timeout=1,
+        )
+    )
+
+    assert len(result.images) == 3
+    assert overlay_started.is_set()
+    assert overlay_thread_ids
+    assert all(thread_id != main_thread_id for thread_id in overlay_thread_ids)
+    assert "provider_generation_max_ms" in result.stage_latencies_ms
+    assert "text_overlay_max_ms" in result.stage_latencies_ms
+
+
+def test_poster_layout_warmup_reuses_one_rembg_session(monkeypatch):
+    from app.utils import poster_layout
+
+    session = object()
+    created_models: list[str] = []
+
+    def fake_new_session(model_name):
+        created_models.append(model_name)
+        return session
+
+    monkeypatch.setattr(poster_layout, "_rembg_session", None)
+    monkeypatch.setitem(
+        sys.modules,
+        "rembg",
+        SimpleNamespace(new_session=fake_new_session),
+    )
+
+    poster_layout.warm_up_poster_layout()
+    poster_layout.warm_up_poster_layout()
+
+    assert poster_layout._rembg_session is session
+    assert created_models == ["u2net"]
+
+
+def test_app_startup_warms_poster_layout_in_threadpool(monkeypatch):
+    from app import main
+    from app.utils import poster_layout
+
+    warmed = []
+
+    def fake_warmup():
+        warmed.append("poster_layout")
+
+    async def fake_run_in_threadpool(function):
+        function()
+
+    monkeypatch.setattr(poster_layout, "warm_up_poster_layout", fake_warmup)
+    monkeypatch.setattr(main, "run_in_threadpool", fake_run_in_threadpool)
+
+    asyncio.run(main._warm_up_poster_layout())
+
+    assert warmed == ["poster_layout"]
 
 
 def test_poster_generation_does_not_retry_provider_exception():
