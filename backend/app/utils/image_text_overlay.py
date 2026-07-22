@@ -1253,6 +1253,17 @@ def composite_poster_text(
             food_top - measured_menu_h * (1.0 - template.menu_overlap_ratio)
         )
         menu_start_y = max(cursor_y, overlap_target)
+    
+    # editorial 외 컴포지션은 의도적 겹침 로직이 없으므로,
+    # layout이 계산해둔 안전 로직(clamp_menu_block_y)으로 실제 겹침을 방지한다.
+    menu_start_y, _ = layout.clamp_menu_block_y(
+    menu_start_y,
+    measured_menu_h,
+    text_width=menu_max_width,
+    left_x=None if centered else anchor_x,
+    min_y=cursor_y,
+    allow_lift=(template.composition != "editorial"),
+    )
 
     menu_overlaps_food = bool(
         food_top is not None and menu_start_y + measured_menu_h > food_top
