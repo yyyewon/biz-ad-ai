@@ -763,6 +763,12 @@ def _get_rembg_session():
         return _rembg_session
 
 
+def warm_up_poster_layout() -> None:
+    """첫 광고 요청 전에 rembg 모델과 ONNX 세션을 준비한다."""
+
+    _get_rembg_session()
+
+
 def _detect_foreground_alpha(image: Image.Image) -> Image.Image:
     from rembg import remove
 
