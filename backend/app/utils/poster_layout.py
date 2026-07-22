@@ -48,6 +48,7 @@ _FOOD_COLLISION_PAD_RATIO = 0.012
 _FOREGROUND_ALPHA_THRESHOLD = 128
 _SCRIM_COMPLEXITY_THRESHOLD = 22.0
 _SCRIM_MAX_ALPHA_CAP = 150
+_MIN_ANALYSIS_SIDE_PX = 64
 
 
 @dataclass(frozen=True)
@@ -85,7 +86,8 @@ class PosterLayoutSpec:
     scrim_max_alpha: int
     used_fallback: bool
     food_visual_top: int | None = None
-    vlm_template: "PosterTemplateSpec | None" = None
+    vlm_template_overrides: dict[str, object] | None = None
+    foreground_alpha: Image.Image | None = None
 
     def _menu_anchor_top(self) -> int | None:
         """메뉴·카피 스택 기준 음식 상단 (rembg raw top, refine 전)."""
@@ -519,6 +521,14 @@ def analyze_poster_layout(
     rgb_image = image.convert("RGB")
     width, height = rgb_image.size
 
+    if min(width, height) < _MIN_ANALYSIS_SIDE_PX:
+        logger.info(
+            "poster_layout_tiny_image | size={}x{} | using_fallback=true",
+            width,
+            height,
+        )
+        return _build_fallback_spec(rgb_image, food_bbox=None, alpha=None)
+
     alpha: Image.Image | None = None
     food_bbox: tuple[int, int, int, int] | None = None
     food_visual_top: int | None = None
@@ -628,7 +638,8 @@ def _apply_vlm_overrides(spec: PosterLayoutSpec, image: Image.Image) -> PosterLa
         scrim_height=hints.scrim_height if hints.scrim_height is not None else spec.scrim_height,
         scrim_max_alpha=scrim_max_alpha,
         used_fallback=spec.used_fallback,
-        vlm_template=hints.template,
+        vlm_template_overrides=hints.template_overrides,
+        foreground_alpha=spec.foreground_alpha,
     )
 
 
@@ -914,6 +925,7 @@ def _build_fallback_spec(
         scrim_height=scrim_height,
         scrim_max_alpha=scrim_alpha,
         used_fallback=True,
+        foreground_alpha=alpha,
     )
 
 
@@ -987,6 +999,7 @@ def _build_spec_from_food_bbox(
         scrim_height=scrim_height,
         scrim_max_alpha=scrim_alpha,
         used_fallback=False,
+        foreground_alpha=alpha,
     )
 
 
@@ -1149,16 +1162,19 @@ def _sample_background_mean_rgb(
 
     crop_rgb = image.crop((left, top, right, bottom)).convert("RGB")
     if alpha is None:
-        pixels = list(crop_rgb.getdata())
+        pixels = list(crop_rgb.get_flattened_data())
     else:
         crop_alpha = alpha.crop((left, top, right, bottom))
         pixels = [
             rgb
-            for rgb, opacity in zip(crop_rgb.getdata(), crop_alpha.getdata())
+            for rgb, opacity in zip(
+                crop_rgb.get_flattened_data(),
+                crop_alpha.get_flattened_data(),
+            )
             if opacity < _FOREGROUND_ALPHA_THRESHOLD
         ]
         if len(pixels) < 16:
-            pixels = list(crop_rgb.getdata())
+            pixels = list(crop_rgb.get_flattened_data())
 
     if not pixels:
         return (120, 80, 55)
@@ -1185,12 +1201,15 @@ def _sample_background_complexity(
 
     crop_rgb = image.crop((left, top, right, bottom)).convert("RGB")
     if alpha is None:
-        pixels = list(crop_rgb.getdata())
+        pixels = list(crop_rgb.get_flattened_data())
     else:
         crop_alpha = alpha.crop((left, top, right, bottom))
         pixels = [
             rgb
-            for rgb, opacity in zip(crop_rgb.getdata(), crop_alpha.getdata())
+            for rgb, opacity in zip(
+                crop_rgb.get_flattened_data(),
+                crop_alpha.get_flattened_data(),
+            )
             if opacity < _FOREGROUND_ALPHA_THRESHOLD
         ]
 
@@ -1308,7 +1327,10 @@ def _sample_food_mean_rgb(
     crop_alpha = alpha.crop((left, top, right, bottom))
     pixels = [
         rgb
-        for rgb, opacity in zip(crop_rgb.getdata(), crop_alpha.getdata())
+        for rgb, opacity in zip(
+            crop_rgb.get_flattened_data(),
+            crop_alpha.get_flattened_data(),
+        )
         if opacity >= _FOREGROUND_ALPHA_THRESHOLD
     ]
     if len(pixels) < 24:
