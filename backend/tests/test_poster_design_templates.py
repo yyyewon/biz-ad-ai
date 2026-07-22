@@ -54,8 +54,12 @@ def test_explicit_composition_override_preserves_other_template_tokens() -> None
     assert overridden.menu_size_ratio == base.menu_size_ratio
 
 
-def test_semantic_vlm_selection_preserves_unselected_tone_tokens() -> None:
-    base = resolve_poster_template("고급·감성")
+@pytest.mark.parametrize(
+    "tone",
+    ["캐주얼·친근", "정중·신뢰", "고급·감성", "유머·이벤트"],
+)
+def test_vlm_cannot_replace_selected_tone_art_direction(tone: str) -> None:
+    base = resolve_poster_template(tone)
     overrides = build_semantic_template_overrides(
         template_id="framed",
         density="airy",
@@ -64,9 +68,23 @@ def test_semantic_vlm_selection_preserves_unselected_tone_tokens() -> None:
     )
 
     resolved = resolve_poster_template_for_layout(
-        "고급·감성",
+        tone,
         vlm_overrides=overrides,
     )
+
+    assert resolved == base
+
+
+def test_semantic_vlm_selection_applies_when_tone_is_not_selected() -> None:
+    base = resolve_poster_template(None)
+    overrides = build_semantic_template_overrides(
+        template_id="framed",
+        density="airy",
+        image_text_relation="separate",
+        headline_scale="large",
+    )
+
+    resolved = resolve_poster_template_for_layout(None, vlm_overrides=overrides)
 
     assert resolved.composition == "framed"
     assert resolved.price_style == "ticket"

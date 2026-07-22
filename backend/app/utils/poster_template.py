@@ -1,7 +1,5 @@
 """
-포스터 PIL 템플릿: 톤별 타이포 계층과 의미 기반 디자인 토큰.
-
-manifest.json tone_overrides.poster_template 을 읽는다.
+포스터 PIL 템플릿: 톤별 타이포 계층과 의미 기반 디자인 토큰
 """
 
 from __future__ import annotations
@@ -133,7 +131,9 @@ class PosterTemplateSpec:
 
 
 def resolve_poster_template(tone: str | None = None) -> PosterTemplateSpec:
-    """톤·manifest 기반 포스터 템플릿을 반환한다."""
+    """
+    톤·manifest 기반 포스터 템플릿 반환
+    """
 
     merged = dict(_DEFAULT_TEMPLATE)
     tone_key = _normalize_tone(tone)
@@ -204,7 +204,9 @@ def apply_template_overrides(
     base: PosterTemplateSpec,
     overrides: dict[str, object],
 ) -> PosterTemplateSpec:
-    """검증된 디자인 토큰을 기존 템플릿 위에 merge한다."""
+    """
+    검증된 디자인 토큰을 기존 템플릿 위에 merge
+    """
 
     merged: dict[str, Any] = {
         "headline_size_ratio": base.headline_size_ratio,
@@ -281,7 +283,9 @@ def build_semantic_template_overrides(
     image_text_relation: object = None,
     headline_scale: object = None,
 ) -> dict[str, object]:
-    """VLM의 범주형 디자인 결정을 렌더러의 수치 토큰으로 변환한다."""
+    """
+    VLM의 범주형 디자인 결정을 렌더러의 수치 토큰으로 변환
+    """
 
     overrides: dict[str, object] = {}
     for value, choices in (
@@ -300,9 +304,14 @@ def resolve_poster_template_for_layout(
     *,
     vlm_overrides: Mapping[str, object] | None = None,
 ) -> PosterTemplateSpec:
-    """톤 기본 템플릿 위에 VLM의 희소(sparse) 디자인 결정을 merge한다."""
+    """
+    톤 아트 디렉션을 보존하고, 톤이 없을 때만 VLM 구성을 적용
+    """
 
     base = resolve_poster_template(tone)
     if not vlm_overrides:
+        return base
+    tone_key = _normalize_tone(tone)
+    if tone_key in _TONE_TEMPLATE_DEFAULTS:
         return base
     return apply_template_overrides(base, dict(vlm_overrides))
