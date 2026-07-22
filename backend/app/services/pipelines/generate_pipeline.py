@@ -15,6 +15,7 @@ from app.core.model_config import (
 )
 from app.schemas.food_type import FoodType
 from app.schemas.image_ad import ImageAdRequest
+from app.services.eval.clip_quality_eval import schedule_clip_quality_eval
 from app.services.pipelines.food_type_resolver import require_food_type
 from app.services.pipelines.image_pipeline import generate_image_ads
 from app.services.pipelines.text_pipeline import run_text_pipeline
@@ -241,6 +242,7 @@ async def run_generate_pipeline(
         partial_success = False
         image_generation_success: bool | None = None
         image_error_type: str | None = None
+        clip_eval_context: dict[str, Any] | None = None
 
         if image_bytes:
             resolved_food_type = require_food_type(food)
@@ -360,6 +362,7 @@ async def run_generate_pipeline(
                         payload=image_payload,
                         source_image_bytes=image_bytes,
                         on_variant_done=_on_variant_done,
+                        metrics_request_id=pipeline_request_id,
                     )
 
                 _record_image_pipeline_stage_metrics(
@@ -392,6 +395,14 @@ async def run_generate_pipeline(
 
                 image_generation = _build_image_generation_response(image_result)
                 image_generation_success = True
+                clip_eval_context = {
+                    "upload_bytes": bytes(image_bytes),
+                    "generated_bytes_list": [
+                        bytes(item) for item in (image_result.image_bytes_list or [])
+                    ],
+                    "applied_variants": list(image_result.applied_variants or []),
+                    "variant_prompts": dict(image_result.variant_prompts or {}),
+                }
 
                 await _emit_progress(
                     on_progress,
@@ -536,6 +547,12 @@ async def run_generate_pipeline(
             error_code=total_error_code,
             error_type=total_error_type,
         )
+
+        if clip_eval_context is not None:
+            schedule_clip_quality_eval(
+                request_id=pipeline_request_id,
+                **clip_eval_context,
+            )
 
         logger.info(
             "generate_pipeline_completed | request_id={} | partial_success={} | image_generation_success={}",
