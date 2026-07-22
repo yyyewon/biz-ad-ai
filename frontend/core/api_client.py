@@ -122,9 +122,6 @@ def generate_ad(
         if "text/event-stream" not in content_type:
             return _handle_non_sse_error(res)
 
-        # 결과 이벤트는 PNG 3개의 base64를 한 줄에 담아 수십 MB가 될 수 있다.
-        # requests의 기본 512-byte 청크는 pending line을 매번 다시 이어 붙여
-        # 대용량 단일 줄에서 O(n²) 복사를 유발하므로 HTTP 청크 단위로 읽는다.
         for raw_line in res.iter_lines(chunk_size=None, decode_unicode=True):
             if not raw_line:
                 continue

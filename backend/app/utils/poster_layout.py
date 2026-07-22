@@ -764,7 +764,9 @@ def _get_rembg_session():
 
 
 def warm_up_poster_layout() -> None:
-    """첫 광고 요청 전에 rembg 모델과 ONNX 세션을 준비한다."""
+    """
+    첫 광고 요청 전에 rembg 모델과 ONNX 세션을 준비
+    """
 
     _get_rembg_session()
 
