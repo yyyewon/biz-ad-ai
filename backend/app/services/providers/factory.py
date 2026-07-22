@@ -17,9 +17,10 @@ from app.services.providers.hf_sd15_controlnet_tile_provider import HFSD15Contro
 from app.services.providers.hf_sdxl_lightning_provider import HFSDXLLightningImageProvider
 from app.services.providers.openai_image_provider import OpenAIImageProvider
 from app.services.providers.openai_text_provider import OpenAITextProvider
+from app.services.providers.base import ImageGenerationProvider, TextGenerationProvider
 
 
-def get_text_provider() -> OpenAITextProvider:
+def get_text_provider() -> TextGenerationProvider:
     """
     active_profile 기준 텍스트 생성 provider를 반환한다.
     """
@@ -27,6 +28,8 @@ def get_text_provider() -> OpenAITextProvider:
     provider_name = get_provider_name("text_generation")
 
     if provider_name == "openai":
+        from app.services.providers.openai_text_provider import OpenAITextProvider
+
         resolved = get_model_settings(
             role="text_generation",
             provider_name="openai",
@@ -64,6 +67,8 @@ def get_image_provider() -> ImageGenerationProvider:
     provider_name = get_provider_name("image_generation")
 
     if provider_name == "openai":
+        from app.services.providers.openai_image_provider import OpenAIImageProvider
+
         resolved = get_model_settings(
             role="image_generation",
             provider_name="openai",
@@ -79,6 +84,11 @@ def get_image_provider() -> ImageGenerationProvider:
         )
 
     if provider_name == "hf":
+        from app.services.providers.hf_image_provider import HFImageProvider
+        from app.services.providers.hf_sdxl_lightning_provider import (
+            HFSDXLLightningImageProvider,
+        )
+
         # ------------------------------------------------------------
         # HF 이미지 Provider 선택
         # ------------------------------------------------------------

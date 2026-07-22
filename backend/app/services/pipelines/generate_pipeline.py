@@ -136,6 +136,8 @@ def _record_image_pipeline_stage_metrics(
     stage_key_map = {
         "food_generation_ms": "food_generation",
         "poster_generation_ms": "poster_generation",
+        "provider_generation_max_ms": "image_provider_generation",
+        "text_overlay_max_ms": "image_text_overlay",
         "total_ms": "image_pipeline_total",
     }
 

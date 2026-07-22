@@ -19,7 +19,7 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.local
     image: biz-ad-ai-backend:latest
     container_name: biz-ad-ai-backend
     restart: unless-stopped
