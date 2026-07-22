@@ -1,5 +1,5 @@
 """
-포스터 PIL 템플릿 (Phase 3): 톤별 타이포 계층·가격 pill 스타일.
+포스터 PIL 템플릿: 톤별 타이포 계층과 의미 기반 디자인 토큰.
 
 manifest.json tone_overrides.poster_template 을 읽는다.
 """
@@ -7,13 +7,37 @@ manifest.json tone_overrides.poster_template 을 읽는다.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 from app.utils.font_registry import _get_tone_block, _load_manifest, _normalize_tone
 
 PosterBadgeStyle = Literal["outline", "filled"]
 PosterComposition = Literal["editorial", "centered", "framed"]
 PosterPriceStyle = Literal["label", "ticket", "stamp"]
+
+_TEMPLATE_ID_OVERRIDES: dict[str, dict[str, object]] = {
+    "editorial": {"composition": "editorial", "price_style": "label"},
+    "centered": {"composition": "centered", "price_style": "ticket"},
+    "framed": {"composition": "framed", "price_style": "ticket"},
+}
+
+_DENSITY_OVERRIDES: dict[str, dict[str, object]] = {
+    "compact": {"headline_menu_gap_ratio": 0.010},
+    "balanced": {"headline_menu_gap_ratio": 0.016},
+    "airy": {"headline_menu_gap_ratio": 0.024},
+}
+
+_IMAGE_TEXT_RELATION_OVERRIDES: dict[str, dict[str, object]] = {
+    "separate": {"menu_overlap_ratio": 0.0},
+    "overlap_subtle": {"menu_overlap_ratio": 0.08},
+    "overlap_bold": {"menu_overlap_ratio": 0.16},
+}
+
+_HEADLINE_SCALE_OVERRIDES: dict[str, dict[str, object]] = {
+    "small": {"headline_size_ratio": 0.042},
+    "medium": {"headline_size_ratio": 0.050},
+    "large": {"headline_size_ratio": 0.056},
+}
 
 _DEFAULT_TEMPLATE: dict[str, Any] = {
     "headline_size_ratio": 0.050,
@@ -180,7 +204,7 @@ def apply_template_overrides(
     base: PosterTemplateSpec,
     overrides: dict[str, object],
 ) -> PosterTemplateSpec:
-    """VLM JSON typography 블록을 톤 템플릿 위에 merge한다."""
+    """검증된 디자인 토큰을 기존 템플릿 위에 merge한다."""
 
     merged: dict[str, Any] = {
         "headline_size_ratio": base.headline_size_ratio,
@@ -250,32 +274,35 @@ def apply_template_overrides(
     )
 
 
+def build_semantic_template_overrides(
+    *,
+    template_id: object = None,
+    density: object = None,
+    image_text_relation: object = None,
+    headline_scale: object = None,
+) -> dict[str, object]:
+    """VLM의 범주형 디자인 결정을 렌더러의 수치 토큰으로 변환한다."""
+
+    overrides: dict[str, object] = {}
+    for value, choices in (
+        (template_id, _TEMPLATE_ID_OVERRIDES),
+        (density, _DENSITY_OVERRIDES),
+        (image_text_relation, _IMAGE_TEXT_RELATION_OVERRIDES),
+        (headline_scale, _HEADLINE_SCALE_OVERRIDES),
+    ):
+        if isinstance(value, str) and value in choices:
+            overrides.update(choices[value])
+    return overrides
+
+
 def resolve_poster_template_for_layout(
     tone: str | None,
     *,
-    vlm_template: PosterTemplateSpec | None = None,
+    vlm_overrides: Mapping[str, object] | None = None,
 ) -> PosterTemplateSpec:
-    """톤 기본 템플릿 위에 VLM typography를 merge한다."""
+    """톤 기본 템플릿 위에 VLM의 희소(sparse) 디자인 결정을 merge한다."""
 
     base = resolve_poster_template(tone)
-    if vlm_template is None:
+    if not vlm_overrides:
         return base
-    return apply_template_overrides(
-        base,
-        {
-            "headline_size_ratio": vlm_template.headline_size_ratio,
-            "subline_size_ratio": vlm_template.subline_size_ratio,
-            "sticker_size_ratio": vlm_template.sticker_size_ratio,
-            "menu_size_ratio": vlm_template.menu_size_ratio,
-            "price_size_ratio": vlm_template.price_size_ratio,
-            "store_size_ratio": vlm_template.store_size_ratio,
-            "headline_stroke_delta": vlm_template.headline_stroke_delta,
-            "headline_menu_gap_ratio": vlm_template.headline_menu_gap_ratio,
-            "badge_pad_x_ratio": vlm_template.badge_pad_x_ratio,
-            "badge_pad_y_ratio": vlm_template.badge_pad_y_ratio,
-            "badge_outline_width_ratio": vlm_template.badge_outline_width_ratio,
-            "composition": vlm_template.composition,
-            "price_style": vlm_template.price_style,
-            "menu_overlap_ratio": vlm_template.menu_overlap_ratio,
-        },
-    )
+    return apply_template_overrides(base, dict(vlm_overrides))

@@ -13,7 +13,12 @@ from app.utils.image_text_overlay import (
     composite_poster_text,
 )
 from app.utils.poster_layout import PosterLayoutSpec, PosterPaletteSpec
-from app.utils.poster_template import apply_template_overrides, resolve_poster_template
+from app.utils.poster_template import (
+    apply_template_overrides,
+    build_semantic_template_overrides,
+    resolve_poster_template,
+    resolve_poster_template_for_layout,
+)
 
 
 @pytest.mark.parametrize(
@@ -47,6 +52,46 @@ def test_explicit_composition_override_preserves_other_template_tokens() -> None
     assert overridden.composition == "framed"
     assert overridden.price_style == "ticket"
     assert overridden.menu_size_ratio == base.menu_size_ratio
+
+
+def test_semantic_vlm_selection_preserves_unselected_tone_tokens() -> None:
+    base = resolve_poster_template("고급·감성")
+    overrides = build_semantic_template_overrides(
+        template_id="framed",
+        density="airy",
+        image_text_relation="separate",
+        headline_scale="large",
+    )
+
+    resolved = resolve_poster_template_for_layout(
+        "고급·감성",
+        vlm_overrides=overrides,
+    )
+
+    assert resolved.composition == "framed"
+    assert resolved.price_style == "ticket"
+    assert resolved.headline_menu_gap_ratio == 0.024
+    assert resolved.menu_overlap_ratio == 0.0
+    assert resolved.headline_size_ratio == 0.056
+    assert resolved.menu_size_ratio == base.menu_size_ratio
+
+
+def test_unknown_semantic_vlm_values_do_not_override_tone_template() -> None:
+    base = resolve_poster_template("유머·이벤트")
+    overrides = build_semantic_template_overrides(
+        template_id="freeform",
+        density="dramatic",
+        image_text_relation="cover_food",
+        headline_scale=0.9,
+    )
+
+    resolved = resolve_poster_template_for_layout(
+        "유머·이벤트",
+        vlm_overrides=overrides,
+    )
+
+    assert overrides == {}
+    assert resolved == base
 
 
 @pytest.mark.parametrize(

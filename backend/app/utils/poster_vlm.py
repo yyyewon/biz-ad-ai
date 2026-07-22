@@ -1,7 +1,7 @@
 """
 포스터 디자인 VLM 분석.
 
-생성된 포스터 이미지를 보고 palette·배치·scrim 힌트 JSON을 반환한다.
+생성된 포스터 이미지를 보고 palette·범주형 디자인·scrim 힌트 JSON을 반환한다.
 실패 시 None → poster_layout 규칙 기반 fallback.
 """
 
@@ -24,7 +24,7 @@ _INFERENCE_LOCK = threading.Lock()
 
 _POSTER_VLM_PROMPT = """\
 This is a food promo poster image: designed background on top, food hero on bottom. \
-There is NO text in the image yet. We will add Korean headline, menu name, price pill, \
+There is NO text in the image yet. We will add Korean headline, menu name, price component, \
 and store name with PIL.
 
 Return ONLY one JSON object (no markdown) for text overlay design:
@@ -39,14 +39,11 @@ Return ONLY one JSON object (no markdown) for text overlay design:
     "badge_text_rgb": [r, g, b],
     "badge_outline_rgb": [r, g, b]
   },
-  "typography": {
-    "headline_size_ratio": 0.050,
-    "subline_size_ratio": 0.034,
-    "sticker_size_ratio": 0.028,
-    "menu_size_ratio": 0.112,
-    "price_size_ratio": 0.042,
-    "store_size_ratio": 0.046,
-    "headline_menu_gap_ratio": 0.016
+  "design": {
+    "template_id": "editorial",
+    "density": "airy",
+    "image_text_relation": "overlap_subtle",
+    "headline_scale": "medium"
   },
   "scrim": {
     "height_ratio": 0.32,
@@ -63,9 +60,15 @@ Rules:
 - NEVER set every RGB field to [255, 255, 255] or identical values.
 - On light/beige backgrounds use DARK text (e.g. [60, 40, 30]); on dark backgrounds use LIGHT text.
 - Text colors should harmonize with the BACKGROUND hue for primary/store; accent may be warmer.
-- Ratios are 0.0-1.0 relative to image width/height.
-- Text positions are fixed in PIL; only suggest colors, typography sizes, and scrim.
-- typography.headline_size_ratio should be smaller than typography.menu_size_ratio.
+- Choose template_id from: editorial, centered, framed.
+  - editorial: asymmetric image or useful side space; bold magazine-like hierarchy.
+  - centered: centered/symmetric food hero and balanced top space.
+  - framed: calm, traditional, or evenly textured background that suits a border.
+- Choose density from: compact, balanced, airy. Use airy only with generous clean space.
+- Choose image_text_relation from: separate, overlap_subtle, overlap_bold.
+  Use overlap only when the food edge is clear enough for readable outlined text.
+- Choose headline_scale from: small, medium, large.
+- Do NOT output x/y coordinates or numeric font sizes. The renderer measures text and decides them.
 - scrim.max_alpha is 0-150 (use 60-120 on busy or light backgrounds).
 - Use readable contrast; stroke must contrast with both text and background.
 """
@@ -78,7 +81,7 @@ class PosterVlmDesignHints:
     price_badge_cy_hint: int | None = None
     scrim_height: int | None = None
     scrim_max_alpha: int | None = None
-    template: "PosterTemplateSpec | None" = None
+    template_overrides: dict[str, object] | None = None
 
 
 def is_poster_vlm_enabled() -> bool:
@@ -199,57 +202,35 @@ def _build_hints_from_parsed(
         ),
     )
 
-    typography_block = payload.get("typography", {})
+    design_block = payload.get("design", {})
     scrim_block = payload.get("scrim", {})
-    if not isinstance(typography_block, dict):
-        typography_block = {}
+    if not isinstance(design_block, dict):
+        design_block = {}
     if not isinstance(scrim_block, dict):
         scrim_block = {}
 
     scrim_h = _parse_ratio(scrim_block.get("height_ratio"))
     scrim_alpha = _parse_int(scrim_block.get("max_alpha"), min_value=0, max_value=150)
-    template = _build_template_from_vlm(typography_block)
+    template_overrides = _build_template_overrides_from_vlm(design_block)
 
     return PosterVlmDesignHints(
         palette=palette,
         scrim_height=int(height * scrim_h) if scrim_h is not None else None,
         scrim_max_alpha=scrim_alpha,
-        template=template,
+        template_overrides=template_overrides,
     )
 
 
-def _build_template_from_vlm(typography_block: dict) -> "PosterTemplateSpec | None":
-    from app.utils.poster_template import apply_template_overrides, resolve_poster_template
+def _build_template_overrides_from_vlm(design_block: dict) -> dict[str, object] | None:
+    from app.utils.poster_template import build_semantic_template_overrides
 
-    overrides: dict[str, object] = {}
-    for key in (
-        "headline_size_ratio",
-        "subline_size_ratio",
-        "sticker_size_ratio",
-        "menu_size_ratio",
-        "price_size_ratio",
-        "store_size_ratio",
-        "headline_menu_gap_ratio",
-        "badge_pad_x_ratio",
-        "badge_pad_y_ratio",
-        "badge_outline_width_ratio",
-    ):
-        ratio = _parse_ratio(typography_block.get(key))
-        if ratio is not None:
-            overrides[key] = ratio
-
-    headline_stroke_delta = _parse_int(
-        typography_block.get("headline_stroke_delta"),
-        min_value=-3,
-        max_value=3,
+    overrides = build_semantic_template_overrides(
+        template_id=design_block.get("template_id"),
+        density=design_block.get("density"),
+        image_text_relation=design_block.get("image_text_relation"),
+        headline_scale=design_block.get("headline_scale"),
     )
-    if headline_stroke_delta is not None:
-        overrides["headline_stroke_delta"] = headline_stroke_delta
-
-    if not overrides:
-        return None
-
-    return apply_template_overrides(resolve_poster_template(None), overrides)
+    return overrides or None
 
 
 def _parse_rgb(value: object, *, default: tuple[int, int, int]) -> tuple[int, int, int]:

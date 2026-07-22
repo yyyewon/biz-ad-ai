@@ -464,9 +464,9 @@ hf:
 # Poster design analysis (VLM → PIL LayoutSpec)
 # ============================================================
 #
-# 포스터 이미지 생성 후 Qwen2-VL 등으로 색·배치·scrim JSON을 받아
+# 포스터 이미지 생성 후 Qwen2-VL 등으로 색·범주형 템플릿·scrim JSON을 받아
 # poster_layout.PosterLayoutSpec에 merge한다.
-# rembg food bbox는 규칙 기반으로 유지한다.
+# 좌표·글자 크기·rembg food bbox는 규칙 기반 렌더러가 결정한다.
 #
 # 테스트 시 enabled: true 로 켠다.
 

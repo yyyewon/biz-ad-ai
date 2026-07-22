@@ -1081,7 +1081,7 @@ def composite_poster_text(
     palette = layout.palette
     template = resolve_poster_template_for_layout(
         tone,
-        vlm_template=layout.vlm_template,
+        vlm_overrides=layout.vlm_template_overrides,
     )
     if design_style in {"editorial", "centered", "framed"}:
         price_style = "label" if design_style == "editorial" else "ticket"

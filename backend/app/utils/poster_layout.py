@@ -86,7 +86,7 @@ class PosterLayoutSpec:
     scrim_max_alpha: int
     used_fallback: bool
     food_visual_top: int | None = None
-    vlm_template: "PosterTemplateSpec | None" = None
+    vlm_template_overrides: dict[str, object] | None = None
     foreground_alpha: Image.Image | None = None
 
     def _menu_anchor_top(self) -> int | None:
@@ -638,7 +638,7 @@ def _apply_vlm_overrides(spec: PosterLayoutSpec, image: Image.Image) -> PosterLa
         scrim_height=hints.scrim_height if hints.scrim_height is not None else spec.scrim_height,
         scrim_max_alpha=scrim_max_alpha,
         used_fallback=spec.used_fallback,
-        vlm_template=hints.template,
+        vlm_template_overrides=hints.template_overrides,
         foreground_alpha=spec.foreground_alpha,
     )
 
