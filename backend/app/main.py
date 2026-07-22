@@ -1,3 +1,4 @@
+import torch
 from time import perf_counter
 from uuid import uuid4
 
@@ -48,9 +49,16 @@ async def _warm_up_hf_image_pipeline() -> None:
         provider = get_image_provider()
 
         if hasattr(provider, "_load_text2img_pipeline"):
-            logger.info("hf_image_pipeline_warmup_started")
+            before = torch.cuda.memory_allocated() / 1024**3
+            logger.info("hf_image_pipeline_warmup_started | vram_before_gb={:.3f}", before)
+
             await run_in_threadpool(provider._load_text2img_pipeline)
-            logger.info("hf_image_pipeline_warmup_completed")
+
+            after = torch.cuda.memory_allocated() / 1024**3
+            logger.info(
+                "hf_image_pipeline_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
+                after, after - before
+            )
 
     except Exception as exc:
         logger.exception("hf_image_pipeline_warmup_failed | error={}", str(exc))
@@ -59,9 +67,16 @@ async def _warm_up_food_classifier() -> None:
     try:
         from app.services.providers.food_classifier_provider import food_classifier_provider
 
-        logger.info("food_classifier_warmup_started")
+        before = torch.cuda.memory_allocated() / 1024**3
+        logger.info("food_classifier_warmup_started | vram_before_gb={:.3f}", before)
+
         await run_in_threadpool(food_classifier_provider._ensure_model_loaded)
-        logger.info("food_classifier_warmup_completed")
+
+        after = torch.cuda.memory_allocated() / 1024**3
+        logger.info(
+            "food_classifier_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
+            after, after - before
+        )
 
     except Exception as exc:
         logger.exception("food_classifier_warmup_failed | error={}", str(exc))
@@ -73,9 +88,16 @@ async def _warm_up_poster_vlm() -> None:
         if not is_poster_vlm_enabled():
             return
 
-        logger.info("poster_vlm_warmup_started")
+        before = torch.cuda.memory_allocated() / 1024**3
+        logger.info("poster_vlm_warmup_started | vram_before_gb={:.3f}", before)
+
         await run_in_threadpool(warm_up_poster_vlm)
-        logger.info("poster_vlm_warmup_completed")
+
+        after = torch.cuda.memory_allocated() / 1024**3
+        logger.info(
+            "poster_vlm_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
+            after, after - before
+        )
 
     except Exception as exc:
         logger.exception("poster_vlm_warmup_failed | error={}", str(exc))
