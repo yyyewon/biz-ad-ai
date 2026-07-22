@@ -11,6 +11,13 @@ from loguru import logger
 
 from app.core.exceptions import AppException
 from app.core.model_config import get_active_profile_name, get_performance_logging_settings
+from app.schemas.performance_metrics import (
+    LogTarget,
+    MetricId,
+    build_metric_record,
+    get_metric_definition,
+    resolve_log_relative_path,
+)
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -61,24 +68,32 @@ def format_elapsed_time(elapsed_ms: float) -> dict[str, float | str]:
     }
 
 
-def _resolve_performance_log_path() -> Path:
+def _resolve_log_path(log_target: LogTarget = "performance") -> Path:
     """
-    model.yaml의 logging.performance.path 값을 기준으로 로그 파일 경로를 결정한다.
+    JSONL 로그 파일 경로를 결정한다.
 
-    상대 경로이면 backend 루트 기준으로 해석한다.
-    예:
-    - logs/performance.jsonl
-    - /app/logs/performance.jsonl
+    performance:
+    - model.yaml의 logging.performance.path (기본 logs/performance.jsonl)
+    quality:
+    - logs/quality.jsonl (backend 루트 기준, 오프라인 eval용)
     """
 
-    settings = get_performance_logging_settings()
-    raw_path = str(settings.get("path", "logs/performance.jsonl"))
+    if log_target == "performance":
+        settings = get_performance_logging_settings()
+        raw_path = str(settings.get("path", resolve_log_relative_path("performance")))
+    else:
+        raw_path = resolve_log_relative_path(log_target)
+
     path = Path(raw_path)
 
     if path.is_absolute():
         return path
 
     return BACKEND_ROOT / path
+
+
+def _resolve_performance_log_path() -> Path:
+    return _resolve_log_path("performance")
 
 
 def is_performance_logging_enabled() -> bool:
@@ -112,20 +127,24 @@ def _safe_active_profile_name() -> str:
         return "unknown"
 
 
-def write_performance_metric(metric: dict[str, Any]) -> None:
+def write_metric_record(
+    metric: dict[str, Any],
+    *,
+    log_target: LogTarget = "performance",
+) -> None:
     """
-    성능 metric을 JSONL 파일에 기록한다.
+    JSONL metric dict를 지정 파일에 append한다.
 
     주의:
-    - 성능 로그 기록 실패가 실제 API 실패로 이어지면 안 된다.
+    - 로그 기록 실패가 실제 API 실패로 이어지면 안 된다.
     - 따라서 모든 예외는 logger에만 남기고 raise하지 않는다.
     """
 
     try:
-        if not is_performance_logging_enabled():
+        if log_target == "performance" and not is_performance_logging_enabled():
             return
 
-        log_path = _resolve_performance_log_path()
+        log_path = _resolve_log_path(log_target)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         with log_path.open("a", encoding="utf-8") as file:
@@ -133,9 +152,14 @@ def write_performance_metric(metric: dict[str, Any]) -> None:
 
     except Exception as exc:
         logger.exception(
-            "performance_log_write_failed | error={}",
+            "performance_log_write_failed | log_target={} | error={}",
+            log_target,
             str(exc),
         )
+
+
+def write_performance_metric(metric: dict[str, Any]) -> None:
+    write_metric_record(metric, log_target="performance")
 
 
 def record_performance_metric(
@@ -213,6 +237,141 @@ def record_performance_metric(
     )
 
     return metric
+
+
+def record_registry_metric(
+    metric_id: MetricId | str,
+    *,
+    request_id: str,
+    elapsed_ms: float | None = None,
+    success: bool,
+    provider: str = "mixed",
+    model: str = "mixed",
+    profile: str | None = None,
+    error_code: str | None = None,
+    error_type: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    METRIC_REGISTRY 매핑표 기준으로 JSONL 1줄을 기록한다.
+
+    latency 지표는 elapsed_ms 필수.
+    success/rate 집계용(vlm_json_parse 등)은 elapsed_ms 생략 가능.
+    """
+
+    definition = get_metric_definition(metric_id)
+    resolved_profile = profile or _safe_active_profile_name()
+
+    if elapsed_ms is not None:
+        elapsed = format_elapsed_time(elapsed_ms)
+    else:
+        elapsed = None
+
+    metric = build_metric_record(
+        metric_id,
+        timestamp=_now_kst_iso(),
+        request_id=request_id,
+        elapsed_ms=elapsed_ms,
+        success=success,
+        provider=provider,
+        model=model,
+        profile=resolved_profile,
+        error_code=error_code,
+        error_type=error_type,
+        extra=extra,
+    )
+
+    if elapsed is not None:
+        metric["elapsed_sec"] = elapsed["elapsed_sec"]
+        metric["elapsed_human"] = elapsed["elapsed_human"]
+
+    write_metric_record(metric, log_target=definition.log_target)
+
+    logger.info(
+        (
+            "registry_metric | metric_id={} | request_id={} | pipeline={} | stage={} "
+            "| elapsed_ms={} | success={} | error_code={}"
+        ),
+        metric["metric_id"],
+        metric["request_id"],
+        metric["pipeline"],
+        metric["stage"],
+        metric.get("elapsed_ms"),
+        metric["success"],
+        metric.get("error_code"),
+    )
+
+    return metric
+
+
+@contextmanager
+def measure_registry_metric(
+    metric_id: MetricId | str,
+    *,
+    request_id: str,
+    provider: str = "mixed",
+    model: str = "mixed",
+    profile: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> Iterator[None]:
+    """
+    measure_stage와 동일하지만 metric_id로 pipeline/stage/event를 매핑표에서 resolve한다.
+    """
+
+    started = time.perf_counter()
+
+    try:
+        yield
+
+    except AppException as exc:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
+        record_registry_metric(
+            metric_id,
+            request_id=request_id,
+            profile=profile,
+            provider=provider,
+            model=model,
+            elapsed_ms=elapsed_ms,
+            success=False,
+            error_code=exc.code,
+            error_type=exc.__class__.__name__,
+            extra=extra,
+        )
+
+        raise
+
+    except Exception as exc:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
+        record_registry_metric(
+            metric_id,
+            request_id=request_id,
+            profile=profile,
+            provider=provider,
+            model=model,
+            elapsed_ms=elapsed_ms,
+            success=False,
+            error_code="UNHANDLED_EXCEPTION",
+            error_type=exc.__class__.__name__,
+            extra=extra,
+        )
+
+        raise
+
+    else:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
+        record_registry_metric(
+            metric_id,
+            request_id=request_id,
+            profile=profile,
+            provider=provider,
+            model=model,
+            elapsed_ms=elapsed_ms,
+            success=True,
+            extra=extra,
+        )
 
 
 @contextmanager
