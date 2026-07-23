@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from app.schemas.common import success_response
 
@@ -14,7 +14,7 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 @router.get("")
-async def health_check():
+async def health_check(request: Request):
     """
     서버 상태 확인 API입니다.
 
@@ -31,6 +31,11 @@ async def health_check():
         data={
             "status": "ok",
             "service": "biz-ad-ai-backend",
+            "model_warmup_status": getattr(
+                request.app.state,
+                "model_warmup_status",
+                "not_started",
+            ),
             "timestamp": datetime.now(KST).isoformat(),
             "timezone": "Asia/Seoul",
         }

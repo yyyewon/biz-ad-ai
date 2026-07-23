@@ -8,8 +8,10 @@ class FakeSseResponse:
 
     def __init__(self, events: list[dict]):
         self._events = events
+        self.iter_lines_calls: list[dict] = []
 
-    def iter_lines(self, decode_unicode=True):
+    def iter_lines(self, **kwargs):
+        self.iter_lines_calls.append(kwargs)
         for event in self._events:
             yield "data: " + json.dumps(event)
             yield ""
@@ -55,3 +57,6 @@ def test_generate_ad_returns_common_sse_error_without_waiting_for_more_events(mo
         "error": "AI 서비스 인증 또는 접근 권한을 확인할 수 없습니다.",
         "error_code": "OPENAI_AUTHENTICATION_FAILED",
     }
+    assert response.iter_lines_calls == [
+        {"chunk_size": None, "decode_unicode": True}
+    ]

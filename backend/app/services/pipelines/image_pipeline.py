@@ -225,7 +225,9 @@ async def generate_image_ads(
 
         poster_stage_started = time.perf_counter()
 
-        async def _generate_variant_image(idx: int) -> tuple[int, ImageVariantType, bytes, str]:
+        async def _generate_variant_image(
+            idx: int,
+        ) -> tuple[int, ImageVariantType, bytes, str, int, int | None]:
             variant = _resolve_image_variant(idx)
             variant_size = get_variant_image_size(variant)
             render_mode = resolve_variant_render_mode(
@@ -324,6 +326,9 @@ async def generate_image_ads(
                         "image_request_id": request_id,
                     },
                 )
+            provider_latency_ms = int(
+                (time.perf_counter() - variant_started) * 1000
+            )
 
             if not variant_outputs:
                 raise AppException(
@@ -336,13 +341,43 @@ async def generate_image_ads(
                     },
                 )
 
-            return idx, variant, variant_outputs[0], variant_prompt
+            poster_bytes = variant_outputs[0]
+            overlay_latency_ms: int | None = None
+
+            if variant_uses_pil_text_overlay(payload.food_type, variant):
+                overlay_started = time.perf_counter()
+                poster_bytes = await asyncio.to_thread(
+                    apply_variant_text_overlay,
+                    poster_bytes,
+                    payload=payload,
+                    variant=variant,
+                )
+                overlay_latency_ms = int(
+                    (time.perf_counter() - overlay_started) * 1000
+                )
+                logger.info(
+                    "image_text_overlay_applied | variant={} | food_type={} | latency_ms={}",
+                    variant,
+                    payload.food_type,
+                    overlay_latency_ms,
+                )
+
+            return (
+                idx,
+                variant,
+                poster_bytes,
+                variant_prompt,
+                provider_latency_ms,
+                overlay_latency_ms,
+            )
 
         tasks = [
             asyncio.create_task(_generate_variant_image(idx))
             for idx in range(payload.num_images)
         ]
-        variant_results: list[tuple[int, ImageVariantType, bytes, str]] = []
+        variant_results: list[
+            tuple[int, ImageVariantType, bytes, str, int, int | None]
+        ] = []
 
         try:
             for completed in asyncio.as_completed(tasks):
@@ -369,26 +404,22 @@ async def generate_image_ads(
         poster_image_bytes: list[bytes] = []
         applied_variants: list[ImageVariantType] = []
         variant_prompts: dict[str, str] = {}
-        for idx, variant, poster_bytes, variant_prompt in sorted(
-            variant_results,
-            key=lambda item: item[0],
-        ):
-            if variant_uses_pil_text_overlay(payload.food_type, variant):
-                poster_bytes = apply_variant_text_overlay(
-                    poster_bytes,
-                    payload=payload,
-                    variant=variant,
-                    metrics_request_id=trace_request_id,
-                )
-                logger.info(
-                    "image_text_overlay_applied | variant={} | food_type={}",
-                    variant,
-                    payload.food_type,
-                )
-
+        provider_latencies_ms: list[int] = []
+        overlay_latencies_ms: list[int] = []
+        for (
+            idx,
+            variant,
+            poster_bytes,
+            variant_prompt,
+            provider_latency_ms,
+            overlay_latency_ms,
+        ) in variant_results:
             poster_image_bytes.append(poster_bytes)
             applied_variants.append(variant)
             variant_prompts[variant] = variant_prompt
+            provider_latencies_ms.append(provider_latency_ms)
+            if overlay_latency_ms is not None:
+                overlay_latencies_ms.append(overlay_latency_ms)
 
             if not prompt_used:
                 prompt_used = variant_prompt
@@ -396,6 +427,14 @@ async def generate_image_ads(
         stage_latencies_ms["poster_generation_ms"] = int(
             (time.perf_counter() - poster_stage_started) * 1000
         )
+        if provider_latencies_ms:
+            stage_latencies_ms["provider_generation_max_ms"] = max(
+                provider_latencies_ms
+            )
+        if overlay_latencies_ms:
+            stage_latencies_ms["text_overlay_max_ms"] = max(
+                overlay_latencies_ms
+            )
 
         latency_ms = int((time.perf_counter() - started) * 1000)
         stage_latencies_ms["total_ms"] = latency_ms

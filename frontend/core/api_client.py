@@ -122,7 +122,7 @@ def generate_ad(
         if "text/event-stream" not in content_type:
             return _handle_non_sse_error(res)
 
-        for raw_line in res.iter_lines(decode_unicode=True):
+        for raw_line in res.iter_lines(chunk_size=None, decode_unicode=True):
             if not raw_line:
                 continue
             line = raw_line.strip()
