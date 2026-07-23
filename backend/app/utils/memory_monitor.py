@@ -15,6 +15,7 @@ _BYTES_PER_GB = 1024**3
 _MIB_PER_GB = 1024
 _CGROUP_V2_MEMORY_MAX = "/sys/fs/cgroup/memory.max"
 _CGROUP_V2_MEMORY_CURRENT = "/sys/fs/cgroup/memory.current"
+_CGROUP_V2_MEMORY_STAT = "/sys/fs/cgroup/memory.stat"
 _CGROUP_V1_MEMORY_LIMIT = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
 _CGROUP_V1_MEMORY_USAGE = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
 _CGROUP_V1_UNLIMITED_THRESHOLD_BYTES = 1 << 60
@@ -45,15 +46,50 @@ def _parse_non_negative_bytes(value: str | None) -> int | None:
     return parsed if parsed >= 0 else None
 
 
-def _cgroup_values(*, limit_bytes: int | None, current_bytes: int) -> dict[str, float | None]:
+def _parse_memory_stat(value: str | None) -> dict[str, int]:
+    parsed: dict[str, int] = {}
+    for line in (value or "").splitlines():
+        try:
+            key, raw_bytes = line.split(None, 1)
+            byte_count = int(raw_bytes)
+        except (TypeError, ValueError):
+            continue
+        if byte_count >= 0:
+            parsed[key] = byte_count
+    return parsed
+
+
+def _cgroup_values(
+    *,
+    limit_bytes: int | None,
+    current_bytes: int,
+    inactive_file_bytes: int | None = None,
+    active_file_bytes: int | None = None,
+) -> dict[str, float | None]:
+    # cgroup memory.current includes filesystem page cache. Both inactive and
+    # active file pages are reclaimable under pressure; counting model-weight
+    # cache as committed RAM rejects loads immediately after HF prefetch or a
+    # previous pipeline switch even when process RSS and host RAM are healthy.
+    reclaimable_file_bytes = (inactive_file_bytes or 0) + (active_file_bytes or 0)
+    working_set_bytes = max(current_bytes - reclaimable_file_bytes, 0)
     available_bytes = (
-        max(limit_bytes - current_bytes, 0) if limit_bytes is not None else None
+        max(limit_bytes - working_set_bytes, 0) if limit_bytes is not None else None
     )
-    return {
+    snapshot = {
         "cgroup_memory_limit_gb": _to_gb(limit_bytes),
         "cgroup_memory_current_gb": _to_gb(current_bytes),
         "cgroup_memory_available_gb": _to_gb(available_bytes),
     }
+    if inactive_file_bytes is not None:
+        snapshot.update(
+            {
+                "cgroup_inactive_file_gb": _to_gb(inactive_file_bytes),
+                "cgroup_active_file_gb": _to_gb(active_file_bytes or 0),
+                "cgroup_reclaimable_file_gb": _to_gb(reclaimable_file_bytes),
+                "cgroup_working_set_gb": _to_gb(working_set_bytes),
+            }
+        )
+    return snapshot
 
 
 def _read_cgroup_v2_memory() -> dict[str, float | None] | None:
@@ -66,13 +102,27 @@ def _read_cgroup_v2_memory() -> dict[str, float | None] | None:
     if limit_text is None or current_bytes is None:
         return None
 
+    memory_stat = _parse_memory_stat(_read_text_file(_CGROUP_V2_MEMORY_STAT))
+    inactive_file_bytes = memory_stat.get("inactive_file")
+    active_file_bytes = memory_stat.get("active_file")
+
     if limit_text == "max":
-        return _cgroup_values(limit_bytes=None, current_bytes=current_bytes)
+        return _cgroup_values(
+            limit_bytes=None,
+            current_bytes=current_bytes,
+            inactive_file_bytes=inactive_file_bytes,
+            active_file_bytes=active_file_bytes,
+        )
 
     limit_bytes = _parse_non_negative_bytes(limit_text)
     if limit_bytes is None:
         return None
-    return _cgroup_values(limit_bytes=limit_bytes, current_bytes=current_bytes)
+    return _cgroup_values(
+        limit_bytes=limit_bytes,
+        current_bytes=current_bytes,
+        inactive_file_bytes=inactive_file_bytes,
+        active_file_bytes=active_file_bytes,
+    )
 
 
 def _read_cgroup_v1_memory() -> dict[str, float | None] | None:
@@ -245,7 +295,8 @@ def log_model_memory_snapshot(
     logger.info(
         "model_memory_snapshot | stage={} | model_name={} | process_rss_gb={} | "
         "ram_available_gb={} | cgroup_memory_limit_gb={} | "
-        "cgroup_memory_current_gb={} | cgroup_memory_available_gb={} | "
+        "cgroup_memory_current_gb={} | cgroup_reclaimable_file_gb={} | "
+        "cgroup_working_set_gb={} | cgroup_memory_available_gb={} | "
         "effective_available_ram_gb={} | swap_used_gb={} | gpu_free_gb={} | gpu_total_gb={} | "
         "nvidia_smi_used_gb={} | nvidia_smi_total_gb={}",
         stage,
@@ -254,6 +305,8 @@ def log_model_memory_snapshot(
         snapshot["ram_available_gb"],
         snapshot["cgroup_memory_limit_gb"],
         snapshot["cgroup_memory_current_gb"],
+        snapshot.get("cgroup_reclaimable_file_gb"),
+        snapshot.get("cgroup_working_set_gb"),
         snapshot["cgroup_memory_available_gb"],
         snapshot["effective_available_ram_gb"],
         snapshot["swap_used_gb"],

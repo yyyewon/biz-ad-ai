@@ -92,7 +92,27 @@ Provider는 `config/model.yaml`의 `active_profile`로 OpenAI / HuggingFace / Hy
 ### 실행
 
 ```bash
-docker compose up --build
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.dev.proxy.yml \
+  -p biz-ad-ai-dev-spai0925 \
+  up --build
+```
+
+HF 이미지 기본 모델은 `backend/config/model.yaml`의 `sdxl_ip_adapter`입니다. SDXL Base
+img2img와 SDXL Inpaint가 IP-Adapter Plus를 공유하며, L4에서는 한 번에 한 pipeline만
+GPU에 유지합니다. 기존 `sd15_controlnet_tile` 설정은 기본 모델 이름만 되돌려 즉시
+rollback할 수 있도록 보존합니다.
+
+VM에서 모델을 미리 받거나 실제 이미지로 GPU smoke test를 실행할 수 있습니다.
+
+```bash
+cd backend
+python scripts/prefetch_models.py
+python scripts/smoke_sdxl_ip_adapter.py \
+  --input /path/to/real-food-image.jpg \
+  --output-dir tmp/sdxl-smoke \
+  --seed 42
 ```
 
 ## 테스트

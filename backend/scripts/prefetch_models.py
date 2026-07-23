@@ -11,6 +11,7 @@ OpenAI 이미지 프로필(all_openai)에서는 diffusion 가중치는 건너뛴
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Literal
@@ -22,6 +23,12 @@ if str(BACKEND_ROOT) not in sys.path:
 PrefetchStatus = Literal["ok", "skip", "fail"]
 
 FOOD_CLASSIFIER_MODEL_ID = "openai/clip-vit-base-patch32"
+SDXL_FP16_ALLOW_PATTERNS = [
+    "*.json",
+    "*.txt",
+    "*.model",
+    "*.fp16.safetensors",
+]
 
 
 def _log(message: str) -> None:
@@ -34,6 +41,38 @@ def _record(
     status: PrefetchStatus,
 ) -> None:
     results[key] = status
+
+
+def _hf_cache_root() -> Path:
+    configured = os.getenv("HF_HOME", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".cache" / "huggingface"
+
+
+def _directory_size_gb(path: Path) -> float:
+    total_bytes = 0
+    if path.exists():
+        for root, _directories, files in os.walk(path):
+            for filename in files:
+                try:
+                    total_bytes += (Path(root) / filename).stat().st_size
+                except OSError:
+                    continue
+    return round(total_bytes / 1024**3, 3)
+
+
+def _log_hf_cache_usage(stage: str) -> None:
+    cache_root = _hf_cache_root()
+    disk_probe = cache_root if cache_root.exists() else cache_root.parent
+    try:
+        free_gb = round(shutil.disk_usage(disk_probe).free / 1024**3, 3)
+    except OSError:
+        free_gb = None
+    _log(
+        f"HF cache usage | stage={stage} | path={cache_root} | "
+        f"size_gb={_directory_size_gb(cache_root)} | disk_free_gb={free_gb}"
+    )
 
 
 def _hf_profile_active() -> bool:
@@ -185,6 +224,81 @@ def _prefetch_sdxl_lightning_models(hf_token: str) -> bool:
     return ok
 
 
+def _prefetch_sdxl_ip_adapter_models(hf_token: str) -> bool:
+    """Cache only the FP16 SDXL files and exact IP-Adapter Plus artifacts."""
+    try:
+        from huggingface_hub import hf_hub_download, snapshot_download
+    except Exception as exc:
+        _log(f"huggingface_hub import failed, skipping SDXL IP-Adapter prefetch: {exc}")
+        return False
+
+    model_settings = _resolve_image_generation_settings()
+    base_model_id = str(
+        model_settings.get("base_model_id")
+        or "stabilityai/stable-diffusion-xl-base-1.0"
+    ).strip()
+    inpaint_model_id = str(
+        model_settings.get("inpaint_model_id")
+        or "diffusers/stable-diffusion-xl-1.0-inpainting-0.1"
+    ).strip()
+    raw_ip_adapter = model_settings.get("ip_adapter")
+    ip_adapter = raw_ip_adapter if isinstance(raw_ip_adapter, dict) else {}
+    repo_id = str(ip_adapter.get("repo_id") or "h94/IP-Adapter").strip()
+    subfolder = str(ip_adapter.get("subfolder") or "sdxl_models").strip()
+    weight_name = str(
+        ip_adapter.get("weight_name")
+        or "ip-adapter-plus_sdxl_vit-h.safetensors"
+    ).strip()
+    image_encoder_folder = str(
+        ip_adapter.get("image_encoder_folder") or "models/image_encoder"
+    ).strip()
+
+    ok = True
+    for label, model_id in (
+        ("SDXL Base", base_model_id),
+        ("SDXL Inpaint", inpaint_model_id),
+    ):
+        _log(f"{label} FP16 download started | model_id={model_id}")
+        try:
+            cache_path = snapshot_download(
+                repo_id=model_id,
+                allow_patterns=SDXL_FP16_ALLOW_PATTERNS,
+                token=hf_token or None,
+            )
+            _log(f"{label} cache complete | model_id={model_id} | path={cache_path}")
+        except Exception as exc:
+            ok = False
+            _log(f"{label} prefetch failed | model_id={model_id} | error={exc}")
+
+    adapter_files = (
+        (subfolder, weight_name, "IP-Adapter Plus weight"),
+        (image_encoder_folder, "config.json", "IP-Adapter image encoder config"),
+        (
+            image_encoder_folder,
+            "model.safetensors",
+            "IP-Adapter image encoder weight",
+        ),
+    )
+    for file_subfolder, filename, label in adapter_files:
+        _log(
+            f"{label} download started | repo_id={repo_id} | "
+            f"subfolder={file_subfolder} | file={filename}"
+        )
+        try:
+            cache_path = hf_hub_download(
+                repo_id=repo_id,
+                subfolder=file_subfolder,
+                filename=filename,
+                token=hf_token or None,
+            )
+            _log(f"{label} cache complete | path={cache_path}")
+        except Exception as exc:
+            ok = False
+            _log(f"{label} prefetch failed | error={exc}")
+
+    return ok
+
+
 def _prefetch_sd15_controlnet_tile_models(hf_token: str) -> bool:
     """SD 1.5 Base 모델과 ControlNet Tile v1.1 가중치를 미리 캐시한다."""
     try:
@@ -227,6 +341,9 @@ def _prefetch_hf_image_models(hf_token: str) -> bool:
 
     if provider_type == "sdxl_lightning":
         return _prefetch_sdxl_lightning_models(hf_token)
+
+    if provider_type == "sdxl_ip_adapter":
+        return _prefetch_sdxl_ip_adapter_models(hf_token)
 
     if provider_type == "sd15_controlnet_tile":
         return _prefetch_sd15_controlnet_tile_models(hf_token)
@@ -319,6 +436,7 @@ def main() -> int:
 
     _log(f"HF_HOME={os.getenv('HF_HOME', '(unset)')}")
     _log(f"U2NET_HOME={os.getenv('U2NET_HOME', '(unset)')}")
+    _log_hf_cache_usage("before")
 
     hf_token = os.getenv("HF_TOKEN", "").strip()
 
@@ -351,6 +469,7 @@ def main() -> int:
     )
 
     _log_summary(results)
+    _log_hf_cache_usage("after")
     _log("prefetch 완료.")
     return 0
 

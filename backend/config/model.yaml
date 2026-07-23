@@ -392,9 +392,50 @@ hf:
     # - sdxl_lightning
     # - sdxl_base
     # - sd15_controlnet_tile
-    default_model: sd15_controlnet_tile
+    # - sdxl_ip_adapter
+    default_model: sdxl_ip_adapter
 
     models:
+      # ------------------------------------------------------------
+      # SDXL Base/Inpaint + IP-Adapter Plus (L4 24GB)
+      # ------------------------------------------------------------
+      sdxl_ip_adapter:
+        provider_type: sdxl_ip_adapter
+        base_model_id: stabilityai/stable-diffusion-xl-base-1.0
+        inpaint_model_id: diffusers/stable-diffusion-xl-1.0-inpainting-0.1
+
+        ip_adapter:
+          enabled: true
+          repo_id: h94/IP-Adapter
+          subfolder: sdxl_models
+          weight_name: ip-adapter-plus_sdxl_vit-h.safetensors
+          image_encoder_folder: models/image_encoder
+          scale: 0.55
+
+        task_type: image-to-image
+        backend_type: pytorch
+        model_family: diffusion
+        device: auto
+        dtype: fp16
+
+        width: 1024
+        height: 1024
+        max_native_side: 1152
+
+        num_inference_steps: 25
+        guidance_scale: 5.5
+        img2img_restyle_strength: 0.35
+        inpaint_strength: 0.90
+        num_images_per_prompt: 1
+
+        use_safetensors: true
+        low_cpu_mem_usage: true
+        enable_vae_slicing: true
+        enable_vae_tiling: false
+        use_xformers: false
+        cpu_offload_enabled: false
+        max_resident_pipelines: 1
+
       sd35_medium:
         model_id: stabilityai/stable-diffusion-3.5-medium
         width: 1024
