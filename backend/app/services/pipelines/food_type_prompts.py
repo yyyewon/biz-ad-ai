@@ -2,7 +2,7 @@
 Food-type × image-variant prompt templates (compact English keywords).
 
 OpenAI image generation uses this module.
-HF uses hf_food_type_prompts.py — HF 전용 튜닝은 그쪽 파일에서 한다.
+HF uses hf_food_type_prompts.py — 섹션·food_type 순서 동일, OpenAI fallback 없음, HF 전용 튜닝은 그쪽만 수정.
 
 Read order:
     0. Global shared blocks (negative, realism, preserve)

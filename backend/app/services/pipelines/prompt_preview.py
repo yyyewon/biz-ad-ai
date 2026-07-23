@@ -19,6 +19,10 @@ from app.services.pipelines.food_type_prompts import (
     build_food_variant_prompt,
     uses_custom_template,
 )
+from app.services.pipelines.hf_food_type_prompts import (
+    build_hf_food_variant_prompt,
+    uses_hf_custom_template,
+)
 
 
 @dataclass(frozen=True)
@@ -59,8 +63,15 @@ def preview_image_prompt(
     variant: ImageVariantType,
     *,
     sample: PromptPreviewSample | None = None,
+    provider: str = "openai",
 ) -> str:
     payload = build_sample_payload(food_type, sample=sample)
+    if provider == "hf":
+        return build_hf_food_variant_prompt(
+            payload,
+            variant,
+            food_type=food_type,
+        )
     return build_food_variant_prompt(
         payload,
         variant,
@@ -71,6 +82,7 @@ def preview_image_prompt(
 def iter_prompt_previews(
     *,
     sample: PromptPreviewSample | None = None,
+    provider: str = "openai",
 ) -> list[tuple[FoodType, ImageVariantType, str, bool]]:
     """
     (food_type, variant, prompt, uses_custom_template) 목록을 반환한다.
@@ -80,13 +92,18 @@ def iter_prompt_previews(
 
     for food_type in FOOD_TYPE_LABELS:
         for variant in DEFAULT_IMAGE_VARIANTS:
-            prompt = preview_image_prompt(food_type, variant, sample=sample)
+            prompt = preview_image_prompt(food_type, variant, sample=sample, provider=provider)
+            uses_template = (
+                uses_hf_custom_template(food_type, variant)
+                if provider == "hf"
+                else uses_custom_template(food_type, variant)
+            )
             rows.append(
                 (
                     food_type,
                     variant,
                     prompt,
-                    uses_custom_template(food_type, variant),
+                    uses_template,
                 )
             )
 
@@ -99,9 +116,10 @@ def format_prompt_preview(
     prompt: str,
     *,
     uses_template: bool,
+    provider: str = "openai",
 ) -> str:
     source = "custom_template" if uses_template else "fallback"
     label = FOOD_TYPE_LABELS[food_type]
-    header = f"[{food_type} / {label}] × [{variant}] ({source})"
+    header = f"[{provider}] [{food_type} / {label}] × [{variant}] ({source})"
     separator = "=" * min(len(header), 80)
     return f"{header}\n{separator}\n{prompt}\n"

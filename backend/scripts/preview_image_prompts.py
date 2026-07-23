@@ -8,7 +8,7 @@
     cd backend
     python scripts/preview_image_prompts.py
     python scripts/preview_image_prompts.py --food-type 국, 찌개 --variant poster
-    python scripts/preview_image_prompts.py --only-custom
+    python scripts/preview_image_prompts.py --provider hf --food-type fried --variant poster
 """
 
 from __future__ import annotations
@@ -29,6 +29,12 @@ from app.services.pipelines.prompt_preview import format_prompt_preview, iter_pr
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="이미지 생성 프롬프트 미리보기")
     parser.add_argument(
+        "--provider",
+        choices=["openai", "hf"],
+        default="openai",
+        help="openai → food_type_prompts.py, hf → hf_food_type_prompts.py",
+    )
+    parser.add_argument(
         "--food-type",
         help="음식 유형 (UI 라벨 또는 내부 코드). 예: 국, 찌개 / fried",
     )
@@ -48,7 +54,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
 
-    rows = iter_prompt_previews()
+    rows = iter_prompt_previews(provider=args.provider)
 
     if args.food_type:
         food_type = resolve_food_type(args.food_type)
@@ -65,7 +71,13 @@ def main() -> int:
         return 1
 
     blocks = [
-        format_prompt_preview(food_type, variant, prompt, uses_template=uses_template)
+        format_prompt_preview(
+            food_type,
+            variant,
+            prompt,
+            uses_template=uses_template,
+            provider=args.provider,
+        )
         for food_type, variant, prompt, uses_template in rows
     ]
     print("\n".join(blocks))
