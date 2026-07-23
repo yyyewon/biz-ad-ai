@@ -1,9 +1,12 @@
-# backend/app/services/providers/food_classifier_provider.py
 import io
 import threading
 
 from PIL import Image
 from loguru import logger
+
+from app.core.config import get_settings
+from app.utils.memory_monitor import ensure_model_load_memory, log_model_memory_snapshot
+
 
 class FoodClassifierProvider:
     """
@@ -45,6 +48,18 @@ class FoodClassifierProvider:
             if self._classifier is not None:
                 return
             try:
+                model_name = "openai/clip-vit-base-patch32"
+                before_load = log_model_memory_snapshot(
+                    "before_food_classifier_load",
+                    model_name=model_name,
+                )
+                ensure_model_load_memory(
+                    model_name=model_name,
+                    min_available_ram_gb=get_settings().model_load_min_available_ram_gb,
+                    load_stage="before_food_classifier_load",
+                    snapshot=before_load,
+                )
+
                 import torch
                 from transformers import pipeline
 
@@ -55,8 +70,13 @@ class FoodClassifierProvider:
                 )
                 self._classifier = pipeline(
                     "zero-shot-image-classification",
-                    model="openai/clip-vit-base-patch32",
+                    model=model_name,
                     device=device
+                )
+                log_model_memory_snapshot(
+                    "after_food_classifier_load",
+                    model_name=model_name,
+                    torch_module=torch,
                 )
             except Exception as e:
                 logger.error("food_classifier_load_failed | error={}", str(e))

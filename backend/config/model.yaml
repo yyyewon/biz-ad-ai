@@ -32,7 +32,7 @@ version: 1
 # - hybrid_hf_text_openai_image
 #   → 텍스트 생성: HuggingFace
 #   → 이미지 생성: OpenAI
-active_profile: all_openai
+active_profile: hybrid_openai_text_hf_image
 
 # provider 조합 정의.
 #
@@ -391,7 +391,8 @@ hf:
     # - sd35_medium
     # - sdxl_lightning
     # - sdxl_base
-    default_model: sdxl_lightning
+    # - sd15_controlnet_tile
+    default_model: sd15_controlnet_tile
 
     models:
       sd35_medium:
@@ -459,6 +460,40 @@ hf:
         num_inference_steps: 30
         guidance_scale: 5.0
         num_images_per_prompt: 1
+
+      # ------------------------------------------------------------
+      # SD 1.5 + ControlNet Tile v1.1
+      # ------------------------------------------------------------
+      sd15_controlnet_tile:
+        # ControlNet Tile v1.1 checkpoint repository.
+        controlnet_model_id: lllyasviel/control_v11f1e_sd15_tile
+
+        # SD 1.5 base pipeline repository.
+        base_model_id: runwayml/stable-diffusion-v1-5
+
+        task_type: image-to-image
+        backend_type: pytorch
+        model_family: diffusion
+        provider_type: sd15_controlnet_tile
+        pipeline_class: StableDiffusionControlNetPipeline
+
+        device: auto
+        dtype: fp16
+        quantization: none
+
+        width: 512
+        height: 512
+
+        num_inference_steps: 20
+        guidance_scale: 7.5
+        controlnet_conditioning_scale: 1.0
+        num_images_per_prompt: 1
+
+        scheduler:
+          class_name: DDIMScheduler
+
+        use_xformers: true
+        enable_vae_slicing: true
 
 # ============================================================
 # Poster design analysis (VLM → PIL LayoutSpec)

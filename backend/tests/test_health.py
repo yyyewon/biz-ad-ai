@@ -62,9 +62,12 @@ def test_health_check():
     assert body["data"]["service"] == "biz-ad-ai-backend"
     assert body["data"]["model_warmup_status"] in {
         "not_started",
+        "disabled",
         "warming_up",
         "ready",
         "completed_with_errors",
+        "failed",
+        "cancelled",
     }
     assert "timestamp" in body["data"]
     assert body["data"]["timezone"] == "Asia/Seoul"
@@ -87,6 +90,7 @@ def test_lifespan_does_not_wait_for_model_warmup(monkeypatch):
                 raise
 
         monkeypatch.setattr(main, "_warm_up_models", fake_warm_up_models)
+        monkeypatch.setattr(main.settings, "model_warmup_enabled", True)
 
         async with main.lifespan(app):
             await asyncio.wait_for(warmup_started.wait(), timeout=0.5)
@@ -106,10 +110,112 @@ def test_model_warmup_reports_ready_after_all_stages(monkeypatch):
     monkeypatch.setattr(main, "_warm_up_poster_layout", successful_warmup)
     monkeypatch.setattr(main, "_warm_up_poster_vlm", successful_warmup)
     monkeypatch.setattr(main, "_warm_up_food_classifier", successful_warmup)
+    monkeypatch.setattr(main.settings, "warmup_hf_image_enabled", True)
+    monkeypatch.setattr(main.settings, "warmup_poster_layout_enabled", True)
+    monkeypatch.setattr(main.settings, "warmup_poster_vlm_enabled", True)
+    monkeypatch.setattr(main.settings, "warmup_food_classifier_enabled", True)
 
     asyncio.run(main._warm_up_models(app))
 
     assert app.state.model_warmup_status == "ready"
+
+
+def test_lifespan_skips_all_model_loaders_when_warmup_is_disabled(monkeypatch):
+    async def run_test():
+        called = False
+
+        async def should_not_run(_app):
+            nonlocal called
+            called = True
+
+        monkeypatch.setattr(main, "_warm_up_models", should_not_run)
+        monkeypatch.setattr(main.settings, "model_warmup_enabled", False)
+
+        async with main.lifespan(app):
+            assert app.state.model_warmup_status == "disabled"
+            assert app.state.model_warmup_task is None
+
+        assert called is False
+
+    asyncio.run(run_test())
+
+
+def test_model_warmup_honors_per_model_flags(monkeypatch):
+    calls: list[str] = []
+
+    def stage(name):
+        async def run():
+            calls.append(name)
+            return True
+
+        return run
+
+    monkeypatch.setattr(main, "_warm_up_hf_image_pipeline", stage("hf_image"))
+    monkeypatch.setattr(main, "_warm_up_poster_layout", stage("poster_layout"))
+    monkeypatch.setattr(main, "_warm_up_poster_vlm", stage("poster_vlm"))
+    monkeypatch.setattr(main, "_warm_up_food_classifier", stage("food_classifier"))
+    monkeypatch.setattr(main.settings, "warmup_hf_image_enabled", True)
+    monkeypatch.setattr(main.settings, "warmup_poster_layout_enabled", True)
+    monkeypatch.setattr(main.settings, "warmup_poster_vlm_enabled", False)
+    monkeypatch.setattr(main.settings, "warmup_food_classifier_enabled", False)
+
+    asyncio.run(main._warm_up_models(app))
+
+    assert calls == ["hf_image", "poster_layout"]
+    assert app.state.model_warmup_status == "ready"
+
+
+def test_model_warmup_is_disabled_when_all_per_model_flags_are_disabled(monkeypatch):
+    async def should_not_run():
+        pytest.fail("disabled warmup stage must not run")
+
+    monkeypatch.setattr(main, "_warm_up_hf_image_pipeline", should_not_run)
+    monkeypatch.setattr(main, "_warm_up_poster_layout", should_not_run)
+    monkeypatch.setattr(main, "_warm_up_poster_vlm", should_not_run)
+    monkeypatch.setattr(main, "_warm_up_food_classifier", should_not_run)
+    monkeypatch.setattr(main.settings, "model_warmup_enabled", True)
+    monkeypatch.setattr(main.settings, "warmup_hf_image_enabled", False)
+    monkeypatch.setattr(main.settings, "warmup_poster_layout_enabled", False)
+    monkeypatch.setattr(main.settings, "warmup_poster_vlm_enabled", False)
+    monkeypatch.setattr(main.settings, "warmup_food_classifier_enabled", False)
+
+    asyncio.run(main._warm_up_models(app))
+
+    assert app.state.model_warmup_status == "disabled"
+
+
+def test_model_warmup_reports_completed_with_errors(monkeypatch):
+    async def successful_warmup():
+        return True
+
+    async def failed_warmup():
+        return False
+
+    monkeypatch.setattr(main, "_warm_up_hf_image_pipeline", successful_warmup)
+    monkeypatch.setattr(main, "_warm_up_poster_layout", failed_warmup)
+    monkeypatch.setattr(main.settings, "warmup_hf_image_enabled", True)
+    monkeypatch.setattr(main.settings, "warmup_poster_layout_enabled", True)
+    monkeypatch.setattr(main.settings, "warmup_poster_vlm_enabled", False)
+    monkeypatch.setattr(main.settings, "warmup_food_classifier_enabled", False)
+
+    asyncio.run(main._warm_up_models(app))
+
+    assert app.state.model_warmup_status == "completed_with_errors"
+
+
+def test_model_warmup_exception_marks_failed_without_escaping(monkeypatch):
+    async def unexpected_failure():
+        raise RuntimeError("warmup failed")
+
+    monkeypatch.setattr(main, "_warm_up_hf_image_pipeline", unexpected_failure)
+    monkeypatch.setattr(main.settings, "warmup_hf_image_enabled", True)
+    monkeypatch.setattr(main.settings, "warmup_poster_layout_enabled", False)
+    monkeypatch.setattr(main.settings, "warmup_poster_vlm_enabled", False)
+    monkeypatch.setattr(main.settings, "warmup_food_classifier_enabled", False)
+
+    asyncio.run(main._warm_up_models(app))
+
+    assert app.state.model_warmup_status == "failed"
 
 
 def test_provider_factory_does_not_import_heavy_providers_eagerly():

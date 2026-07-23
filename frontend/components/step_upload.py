@@ -1,4 +1,3 @@
-#biz-ad-ai\frontend\components\step_upload.py
 """
 Step 2: 사진 업로드 & 음식 유형/톤 선택
 """
@@ -10,6 +9,37 @@ from core.auth import get_daily_usage, is_quota_exceeded
 from core.state import set_upload, set_style, is_upload_step_valid, next_step, prev_step
 from components.ui_kit import phone_preview, quota_exceeded_banner
 from core.api_client import classify_food
+
+
+def _store_classification_result(file_id: str, result: dict) -> str | None:
+    """
+    분류 시도 결과를 파일별로 보관하고 성공했을 때만 선택값 반영
+    """
+    predicted_food = result.get("predicted_food")
+    succeeded = bool(result.get("ok") and predicted_food in FOOD_OPTIONS)
+    message = ""
+    if not succeeded:
+        message = result.get("error") or "사진에서 음식 종류를 확정하지 못했어요."
+
+    st.session_state["_food_classification"] = {
+        "file_id": file_id,
+        "status": "done" if succeeded else "error",
+        "message": message,
+    }
+
+    if not succeeded:
+        st.session_state.pop("_classified_file_id", None)
+        return None
+
+    st.session_state["_classified_file_id"] = file_id
+    st.session_state["upload_food_type"] = predicted_food
+    st.session_state.upload["food"] = predicted_food
+    return predicted_food
+
+
+def _clear_classification_state() -> None:
+    st.session_state.pop("_classified_file_id", None)
+    st.session_state.pop("_food_classification", None)
 
 
 def render() -> None:
@@ -48,7 +78,8 @@ def render() -> None:
                 else:
                     set_upload(image_bytes, uploaded_file.name)
 
-                    if st.session_state.get("_classified_file_id") != uploaded_file.file_id:
+                    classification = st.session_state.get("_food_classification") or {}
+                    if classification.get("file_id") != uploaded_file.file_id:
                         with st.spinner("음식 종류를 분석하고 있어요..."):
                             result = classify_food(
                                 image_bytes=image_bytes,
@@ -57,16 +88,20 @@ def render() -> None:
                                 mock=st.session_state.mock_mode,
                             )
 
-                        st.session_state["_classified_file_id"] = uploaded_file.file_id
+                        _store_classification_result(uploaded_file.file_id, result)
+                        classification = st.session_state.get("_food_classification") or {}
 
-                        if result["ok"] and result.get("predicted_food") in FOOD_OPTIONS:
-                            # pills 위젯이 아직 생성되기 전이므로 session_state 값을 직접 세팅해도 안전
-                            st.session_state["upload_food_type"] = result["predicted_food"]
-                            st.session_state.upload["food"] = result["predicted_food"]
-                        # 실패하거나 예상 밖 값이면 조용히 넘어감 (사용자가 직접 선택)
+                    if classification.get("status") == "error":
+                        st.warning(
+                            f"자동 음식 분석에 실패했어요: {classification.get('message')} "
+                            "직접 선택하거나 다시 시도해 주세요."
+                        )
+                        if st.button("음식 종류 다시 분석", key="retry_food_classification"):
+                            _clear_classification_state()
+                            st.rerun()
             else:
                 set_upload(None, "")
-                st.session_state.pop("_classified_file_id", None)
+                _clear_classification_state()
 
             food = st.pills(
                 "음식 형태",

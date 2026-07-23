@@ -108,6 +108,24 @@ class Settings(BaseSettings):
     generation_queue_timeout_seconds: float = Field(default=15.0)
     daily_generation_limit: int = Field(default=3)
 
+    # ============================================================
+    # Model loading / warmup safety
+    # ============================================================
+
+    # Heavy models are lazy-loaded by default so starting the API process does
+    # not consume the host's RAM before it can serve health checks.
+    model_warmup_enabled: bool = Field(default=False)
+    warmup_hf_image_enabled: bool = Field(default=True)
+    warmup_poster_vlm_enabled: bool = Field(default=False)
+    warmup_food_classifier_enabled: bool = Field(default=False)
+    warmup_poster_layout_enabled: bool = Field(default=True)
+
+    # Set to 0 to disable the pre-load system RAM guard explicitly.
+    model_load_min_available_ram_gb: float = Field(default=6.0, ge=0.0)
+
+    # CPU offload lowers VRAM use but can increase system RAM pressure.
+    hf_image_cpu_offload_enabled: bool = Field(default=False)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

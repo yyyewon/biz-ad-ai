@@ -3,7 +3,14 @@ UI Kit
 """
 from __future__ import annotations
 import base64
+import io
+import logging
+
+from PIL import Image, UnidentifiedImageError
 import streamlit as st
+
+
+logger = logging.getLogger(__name__)
 
 
 def alert(message: str, kind: str = "error") -> None:
@@ -28,11 +35,44 @@ def badge_row(items: list[str]) -> None:
     st.markdown(f'<div class="rg-badge-row">{chips}</div>', unsafe_allow_html=True)
 
 
+@st.cache_data(show_spinner=False, max_entries=12, ttl=3600)
+def _preview_data_uri(
+    image_bytes: bytes,
+    *,
+    max_size: tuple[int, int],
+    quality: int,
+) -> str | None:
+    """
+    WebSocket에 원본 PNG를 싣지 않도록 화면용 JPEG 썸네일 생성
+    """
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as source:
+            preview = source.convert("RGB")
+            preview.thumbnail(max_size, Image.Resampling.LANCZOS)
+            output = io.BytesIO()
+            preview.save(output, format="JPEG", quality=quality, optimize=True)
+    except (OSError, UnidentifiedImageError):
+        logger.warning("ui_preview_encode_failed | source_bytes=%s", len(image_bytes))
+        return None
+
+    preview_bytes = output.getvalue()
+    logger.info(
+        "ui_preview_encoded | source_bytes=%s | preview_bytes=%s | size=%sx%s",
+        len(image_bytes),
+        len(preview_bytes),
+        preview.width,
+        preview.height,
+    )
+    return f"data:image/jpeg;base64,{base64.b64encode(preview_bytes).decode()}"
+
+
 def _img_tag(image_bytes: bytes | None, size_label: str) -> str:
     if not image_bytes:
         return f'<span>{size_label}</span>'
-    b64 = base64.b64encode(image_bytes).decode()
-    return f'<img src="data:image/png;base64,{b64}" />'
+    data_uri = _preview_data_uri(image_bytes, max_size=(640, 800), quality=78)
+    if data_uri is None:
+        return f'<span>{size_label}</span>'
+    return f'<img src="{data_uri}" alt="{size_label}" />'
 
 
 def phone_preview(
@@ -71,8 +111,15 @@ def feed_grid(images: list[bytes], slots: int = 3) -> None:
     cells = []
     for i in range(slots):
         if i < len(images):
-            b64 = base64.b64encode(images[i]).decode()
-            cells.append(f'<div class="rg-grid-cell filled"><img src="data:image/png;base64,{b64}" /></div>')
+            data_uri = _preview_data_uri(images[i], max_size=(320, 400), quality=72)
+            if data_uri is not None:
+                cells.append(
+                    '<div class="rg-grid-cell filled">'
+                    f'<img src="{data_uri}" alt="생성 이미지 {i + 1}" />'
+                    '</div>'
+                )
+            else:
+                cells.append('<div class="rg-grid-cell">미리보기 불가</div>')
         else:
             cells.append('<div class="rg-grid-cell">·</div>')
     st.markdown(f'<div class="rg-grid">{"".join(cells)}</div>', unsafe_allow_html=True)

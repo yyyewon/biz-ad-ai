@@ -13,12 +13,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.local.txt .
 COPY requirements-torch.txt .
+COPY requirements.txt .
+COPY requirements.local.txt .
 
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements-torch.txt && \
-    pip install --no-cache-dir -r requirements.local.txt --no-build-isolation
+ARG BACKEND_REQUIREMENTS=requirements.local.txt
+
+RUN pip install --upgrade pip
+RUN pip install --no-cache-dir -r requirements-torch.txt && \
+    pip install --no-cache-dir -r "$BACKEND_REQUIREMENTS" --no-build-isolation
 
 COPY . .
 

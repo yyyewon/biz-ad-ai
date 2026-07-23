@@ -15,6 +15,7 @@ PyYAML
 # Logging
 # =========================
 loguru
+psutil
 
 # =========================
 # Image Processing
@@ -34,6 +35,9 @@ httpx
 # =========================
 # torch/torchvision/torchaudio는 install_requirements.sh 1단계(requirements-torch.txt)에서 선설치
 # torch 2.8.0 (gptqmodel VLM) + xformers 0.0.32.post2 (torch 2.8.0 공식 wheel)
+torch==2.8.0
+torchvision==0.23.0
+torchaudio==2.8.0
 #
 # HuggingFace / Diffusers 기반 이미지 생성
 # - SDXL Lightning 4-step
@@ -51,6 +55,7 @@ xformers==0.0.32.post2
 qwen-vl-utils
 optimum
 gptqmodel==5.8.0
+torchao==0.16.0
 
 # pytest traceback / terminal output formatting
 Pygments

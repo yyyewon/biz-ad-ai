@@ -51,29 +51,43 @@ async def _warm_up_hf_image_pipeline() -> bool:
     from app.core.model_config import get_provider_name
 
     try:
-        if get_provider_name("image_generation") != "hf":
+        provider_name = get_provider_name("image_generation")
+        if provider_name != "hf":
+            logger.info("hf_image_pipeline_warmup_skipped | provider={}", provider_name)
             return True
-    except Exception:
-        return True
+    except Exception as exc:
+        logger.warning("hf_image_pipeline_warmup_skipped | config_error={}", str(exc))
+        return False
 
     try:
         from app.services.providers.factory import get_image_provider
 
         provider = get_image_provider()
 
-        if hasattr(provider, "_load_text2img_pipeline"):
+        load_method = None
+        for method_name in ["warmup", "load_pipeline", "_load_pipeline", "_load_text2img_pipeline", "_load_controlnet_pipeline"]:
+            if hasattr(provider, method_name):
+                load_method = getattr(provider, method_name)
+                break
+
+        if load_method:
             before = await run_in_threadpool(_cuda_memory_allocated_gb)
             logger.info("hf_image_pipeline_warmup_started | vram_before_gb={:.3f}", before)
 
-            await run_in_threadpool(provider._load_text2img_pipeline)
+            await run_in_threadpool(load_method)
 
             after = await run_in_threadpool(_cuda_memory_allocated_gb)
             logger.info(
                 "hf_image_pipeline_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
                 after, after - before
             )
+            return True
 
-        return True
+        logger.warning(
+            "hf_image_pipeline_warmup_skipped | reason=no_load_method | provider={}",
+            type(provider).__name__,
+        )
+        return False
 
     except Exception as exc:
         logger.exception("hf_image_pipeline_warmup_failed | error={}", str(exc))
@@ -142,12 +156,21 @@ async def _warm_up_models(app: FastAPI) -> None:
 
     logger.info("model_warmup_started")
     try:
-        results = [
-            await _warm_up_hf_image_pipeline(),
-            await _warm_up_poster_layout(),
-            await _warm_up_poster_vlm(),
-            await _warm_up_food_classifier(),
+        stages = [
+            ("hf_image", settings.warmup_hf_image_enabled, _warm_up_hf_image_pipeline),
+            ("poster_layout", settings.warmup_poster_layout_enabled, _warm_up_poster_layout),
+            ("poster_vlm", settings.warmup_poster_vlm_enabled, _warm_up_poster_vlm),
+            ("food_classifier", settings.warmup_food_classifier_enabled, _warm_up_food_classifier),
         ]
+        results: list[bool] = []
+        for stage_name, enabled, warm_up in stages:
+            if not enabled:
+                logger.info(
+                    "model_warmup_stage_skipped | stage={} | reason=disabled_by_config",
+                    stage_name,
+                )
+                continue
+            results.append(await warm_up())
     except asyncio.CancelledError:
         app.state.model_warmup_status = "cancelled"
         logger.info("model_warmup_cancelled")
@@ -156,9 +179,12 @@ async def _warm_up_models(app: FastAPI) -> None:
         app.state.model_warmup_status = "failed"
         logger.exception("model_warmup_failed | error={}", str(exc))
     else:
-        app.state.model_warmup_status = (
-            "ready" if all(results) else "completed_with_errors"
-        )
+        if not results:
+            app.state.model_warmup_status = "disabled"
+        elif all(results):
+            app.state.model_warmup_status = "ready"
+        else:
+            app.state.model_warmup_status = "completed_with_errors"
         logger.info(
             "model_warmup_completed | status={}",
             app.state.model_warmup_status,
@@ -167,6 +193,13 @@ async def _warm_up_models(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.model_warmup_task = None
+    if not settings.model_warmup_enabled:
+        app.state.model_warmup_status = "disabled"
+        logger.info("model_warmup_skipped | reason=disabled_by_config")
+        yield
+        return
+
     app.state.model_warmup_status = "warming_up"
     warmup_task = asyncio.create_task(
         _warm_up_models(app),
@@ -233,8 +266,15 @@ app.include_router(api_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health(request: Request) -> dict[str, str]:
+    return {
+        "status": "ok",
+        "model_warmup_status": getattr(
+            request.app.state,
+            "model_warmup_status",
+            "not_started",
+        ),
+    }
 
 
 @app.get("/")
