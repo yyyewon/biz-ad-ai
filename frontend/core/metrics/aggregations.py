@@ -129,3 +129,12 @@ def format_ms(value: float | None) -> str:
         return f"{value / 1000:.1f}초"
 
     return f"{value:.0f}ms"
+
+
+def ms_to_sec(value: float) -> float:
+    """Chart axis용 — ms → sec (1 decimal)."""
+    return round(value / 1000, 1)
+
+
+def dict_ms_to_sec(values: dict[str, float]) -> dict[str, float]:
+    return {key: ms_to_sec(val) for key, val in values.items()}
