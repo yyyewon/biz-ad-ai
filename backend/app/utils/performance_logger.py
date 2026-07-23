@@ -18,6 +18,7 @@ from app.schemas.performance_metrics import (
     get_metric_definition,
     resolve_log_relative_path,
 )
+from app.utils.metrics_source import attach_source_context
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -144,6 +145,7 @@ def write_metric_record(
         if log_target == "performance" and not is_performance_logging_enabled():
             return
 
+        metric = attach_source_context(metric)
         log_path = _resolve_log_path(log_target)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 

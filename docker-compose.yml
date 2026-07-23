@@ -1,3 +1,26 @@
+# Docker Compose — 배포(8010/8501) + 로컬 실행
+#
+# VM 배포 시 (GitHub Actions → /opt/biz-ad-ai):
+#   1. 팀 공용 JSONL (최초 1회, dev 와 동일)
+#      sudo mkdir -p /opt/biz-ad-ai-team-logs
+#      sudo chmod 1777 /opt/biz-ad-ai-team-logs
+#
+#   2. 프로젝트 루트 .env (또는 backend/.env)에 예시:
+#      METRICS_LOG_HOST_PATH=/opt/biz-ad-ai-team-logs
+#      METRICS_SOURCE_USER=prod
+#      METRICS_BACKEND_PORT=8010
+#      METRICS_FRONTEND_PORT=8501
+#      METRICS_DEPLOY_ENV=prod
+#
+#   → dev 스택의 Metrics(8555)가 같은 JSONL 을 읽으므로,
+#     배포 compose 에 metrics 서비스를 따로 띄울 필요 없음.
+#     (8555 포트 충돌 방지)
+#
+# 로컬만 쓸 때:
+#   METRICS_LOG_HOST_PATH 를 설정하지 않으면 ./backend/logs 사용 (기본값)
+#   Metrics 를 같이 보려면:
+#     docker compose --profile metrics up -d --build
+
 services:
   frontend:
     build:
@@ -30,9 +53,16 @@ services:
     environment:
       - HF_HOME=/app/.cache/huggingface
       - HF_HUB_CACHE=/app/.cache/huggingface/hub
+      # JSONL extra.source_* (대시보드 필터). VM 예: prod / 8010 / 8501 / prod
+      - METRICS_SOURCE_USER=${METRICS_SOURCE_USER:-}
+      - METRICS_BACKEND_PORT=${METRICS_BACKEND_PORT:-8010}
+      - METRICS_FRONTEND_PORT=${METRICS_FRONTEND_PORT:-8501}
+      - METRICS_DEPLOY_ENV=${METRICS_DEPLOY_ENV:-prod}
     volumes:
       - backend_data:/app/data
-      - ./backend/logs:/app/logs
+      # VM: METRICS_LOG_HOST_PATH=/opt/biz-ad-ai-team-logs → dev Metrics(8555)와 공유
+      # 로컬: 미설정 시 ./backend/logs
+      - ${METRICS_LOG_HOST_PATH:-./backend/logs}:/app/logs
       - /opt/hf-cache:/app/.cache/huggingface
       - model_cache:/models
     deploy:
@@ -42,6 +72,31 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  # VM 에 dev metrics(8555)가 이미 있으면 profile 없이 backend 만 up 해도 됨.
+  # 로컬 단독 실행·8555 직접 노출이 필요할 때만:
+  #   docker compose --profile metrics up -d metrics
+  metrics:
+    profiles: ["metrics"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: biz-ad-ai-frontend:latest
+    container_name: biz-ad-ai-metrics-prod
+    restart: unless-stopped
+    ports:
+      - "8555:8501"
+    environment:
+      - METRICS_LOG_DIR=/logs
+    entrypoint:
+      - streamlit
+      - run
+      - metrics_app.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+      - --server.headless=true
+    volumes:
+      - ${METRICS_LOG_HOST_PATH:-./backend/logs}:/logs:ro
 
 volumes:
   backend_data:
