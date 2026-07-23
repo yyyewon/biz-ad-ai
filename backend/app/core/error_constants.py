@@ -196,6 +196,12 @@ HF_IMAGE_MODEL_LOAD_FAILED = ErrorSpec(
     status_code=500,
 )
 
+MODEL_LOAD_INSUFFICIENT_SYSTEM_MEMORY = ErrorSpec(
+    code="MODEL_LOAD_INSUFFICIENT_SYSTEM_MEMORY",
+    message="모델을 안전하게 불러오기 위한 시스템 메모리가 부족합니다.",
+    status_code=503,
+)
+
 
 # ============================================================
 # Performance logging errors

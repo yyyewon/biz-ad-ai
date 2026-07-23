@@ -15,6 +15,7 @@ PyYAML
 # Logging
 # =========================
 loguru
+psutil
 
 # =========================
 # Image Processing
@@ -51,6 +52,7 @@ xformers==0.0.32.post2
 qwen-vl-utils
 optimum
 gptqmodel==5.8.0
+torchao==0.16.0
 
 # pytest traceback / terminal output formatting
 Pygments

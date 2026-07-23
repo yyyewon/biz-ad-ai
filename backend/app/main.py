@@ -1,6 +1,5 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
-import torch
 from time import perf_counter
 from uuid import uuid4
 
@@ -55,17 +54,16 @@ async def _warm_up_hf_image_pipeline() -> bool:
         provider_name = get_provider_name("image_generation")
         if provider_name != "hf":
             logger.info("hf_image_pipeline_warmup_skipped | provider={}", provider_name)
-            return
+            return True
     except Exception as exc:
         logger.warning("hf_image_pipeline_warmup_skipped | config_error={}", str(exc))
-        return
+        return False
 
     try:
         from app.services.providers.factory import get_image_provider
 
         provider = get_image_provider()
 
-        # 호출할 워밍업/로드 메서드 이름을 유연하게 찾음
         load_method = None
         for method_name in ["warmup", "load_pipeline", "_load_pipeline", "_load_text2img_pipeline", "_load_controlnet_pipeline"]:
             if hasattr(provider, method_name):
@@ -73,7 +71,7 @@ async def _warm_up_hf_image_pipeline() -> bool:
                 break
 
         if load_method:
-            before = torch.cuda.memory_allocated() / 1024**3
+            before = await run_in_threadpool(_cuda_memory_allocated_gb)
             logger.info("hf_image_pipeline_warmup_started | vram_before_gb={:.3f}", before)
 
             await run_in_threadpool(load_method)
@@ -83,6 +81,13 @@ async def _warm_up_hf_image_pipeline() -> bool:
                 "hf_image_pipeline_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
                 after, after - before
             )
+            return True
+
+        logger.warning(
+            "hf_image_pipeline_warmup_skipped | reason=no_load_method | provider={}",
+            type(provider).__name__,
+        )
+        return False
 
     except Exception as exc:
         logger.exception("hf_image_pipeline_warmup_failed | error={}", str(exc))
@@ -92,16 +97,17 @@ async def _warm_up_food_classifier() -> bool:
     try:
         from app.services.providers.food_classifier_provider import food_classifier_provider
 
-        before = torch.cuda.memory_allocated() / 1024**3
+        before = await run_in_threadpool(_cuda_memory_allocated_gb)
         logger.info("food_classifier_warmup_started | vram_before_gb={:.3f}", before)
 
         await run_in_threadpool(food_classifier_provider._ensure_model_loaded)
 
-        after = torch.cuda.memory_allocated() / 1024**3
+        after = await run_in_threadpool(_cuda_memory_allocated_gb)
         logger.info(
             "food_classifier_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
             after, after - before
         )
+        return True
 
     except Exception as exc:
         logger.exception("food_classifier_warmup_failed | error={}", str(exc))
@@ -117,16 +123,14 @@ async def _warm_up_poster_vlm() -> bool:
         before = await run_in_threadpool(_cuda_memory_allocated_gb)
         logger.info("poster_vlm_warmup_started | vram_before_gb={:.3f}", before)
 
-        before = torch.cuda.memory_allocated() / 1024**3
-        logger.info("poster_vlm_warmup_started | vram_before_gb={:.3f}", before)
-
         await run_in_threadpool(warm_up_poster_vlm)
 
-        after = torch.cuda.memory_allocated() / 1024**3
+        after = await run_in_threadpool(_cuda_memory_allocated_gb)
         logger.info(
             "poster_vlm_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
             after, after - before
         )
+        return True
 
     except Exception as exc:
         logger.exception("poster_vlm_warmup_failed | error={}", str(exc))
@@ -152,12 +156,21 @@ async def _warm_up_models(app: FastAPI) -> None:
 
     logger.info("model_warmup_started")
     try:
-        results = [
-            await _warm_up_hf_image_pipeline(),
-            await _warm_up_poster_layout(),
-            await _warm_up_poster_vlm(),
-            await _warm_up_food_classifier(),
+        stages = [
+            ("hf_image", settings.warmup_hf_image_enabled, _warm_up_hf_image_pipeline),
+            ("poster_layout", settings.warmup_poster_layout_enabled, _warm_up_poster_layout),
+            ("poster_vlm", settings.warmup_poster_vlm_enabled, _warm_up_poster_vlm),
+            ("food_classifier", settings.warmup_food_classifier_enabled, _warm_up_food_classifier),
         ]
+        results: list[bool] = []
+        for stage_name, enabled, warm_up in stages:
+            if not enabled:
+                logger.info(
+                    "model_warmup_stage_skipped | stage={} | reason=disabled_by_config",
+                    stage_name,
+                )
+                continue
+            results.append(await warm_up())
     except asyncio.CancelledError:
         app.state.model_warmup_status = "cancelled"
         logger.info("model_warmup_cancelled")
@@ -177,6 +190,13 @@ async def _warm_up_models(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.model_warmup_task = None
+    if not settings.model_warmup_enabled:
+        app.state.model_warmup_status = "disabled"
+        logger.info("model_warmup_skipped | reason=disabled_by_config")
+        yield
+        return
+
     app.state.model_warmup_status = "warming_up"
     warmup_task = asyncio.create_task(
         _warm_up_models(app),
@@ -243,8 +263,15 @@ app.include_router(api_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health(request: Request) -> dict[str, str]:
+    return {
+        "status": "ok",
+        "model_warmup_status": getattr(
+            request.app.state,
+            "model_warmup_status",
+            "not_started",
+        ),
+    }
 
 
 @app.get("/")

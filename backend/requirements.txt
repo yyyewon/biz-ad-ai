@@ -276,6 +276,10 @@ torch==2.8.0
     #   accelerate
     #   optimum
     #   torchvision
+torchao==0.16.0
+    # via
+    #   -r backend/requirements.in
+    #   gptqmodel
 torchaudio==2.8.0
     # via -r backend/requirements.in
 torchvision==0.23.0

@@ -1,20 +1,13 @@
 """
 SD1.5 + ControlNet Tile v1.1 로컬 이미지 생성 Provider.
-
-역할:
-- ControlNet (Tile v1.1) 모델 및 SD 1.5 Base Pipeline 로드
-- 입력 이미지를 Tile 조건(Conditioning)으로 사용하여 디테일 향상/재구성
-- xformers 사용 가능 시 attention 최적화
-- HF 이미지 생성 성능 로그에 시간/GPU 메모리/model weight 크기 기록
 """
 from __future__ import annotations
 
+import gc
 import os
-import subprocess
 import threading
 import time
 import uuid
-from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -27,6 +20,11 @@ from app.core.exceptions import AppException
 from app.core.model_config import get_provider_section
 from app.services.providers.base import ImageGenerationProvider, ImageRenderMode
 from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
+from app.utils.memory_monitor import (
+    collect_memory_snapshot,
+    ensure_model_load_memory,
+    log_model_memory_snapshot,
+)
 from app.utils.performance_logger import record_performance_metric
 
 
@@ -40,7 +38,6 @@ try:
         DDIMScheduler,
         StableDiffusionControlNetPipeline,
     )
-    from huggingface_hub import hf_hub_download
 
     _SD15_IMPORT_ERROR: Exception | None = None
 
@@ -49,14 +46,16 @@ except ImportError as _import_exc:
     ControlNetModel = None
     DDIMScheduler = None
     StableDiffusionControlNetPipeline = None
-    hf_hub_download = None
     _SD15_IMPORT_ERROR = _import_exc
 
 
 # ------------------------------------------------------------
 # Pipeline cache / lock
 # ------------------------------------------------------------
-_SD15_PIPELINE_CACHE: dict[tuple[str, str, str, str, bool], tuple[Any, dict[str, Any]]] = {}
+_SD15_PIPELINE_CACHE: dict[
+    tuple[str, str, str, str, bool, bool],
+    tuple[Any, dict[str, Any]],
+] = {}
 _SD15_PIPELINE_LOAD_LOCK = threading.RLock()
 _SD15_PIPELINE_INFERENCE_LOCK = threading.Lock()
 
@@ -113,6 +112,9 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
         # 최적화 옵션
         self._use_xformers = bool(self._settings.get("use_xformers", True))
         self._enable_vae_slicing = bool(self._settings.get("enable_vae_slicing", True))
+        runtime_settings = get_settings()
+        self._cpu_offload_enabled = runtime_settings.hf_image_cpu_offload_enabled
+        self._min_available_ram_gb = runtime_settings.model_load_min_available_ram_gb
 
         # HF token 설정
         self._hf_token = hf_token or self._resolve_hf_token()
@@ -213,47 +215,8 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
     # Metric helpers
     # ------------------------------------------------------------
     @staticmethod
-    def _nvidia_smi_memory() -> dict[str, Any]:
-        try:
-            output = subprocess.check_output(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=memory.used,memory.total",
-                    "--format=csv,noheader,nounits",
-                ],
-                text=True,
-            ).strip()
-
-            first = output.splitlines()[0]
-            used_mb, total_mb = [int(value.strip()) for value in first.split(",")]
-
-            return {
-                "nvidia_smi_used_mb": used_mb,
-                "nvidia_smi_total_mb": total_mb,
-            }
-
-        except Exception:
-            return {
-                "nvidia_smi_used_mb": None,
-                "nvidia_smi_total_mb": None,
-            }
-
-    @staticmethod
-    def _torch_gpu_stats() -> dict[str, Any]:
-        if torch is None or not torch.cuda.is_available():
-            return {
-                "gpu_memory_allocated_gb": None,
-                "gpu_memory_reserved_gb": None,
-                "gpu_peak_allocated_gb": None,
-                "gpu_peak_reserved_gb": None,
-            }
-
-        return {
-            "gpu_memory_allocated_gb": round(torch.cuda.memory_allocated() / 1024**3, 3),
-            "gpu_memory_reserved_gb": round(torch.cuda.memory_reserved() / 1024**3, 3),
-            "gpu_peak_allocated_gb": round(torch.cuda.max_memory_allocated() / 1024**3, 3),
-            "gpu_peak_reserved_gb": round(torch.cuda.max_memory_reserved() / 1024**3, 3),
-        }
+    def _memory_stats() -> dict[str, float | None]:
+        return collect_memory_snapshot(torch_module=torch)
 
     def _parse_size(self, size: str | None) -> tuple[int, int]:
         if not size:
@@ -294,6 +257,7 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
             str(dtype),
             device,
             bool(self._use_xformers),
+            bool(self._cpu_offload_enabled),
         )
 
         cached = _SD15_PIPELINE_CACHE.get(cache_key)
@@ -319,6 +283,18 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
             )
 
             try:
+                before_load = log_model_memory_snapshot(
+                    "before_controlnet_load",
+                    model_name=self._model_key,
+                    torch_module=torch,
+                )
+                ensure_model_load_memory(
+                    model_name=self._model_key,
+                    min_available_ram_gb=self._min_available_ram_gb,
+                    snapshot=before_load,
+                    torch_module=torch,
+                )
+
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                     torch.cuda.reset_peak_memory_stats()
@@ -329,6 +305,12 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                     torch_dtype=dtype,
                     use_safetensors=False,
                     token=self._hf_token,
+                    low_cpu_mem_usage=True,
+                )
+                log_model_memory_snapshot(
+                    "after_controlnet_load",
+                    model_name=self._model_key,
+                    torch_module=torch,
                 )
 
                 # 2. Stable Diffusion ControlNet Pipeline 로드
@@ -338,18 +320,47 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                     "torch_dtype": dtype,
                     "use_safetensors": True,
                     "token": self._hf_token,
+                    "low_cpu_mem_usage": True,
                 }
 
                 if dtype == torch.float16:
                     pipeline_kwargs["variant"] = "fp16"
 
                 pipe = StableDiffusionControlNetPipeline.from_pretrained(**pipeline_kwargs)
+                log_model_memory_snapshot(
+                    "after_pipeline_load",
+                    model_name=self._model_key,
+                    torch_module=torch,
+                )
+
+                del pipeline_kwargs
+                del controlnet
+                gc.collect()
 
                 # DDIM Scheduler 구성
                 pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
 
                 # 장치 이동
-                pipe = pipe.to(device)
+                log_model_memory_snapshot(
+                    "before_pipe_to_device",
+                    model_name=self._model_key,
+                    torch_module=torch,
+                )
+                cpu_offload_enabled = self._cpu_offload_enabled and device == "cuda"
+                if cpu_offload_enabled:
+                    pipe.enable_model_cpu_offload()
+                else:
+                    if self._cpu_offload_enabled:
+                        logger.warning(
+                            "hf_sd15_cpu_offload_skipped | reason=cuda_unavailable | device={}",
+                            device,
+                        )
+                    pipe = pipe.to(device)
+                log_model_memory_snapshot(
+                    "after_pipe_to_device",
+                    model_name=self._model_key,
+                    torch_module=torch,
+                )
 
                 # VAE slicing 적용
                 if self._enable_vae_slicing:
@@ -388,9 +399,14 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                     "xformers_error": xformers_error,
                     "device": device,
                     "dtype": str(dtype),
+                    "cpu_offload_enabled": cpu_offload_enabled,
                 }
-                meta.update(self._torch_gpu_stats())
-                meta.update(self._nvidia_smi_memory())
+                completion_snapshot = log_model_memory_snapshot(
+                    "loading_complete",
+                    model_name=self._model_key,
+                    torch_module=torch,
+                )
+                meta.update(completion_snapshot)
 
                 record_performance_metric(
                     pipeline="hf_sd15_controlnet_tile",
@@ -416,11 +432,39 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
 
                 return pipe, meta
 
-            except AppException:
+            except AppException as exc:
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                failure_snapshot = log_model_memory_snapshot(
+                    "loading_failed",
+                    model_name=self._model_key,
+                    torch_module=torch,
+                )
+                record_performance_metric(
+                    pipeline="hf_sd15_controlnet_tile",
+                    stage="model_load",
+                    request_id=request_id,
+                    provider="hf",
+                    model=self._model_key,
+                    elapsed_ms=elapsed_ms,
+                    success=False,
+                    error_code=exc.code,
+                    error_type=exc.__class__.__name__,
+                    extra={
+                        "provider_type": "sd15_controlnet_tile",
+                        "base_model_id": self._base_model_id,
+                        "controlnet_model_id": self._controlnet_model_id,
+                        **failure_snapshot,
+                    },
+                )
                 raise
 
             except Exception as exc:
                 elapsed_ms = (time.perf_counter() - started) * 1000
+                failure_snapshot = log_model_memory_snapshot(
+                    "loading_failed",
+                    model_name=self._model_key,
+                    torch_module=torch,
+                )
 
                 logger.exception(
                     "hf_sd15_controlnet_pipeline_load_failed | model_key={} | error={}",
@@ -442,6 +486,7 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                         "provider_type": "sd15_controlnet_tile",
                         "base_model_id": self._base_model_id,
                         "controlnet_model_id": self._controlnet_model_id,
+                        **failure_snapshot,
                     },
                 )
 
@@ -622,8 +667,7 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                 "guidance_scale": self._guidance_scale,
                 "controlnet_conditioning_scale": self._controlnet_conditioning_scale,
             }
-            extra.update(self._torch_gpu_stats())
-            extra.update(self._nvidia_smi_memory())
+            extra.update(self._memory_stats())
 
             record_performance_metric(
                 pipeline="hf_sd15_controlnet_tile",

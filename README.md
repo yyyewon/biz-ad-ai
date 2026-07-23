@@ -62,6 +62,11 @@ Provider는 `config/model.yaml`의 `active_profile`로 OpenAI / HuggingFace / Hy
 | `frontend/.env` | `API_BASE_URL` | 백엔드 주소 |
 | `frontend/.env` | `RG_MOCK_MODE` | `true`면 백엔드 없이 목업 데이터로 프론트만 실행 |
 | `backend/.env` | `CORS_ALLOWED_ORIGINS` | 허용할 프론트엔드 origin (콤마 구분) |
+| `backend/.env` | `MODEL_WARMUP_ENABLED` | 서버 시작 시 모델 자동 로딩 여부(기본 `false`) |
+| `backend/.env` | `MODEL_LOAD_MIN_AVAILABLE_RAM_GB` | 모델 로딩 전 최소 available RAM(GB), `0`이면 검사 해제 |
+| `backend/.env` | `HF_IMAGE_CPU_OFFLOAD_ENABLED` | Diffusers CPU offload 사용 여부(기본 `false`) |
+| 루트 `.env` | `BACKEND_MEMORY_LIMIT` | 백엔드 컨테이너 RAM 제한(기본 `12g`) |
+| 루트 `.env` | `BACKEND_MEMORY_SWAP_LIMIT` | RAM+swap 제한(기본 `16g`) |
 
 
 ### 실행

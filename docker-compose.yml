@@ -23,6 +23,8 @@ services:
     image: biz-ad-ai-backend:latest
     container_name: biz-ad-ai-backend
     restart: unless-stopped
+    mem_limit: ${BACKEND_MEMORY_LIMIT:-12g}
+    memswap_limit: ${BACKEND_MEMORY_SWAP_LIMIT:-16g}
     ports:
       - "8010:8010"
     env_file:
@@ -30,6 +32,7 @@ services:
     environment:
       - HF_HOME=/app/.cache/huggingface
       - HF_HUB_CACHE=/app/.cache/huggingface/hub
+      - U2NET_HOME=/models/rembg
     volumes:
       - backend_data:/app/data
       - ./backend/logs:/app/logs
@@ -40,7 +43,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              count: 1
               capabilities: [gpu]
 
 volumes:
