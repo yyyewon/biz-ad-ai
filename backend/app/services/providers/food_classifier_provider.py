@@ -56,6 +56,7 @@ class FoodClassifierProvider:
                 ensure_model_load_memory(
                     model_name=model_name,
                     min_available_ram_gb=get_settings().model_load_min_available_ram_gb,
+                    load_stage="before_food_classifier_load",
                     snapshot=before_load,
                 )
 

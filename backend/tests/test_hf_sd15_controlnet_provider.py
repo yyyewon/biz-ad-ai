@@ -125,6 +125,31 @@ def test_pipeline_load_uses_low_cpu_memory_and_reuses_cache():
     assert len(_FakePipelineLoader.calls) == 1
 
 
+def test_pipeline_memory_guard_runs_at_all_three_load_boundaries(monkeypatch):
+    stages: list[str] = []
+
+    def memory_snapshot(stage, **_kwargs):
+        stages.append(stage)
+        return {
+            "ram_available_gb": 8.0,
+            "effective_available_ram_gb": 8.0,
+            "process_rss_gb": 1.0,
+            "swap_used_gb": 0.0,
+        }
+
+    monkeypatch.setattr(provider_module, "log_model_memory_snapshot", memory_snapshot)
+
+    _provider()._load_pipeline()
+
+    assert stages[:3] == [
+        "before_controlnet_load",
+        "before_base_pipeline_load",
+        "before_device_move",
+    ]
+    assert len(_FakeControlNetLoader.calls) == 1
+    assert len(_FakePipelineLoader.calls) == 1
+
+
 def test_pipeline_load_uses_cpu_offload_instead_of_to_cuda():
     provider = _provider(cpu_offload=True)
 
@@ -153,3 +178,47 @@ def test_memory_guard_runs_before_model_loader(monkeypatch):
     assert exc_info.value.code == "MODEL_LOAD_INSUFFICIENT_SYSTEM_MEMORY"
     assert _FakeControlNetLoader.calls == []
     assert _FakePipelineLoader.calls == []
+
+
+def test_second_memory_guard_blocks_base_pipeline_and_clears_cache(monkeypatch):
+    available = iter([8.0, 5.0, 5.0])
+    monkeypatch.setattr(
+        provider_module,
+        "log_model_memory_snapshot",
+        lambda *_args, **_kwargs: {
+            "ram_available_gb": next(available),
+            "process_rss_gb": 1.5,
+            "swap_used_gb": 0.25,
+        },
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        _provider()._load_pipeline()
+
+    assert exc_info.value.detail["load_stage"] == "before_base_pipeline_load"
+    assert len(_FakeControlNetLoader.calls) == 1
+    assert _FakePipelineLoader.calls == []
+    assert provider_module._SD15_PIPELINE_CACHE == {}
+
+
+def test_third_memory_guard_blocks_device_move_and_clears_cache(monkeypatch):
+    available = iter([8.0, 8.0, 5.0, 5.0])
+    monkeypatch.setattr(
+        provider_module,
+        "log_model_memory_snapshot",
+        lambda *_args, **_kwargs: {
+            "ram_available_gb": next(available),
+            "process_rss_gb": 1.5,
+            "swap_used_gb": 0.25,
+        },
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        _provider()._load_pipeline()
+
+    assert exc_info.value.detail["load_stage"] == "before_device_move"
+    assert len(_FakeControlNetLoader.calls) == 1
+    assert len(_FakePipelineLoader.calls) == 1
+    assert _FakePipelineLoader.pipe.to_calls == []
+    assert _FakePipelineLoader.pipe.cpu_offload_calls == 0
+    assert provider_module._SD15_PIPELINE_CACHE == {}

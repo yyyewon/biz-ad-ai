@@ -20,6 +20,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.local
+      args:
+        BACKEND_REQUIREMENTS: requirements.txt
     image: biz-ad-ai-backend:latest
     container_name: biz-ad-ai-backend
     restart: unless-stopped

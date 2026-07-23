@@ -165,6 +165,25 @@ def test_model_warmup_honors_per_model_flags(monkeypatch):
     assert app.state.model_warmup_status == "ready"
 
 
+def test_model_warmup_is_disabled_when_all_per_model_flags_are_disabled(monkeypatch):
+    async def should_not_run():
+        pytest.fail("disabled warmup stage must not run")
+
+    monkeypatch.setattr(main, "_warm_up_hf_image_pipeline", should_not_run)
+    monkeypatch.setattr(main, "_warm_up_poster_layout", should_not_run)
+    monkeypatch.setattr(main, "_warm_up_poster_vlm", should_not_run)
+    monkeypatch.setattr(main, "_warm_up_food_classifier", should_not_run)
+    monkeypatch.setattr(main.settings, "model_warmup_enabled", True)
+    monkeypatch.setattr(main.settings, "warmup_hf_image_enabled", False)
+    monkeypatch.setattr(main.settings, "warmup_poster_layout_enabled", False)
+    monkeypatch.setattr(main.settings, "warmup_poster_vlm_enabled", False)
+    monkeypatch.setattr(main.settings, "warmup_food_classifier_enabled", False)
+
+    asyncio.run(main._warm_up_models(app))
+
+    assert app.state.model_warmup_status == "disabled"
+
+
 def test_model_warmup_reports_completed_with_errors(monkeypatch):
     async def successful_warmup():
         return True

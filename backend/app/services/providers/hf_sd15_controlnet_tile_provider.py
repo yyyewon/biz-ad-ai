@@ -282,15 +282,39 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                 str(dtype),
             )
 
+            controlnet: Any | None = None
+            pipe: Any | None = None
+            pipeline_kwargs: dict[str, Any] | None = None
+            load_stage = "before_controlnet_load"
+            cuda_objects_possible = False
+
+            def release_failed_load() -> None:
+                nonlocal controlnet, pipe, pipeline_kwargs
+
+                controlnet = None
+                pipe = None
+                pipeline_kwargs = None
+                gc.collect()
+                if not cuda_objects_possible:
+                    return
+                try:
+                    torch.cuda.empty_cache()
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "hf_sd15_failed_load_cuda_cleanup_failed | error={}",
+                        str(cleanup_exc),
+                    )
+
             try:
                 before_load = log_model_memory_snapshot(
-                    "before_controlnet_load",
+                    load_stage,
                     model_name=self._model_key,
                     torch_module=torch,
                 )
                 ensure_model_load_memory(
                     model_name=self._model_key,
                     min_available_ram_gb=self._min_available_ram_gb,
+                    load_stage=load_stage,
                     snapshot=before_load,
                     torch_module=torch,
                 )
@@ -307,14 +331,22 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                     token=self._hf_token,
                     low_cpu_mem_usage=True,
                 )
-                log_model_memory_snapshot(
-                    "after_controlnet_load",
+                load_stage = "before_base_pipeline_load"
+                before_base_pipeline = log_model_memory_snapshot(
+                    load_stage,
                     model_name=self._model_key,
+                    torch_module=torch,
+                )
+                ensure_model_load_memory(
+                    model_name=self._model_key,
+                    min_available_ram_gb=self._min_available_ram_gb,
+                    load_stage=load_stage,
+                    snapshot=before_base_pipeline,
                     torch_module=torch,
                 )
 
                 # 2. Stable Diffusion ControlNet Pipeline 로드
-                pipeline_kwargs: dict[str, Any] = {
+                pipeline_kwargs = {
                     "pretrained_model_name_or_path": self._base_model_id,
                     "controlnet": controlnet,
                     "torch_dtype": dtype,
@@ -327,26 +359,30 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                     pipeline_kwargs["variant"] = "fp16"
 
                 pipe = StableDiffusionControlNetPipeline.from_pretrained(**pipeline_kwargs)
-                log_model_memory_snapshot(
-                    "after_pipeline_load",
+                load_stage = "before_device_move"
+                before_device_move = log_model_memory_snapshot(
+                    load_stage,
                     model_name=self._model_key,
                     torch_module=torch,
                 )
+                ensure_model_load_memory(
+                    model_name=self._model_key,
+                    min_available_ram_gb=self._min_available_ram_gb,
+                    load_stage=load_stage,
+                    snapshot=before_device_move,
+                    torch_module=torch,
+                )
 
-                del pipeline_kwargs
-                del controlnet
+                pipeline_kwargs = None
+                controlnet = None
                 gc.collect()
 
                 # DDIM Scheduler 구성
                 pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
 
                 # 장치 이동
-                log_model_memory_snapshot(
-                    "before_pipe_to_device",
-                    model_name=self._model_key,
-                    torch_module=torch,
-                )
                 cpu_offload_enabled = self._cpu_offload_enabled and device == "cuda"
+                cuda_objects_possible = device == "cuda" and torch.cuda.is_available()
                 if cpu_offload_enabled:
                     pipe.enable_model_cpu_offload()
                 else:
@@ -433,6 +469,7 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                 return pipe, meta
 
             except AppException as exc:
+                release_failed_load()
                 elapsed_ms = (time.perf_counter() - started) * 1000
                 failure_snapshot = log_model_memory_snapshot(
                     "loading_failed",
@@ -453,12 +490,14 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                         "provider_type": "sd15_controlnet_tile",
                         "base_model_id": self._base_model_id,
                         "controlnet_model_id": self._controlnet_model_id,
+                        "load_stage": load_stage,
                         **failure_snapshot,
                     },
                 )
                 raise
 
             except Exception as exc:
+                release_failed_load()
                 elapsed_ms = (time.perf_counter() - started) * 1000
                 failure_snapshot = log_model_memory_snapshot(
                     "loading_failed",
@@ -486,6 +525,7 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                         "provider_type": "sd15_controlnet_tile",
                         "base_model_id": self._base_model_id,
                         "controlnet_model_id": self._controlnet_model_id,
+                        "load_stage": load_stage,
                         **failure_snapshot,
                     },
                 )
@@ -497,6 +537,7 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                         "role": "image_generation",
                         "model_name": self._model_key,
                         "provider_type": "sd15_controlnet_tile",
+                        "load_stage": load_stage,
                         "error": str(exc),
                     },
                 ) from exc

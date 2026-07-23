@@ -366,6 +366,7 @@ def _get_vlm_model(*, model_id: str, settings: dict):
         ensure_model_load_memory(
             model_name=model_id,
             min_available_ram_gb=get_settings().model_load_min_available_ram_gb,
+            load_stage="before_poster_vlm_load",
             snapshot=before_load,
         )
 

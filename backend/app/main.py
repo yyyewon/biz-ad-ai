@@ -179,9 +179,12 @@ async def _warm_up_models(app: FastAPI) -> None:
         app.state.model_warmup_status = "failed"
         logger.exception("model_warmup_failed | error={}", str(exc))
     else:
-        app.state.model_warmup_status = (
-            "ready" if all(results) else "completed_with_errors"
-        )
+        if not results:
+            app.state.model_warmup_status = "disabled"
+        elif all(results):
+            app.state.model_warmup_status = "ready"
+        else:
+            app.state.model_warmup_status = "completed_with_errors"
         logger.info(
             "model_warmup_completed | status={}",
             app.state.model_warmup_status,
