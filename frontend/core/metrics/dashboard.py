@@ -31,7 +31,7 @@ from core.metrics.catalog import (
 )
 from core.metrics.config import PERFORMANCE_LOG_PATH, QUALITY_LOG_PATH
 from core.metrics.jsonl_loader import (
-    filter_by_run_context,
+    apply_dashboard_filters,
     filter_records,
     load_jsonl,
     unique_extra_values,
@@ -216,17 +216,19 @@ def _render_sidebar_filters(all_records: list) -> dict[str, str | None]:
     }
 
 
-def _apply_filters(records: list, filters: dict[str, str | None]) -> list:
-    filtered = filter_records(
-        records,
+def _apply_filters(
+    all_performance: list,
+    all_quality: list,
+    filters: dict[str, str | None],
+) -> tuple[list, list]:
+    return apply_dashboard_filters(
+        all_performance,
+        all_quality,
         request_id=filters.get("request_id"),
         source_user=filters.get("source_user"),
         backend_port=filters.get("backend_port"),
         frontend_port=filters.get("frontend_port"),
         deploy_env=filters.get("deploy_env"),
-    )
-    return filter_by_run_context(
-        filtered,
         purpose=filters.get("purpose"),
         tone=filters.get("tone"),
         food_type=filters.get("food_type"),
@@ -487,7 +489,14 @@ def _render_image_generation_section(
                 height=220,
             )
         else:
-            st.caption("quality.jsonl 데이터 없음")
+            clip_count = len(clip_i) + len(clip_t)
+            if quality_records:
+                st.caption(
+                    f"CLIP stage 없음 (quality {len(quality_records)}줄, clip {clip_count}줄). "
+                    "이미지 생성 성공 후 CLIP eval이 끝나야 쌓입니다."
+                )
+            else:
+                st.caption("quality.jsonl 데이터 없음 (필터 범위 또는 파일 경로 확인)")
 
     with right:
         _chart_header("CLIP-T (`clip_t`)", CLIP_T_CHART_HELP, unit="0~1")
@@ -499,7 +508,14 @@ def _render_image_generation_section(
                 height=220,
             )
         else:
-            st.caption("quality.jsonl 데이터 없음")
+            clip_count = len(clip_i) + len(clip_t)
+            if quality_records:
+                st.caption(
+                    f"CLIP stage 없음 (quality {len(quality_records)}줄, clip {clip_count}줄). "
+                    "이미지 생성 성공 후 CLIP eval이 끝나야 쌓입니다."
+                )
+            else:
+                st.caption("quality.jsonl 데이터 없음 (필터 범위 또는 파일 경로 확인)")
 
 
 def _render_poster_vlm_section(performance_records: list) -> None:
@@ -573,8 +589,11 @@ def render_metrics_dashboard() -> None:
 
     all_performance, all_quality = _load_logs()
     filters = _render_sidebar_filters(all_performance + all_quality)
-    performance_records = _apply_filters(all_performance, filters)
-    quality_records = _apply_filters(all_quality, filters)
+    performance_records, quality_records = _apply_filters(
+        all_performance,
+        all_quality,
+        filters,
+    )
 
     st.info(f"운영 · 로그: **{_filter_caption(filters, _OPERATIONS_FILTER_KEYS)}**")
     st.info(f"생성 조건: **{_filter_caption(filters, _GENERATION_FILTER_KEYS)}**")

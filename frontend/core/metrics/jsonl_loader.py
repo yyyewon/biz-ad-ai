@@ -123,6 +123,7 @@ def unique_profile_values(
 def filter_by_run_context(
     records: list[dict[str, Any]],
     *,
+    run_context_source: list[dict[str, Any]] | None = None,
     profile: str | None = None,
     purpose: str | None = None,
     tone: str | None = None,
@@ -133,6 +134,9 @@ def filter_by_run_context(
     """
     total_pipeline extra의 생성 조건으로 request_id를 좁힌 뒤
     같은 요청의 stage·quality 로그까지 함께 반환한다.
+
+    quality.jsonl 등 total_pipeline 이 없는 목록을 필터할 때는
+    run_context_source 에 performance.jsonl 전체(또는 1차 필터 결과)를 넘긴다.
     """
 
     run_filters = {
@@ -148,9 +152,10 @@ def filter_by_run_context(
     if not active:
         return records
 
+    context_records = run_context_source if run_context_source is not None else records
     matching_request_ids: set[str] = set()
 
-    for record in filter_records(records, stage="total_pipeline"):
+    for record in filter_records(context_records, stage="total_pipeline"):
         if profile is not None and record.get("profile") != profile:
             continue
         if purpose is not None and get_extra(record, "purpose") != purpose:
@@ -176,6 +181,76 @@ def filter_by_run_context(
         for record in records
         if str(record.get("request_id")) in matching_request_ids
     ]
+
+
+def apply_dashboard_filters(
+    performance_records: list[dict[str, Any]],
+    quality_records: list[dict[str, Any]],
+    *,
+    request_id: str | None = None,
+    source_user: str | None = None,
+    backend_port: str | None = None,
+    frontend_port: str | None = None,
+    deploy_env: str | None = None,
+    purpose: str | None = None,
+    tone: str | None = None,
+    food_type: str | None = None,
+    image_model_key: str | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """
+    performance / quality 를 같은 run 기준으로 필터한다.
+
+    quality.jsonl(CLIP 등)에는 source_user·purpose 가 없을 수 있어
+    performance 의 request_id 로 join 한다.
+    """
+
+    perf = filter_records(
+        performance_records,
+        request_id=request_id,
+        source_user=source_user,
+        backend_port=backend_port,
+        frontend_port=frontend_port,
+        deploy_env=deploy_env,
+    )
+    perf = filter_by_run_context(
+        perf,
+        run_context_source=perf,
+        purpose=purpose,
+        tone=tone,
+        food_type=food_type,
+        image_model_key=image_model_key,
+    )
+
+    perf_request_ids = {
+        str(record["request_id"])
+        for record in perf
+        if record.get("request_id")
+    }
+
+    operational_active = any(
+        value
+        for value in (
+            request_id,
+            source_user,
+            backend_port,
+            frontend_port,
+            deploy_env,
+        )
+    )
+    generation_active = any(
+        value for value in (purpose, tone, food_type, image_model_key)
+    )
+
+    if operational_active or generation_active:
+        qual = [
+            record
+            for record in quality_records
+            if record.get("request_id") and str(record["request_id"]) in perf_request_ids
+        ]
+    else:
+        qual = list(quality_records)
+
+    return perf, qual
 
 
 def get_extra(record: dict[str, Any], key: str, default: Any = None) -> Any:
