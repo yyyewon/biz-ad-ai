@@ -23,6 +23,7 @@ PyYAML
 # Logging
 # =========================
 loguru
+psutil
 
 # =========================
 # Image Processing
@@ -39,6 +40,9 @@ httpx
 # AI Providers / PyTorch
 # =========================
 
+torch==2.8.0
+torchvision==0.23.0
+torchaudio==2.8.0
 diffusers
 transformers
 accelerate
@@ -48,6 +52,7 @@ openai
 qwen-vl-utils
 optimum
 gptqmodel==5.8.0
+torchao==0.16.0
 
 # pytest traceback / terminal output formatting
 Pygments

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import mimetypes
 import time
 
@@ -15,9 +16,13 @@ from core.auth import request_refresh_token
 from core.config import (
     GENERATE_ENDPOINT,
     HEALTH_ENDPOINT,
+    REQUEST_TIMEOUT_CLASSIFY,
     REQUEST_TIMEOUT_GENERATE,
     CLASSIFY_ENDPOINT,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 _PLACEHOLDER_PNG = base64.b64decode(
@@ -345,12 +350,13 @@ def classify_food(
     content_type = mimetypes.guess_type(image_name or "upload.jpg")[0] or "image/jpeg"
     files = {"file": (image_name or "upload.png", image_bytes, content_type)}
 
+    started_at = time.monotonic()
     try:
         res = requests.post(
             CLASSIFY_ENDPOINT,
             files=files,
             cookies=cookies,
-            timeout=10,  # 가벼운 추론이므로 타임아웃은 10초로 지정
+            timeout=REQUEST_TIMEOUT_CLASSIFY,
         )
 
         if res.status_code == 401:
@@ -359,7 +365,7 @@ def classify_food(
                     CLASSIFY_ENDPOINT,
                     files=files,
                     cookies=cookies,
-                    timeout=10,
+                    timeout=REQUEST_TIMEOUT_CLASSIFY,
                 )
 
         res.raise_for_status()
@@ -374,12 +380,22 @@ def classify_food(
             }
 
         data = body.get("data") or {}
+        logger.info(
+            "food_classification_client_completed | elapsed_ms=%.1f | predicted_food=%s",
+            (time.monotonic() - started_at) * 1000,
+            data.get("predicted_food"),
+        )
         return {
             "ok": True,
             "predicted_food": data.get("predicted_food"),
         }
 
     except requests.exceptions.RequestException as exc:
+        logger.warning(
+            "food_classification_client_failed | elapsed_ms=%.1f | error_type=%s",
+            (time.monotonic() - started_at) * 1000,
+            type(exc).__name__,
+        )
         fallback = "서버에 연결할 수 없어요. 네트워크 상태를 확인해 주세요."
         code = "NETWORK_DISCONNECTED"
 

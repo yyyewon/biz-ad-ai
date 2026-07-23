@@ -1,8 +1,5 @@
 """
-포스터 디자인 VLM 분석.
-
-생성된 포스터 이미지를 보고 palette·범주형 디자인·scrim 힌트 JSON을 반환한다.
-실패 시 None → poster_layout 규칙 기반 fallback.
+포스터 디자인 VLM 분석
 """
 
 from __future__ import annotations
@@ -15,7 +12,9 @@ from dataclasses import dataclass
 from loguru import logger
 from PIL import Image
 
+from app.core.config import get_settings
 from app.core.model_config import get_poster_design_model_settings
+from app.utils.memory_monitor import ensure_model_load_memory, log_model_memory_snapshot
 
 _MODEL = None
 _PROCESSOR = None
@@ -89,7 +88,9 @@ def is_poster_vlm_enabled() -> bool:
 
 
 def warm_up_poster_vlm() -> None:
-    """서버 시작 시 VLM 가중치를 GPU(또는 설정된 device)에 미리 로드한다."""
+    """
+    서버 시작 시 VLM 가중치를 GPU(또는 설정된 device)에 미리 로드
+    """
 
     model_config = get_poster_design_model_settings()
     if model_config is None:
@@ -101,7 +102,9 @@ def warm_up_poster_vlm() -> None:
 
 
 def analyze_poster_design_with_vlm(image: Image.Image) -> PosterVlmDesignHints | None:
-    """VLM으로 포스터 디자인 힌트를 분석한다. 실패 시 None."""
+    """
+    VLM으로 포스터 디자인 힌트 분석
+    """
 
     model_config = get_poster_design_model_settings()
     if model_config is None:
@@ -140,7 +143,9 @@ def analyze_poster_design_with_vlm(image: Image.Image) -> PosterVlmDesignHints |
 
 
 def parse_poster_vlm_json(raw_text: str) -> dict | None:
-    """VLM 응답에서 JSON 객체를 추출한다."""
+    """
+    VLM 응답에서 JSON 객체 추출
+    """
 
     text = (raw_text or "").strip()
     if not text:
@@ -333,13 +338,12 @@ def _ensure_gptq_runtime(model_id: str) -> None:
         return
 
     try:
-        import gptqmodel  # noqa: F401 — 5.8+ HF 네이티브 연동 등록
+        import gptqmodel
     except ImportError as exc:
         raise ImportError(
             "GPTQ VLM requires `pip install optimum gptqmodel qwen-vl-utils`"
         ) from exc
 
-    # gptqmodel <5.8: patch_hf 필요. 5.8+는 제거됨(네이티브 HF/Optimum 연동).
     try:
         from gptqmodel import patch_hf
 
@@ -354,6 +358,17 @@ def _get_vlm_model(*, model_id: str, settings: dict):
     with _VLM_LOCK:
         if _MODEL is not None and _PROCESSOR is not None:
             return _MODEL, _PROCESSOR
+
+        before_load = log_model_memory_snapshot(
+            "before_poster_vlm_load",
+            model_name=model_id,
+        )
+        ensure_model_load_memory(
+            model_name=model_id,
+            min_available_ram_gb=get_settings().model_load_min_available_ram_gb,
+            load_stage="before_poster_vlm_load",
+            snapshot=before_load,
+        )
 
         import torch
         from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
@@ -379,6 +394,11 @@ def _get_vlm_model(*, model_id: str, settings: dict):
 
         _MODEL = model
         _PROCESSOR = processor
+        log_model_memory_snapshot(
+            "after_poster_vlm_load",
+            model_name=model_id,
+            torch_module=torch,
+        )
         logger.info("poster_vlm_loaded | model_id={}", model_id)
         return _MODEL, _PROCESSOR
 
