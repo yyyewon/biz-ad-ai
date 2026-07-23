@@ -15,6 +15,9 @@ from dataclasses import dataclass
 from loguru import logger
 from PIL import Image
 
+from app.schemas.performance_metrics import MetricId
+from app.utils.performance_logger import record_registry_metric
+
 _rembg_session = None
 _rembg_lock = threading.Lock()
 
@@ -505,6 +508,7 @@ def analyze_poster_layout(
     image: Image.Image,
     *,
     layout_mode: str = "single",
+    metrics_request_id: str | None = None,
 ) -> PosterLayoutSpec:
     """
     포스터 이미지에서 음식 bbox·배경 색·scrim을 추정해 LayoutSpec을 반환한다.
@@ -544,12 +548,12 @@ def analyze_poster_layout(
             str(exc),
         )
         spec = _build_fallback_spec(rgb_image, food_bbox=None, alpha=None)
-        return _apply_vlm_overrides(spec, rgb_image)
+        return _apply_vlm_overrides(spec, rgb_image, metrics_request_id=metrics_request_id)
 
     if food_bbox is None:
         logger.info("poster_layout_no_food_bbox | using_fallback=true")
         spec = _build_fallback_spec(rgb_image, food_bbox=None, alpha=alpha)
-        return _apply_vlm_overrides(spec, rgb_image)
+        return _apply_vlm_overrides(spec, rgb_image, metrics_request_id=metrics_request_id)
 
     if not _is_valid_food_bbox(food_bbox, width, height):
         logger.info(
@@ -557,7 +561,7 @@ def analyze_poster_layout(
             food_bbox,
         )
         spec = _build_fallback_spec(rgb_image, food_bbox=None, alpha=alpha)
-        return _apply_vlm_overrides(spec, rgb_image)
+        return _apply_vlm_overrides(spec, rgb_image, metrics_request_id=metrics_request_id)
 
     spec = _build_spec_from_food_bbox(
         rgb_image,
@@ -565,7 +569,11 @@ def analyze_poster_layout(
         alpha=alpha,
         food_visual_top=food_visual_top,
     )
-    spec = _apply_vlm_overrides(spec, rgb_image)
+    spec = _apply_vlm_overrides(
+        spec,
+        rgb_image,
+        metrics_request_id=metrics_request_id,
+    )
     logger.info(
         "poster_layout_applied | used_fallback={} | food_bbox={} | scrim_alpha={} | vlm_enabled={}",
         spec.used_fallback,
@@ -585,7 +593,12 @@ def _is_vlm_enabled() -> bool:
         return False
 
 
-def _apply_vlm_overrides(spec: PosterLayoutSpec, image: Image.Image) -> PosterLayoutSpec:
+def _apply_vlm_overrides(
+    spec: PosterLayoutSpec,
+    image: Image.Image,
+    *,
+    metrics_request_id: str | None = None,
+) -> PosterLayoutSpec:
     """VLM 디자인 힌트가 있으면 palette·배치·scrim만 덮어쓴다. food bbox는 유지."""
 
     try:
@@ -596,7 +609,8 @@ def _apply_vlm_overrides(spec: PosterLayoutSpec, image: Image.Image) -> PosterLa
     if not is_poster_vlm_enabled():
         return spec
 
-    hints = analyze_poster_design_with_vlm(image)
+    request_id = metrics_request_id or "unknown"
+    hints = analyze_poster_design_with_vlm(image, metrics_request_id=request_id)
     if hints is None:
         logger.info("poster_vlm_skipped | reason=disabled_or_failed | using_rules_palette=true")
         return spec
@@ -609,6 +623,13 @@ def _apply_vlm_overrides(spec: PosterLayoutSpec, image: Image.Image) -> PosterLa
     )
     if palette_used_rules:
         logger.info("poster_vlm_palette_reconciled | used_rules_fallback=true")
+
+    record_registry_metric(
+        MetricId.VLM_PALETTE_FALLBACK_RATE,
+        request_id=request_id,
+        success=True,
+        extra={"used_rules_fallback": palette_used_rules},
+    )
 
     scrim_max_alpha = (
         hints.scrim_max_alpha if hints.scrim_max_alpha is not None else spec.scrim_max_alpha

@@ -1,49 +1,51 @@
 # Docker 개발용 Jupyter Proxy 예시 파일
 #
 # 사용 방법:
-# 1. 이 파일을 복사한다.
-#    cp docker-compose.dev.proxy.example.yml docker-compose.dev.proxy.yml
-#
-# 2. docker-compose.dev.proxy.yml 안의 아래 값을 본인 계정/포트로 수정한다.
-#    - Jupyter 계정명
-#    - Backend 개발 포트
-#    - Frontend 개발 포트
-#    - container_name
-#    - API_BROWSER_BASE_URL
-#    - --root-path
-#
+# 1. cp docker-compose.dev.proxy.example.yml docker-compose.dev.proxy.yml
+# 2. 본인 계정/포트/container_name/root-path/API_BROWSER_BASE_URL 수정
 # 3. docker-compose.dev.proxy.yml은 Git에 올리지 않는다.
-#    docker-compose.dev.proxy.example.yml만 Git에 올린다.
 #
-# 팀원별 포트:
-# 황예원 spai0904: backend 8011, frontend 8511
-# 손영욱 spai0928: backend 8012, frontend 8512
-# 박도원 spai0908: backend 8013, frontend 8513
-# 채영환 spai0913: backend 8014, frontend 8514
-# 천지연 spai0925: backend 8015, frontend 8515
+# 포트 예시 (spai0908): backend 8013, frontend 8513
+# (팀 포트表는 jupyterlab-dev-server-guide.md 참고)
+#
+# ── JSONL 로그 경로 (METRICS_LOG_HOST_PATH) ──
+#
+# [기본] sudo 불필요 — 본인 logs-dev (팀 합산 X, 본인 metrics 만)
+#   ./backend/logs-dev:/app/logs
+#
+# [팀 공용] /opt/biz-ad-ai-team-logs — sudo 있는 팀원이 1회 생성 후 전원 사용
+#   sudo mkdir -p /opt/biz-ad-ai-team-logs && sudo chmod 1777 /opt/biz-ad-ai-team-logs
+#   프로젝트 루트 .env 에:
+#     METRICS_LOG_HOST_PATH=/opt/biz-ad-ai-team-logs
+#
+# ── METRICS_* (대시보드 필터용, spai0908 예시) ──
+#   METRICS_SOURCE_USER=spai0908
+#   METRICS_BACKEND_PORT=8013
+#   METRICS_FRONTEND_PORT=8513
+#   METRICS_DEPLOY_ENV=dev
+#
+# ── Metrics UI (8555, 팀당 1개) ──
+#   http://34.60.252.165:8000/user/spai0908/proxy/8555/
+#   이미 떠 있으면 metrics 서비스 up 생략
 
 services:
   backend:
-    # 개발용 공용 이미지 태그
-    # 계정별 이미지명을 쓰지 않는다. 디스크 중복 사용을 줄이기 위함.
     image: biz-ad-ai-backend-dev:latest
-
-    # 예시: biz-ad-ai-backend-dev-spai0913
     container_name: biz-ad-ai-backend-dev-본인계정명
 
-    # 왼쪽: VM에서 접근할 개발용 backend 포트
-    # 오른쪽: 컨테이너 내부 backend 포트
-    # 예시: "8014:8010"
     ports: !override
       - "본인_BACKEND_포트:8010"
 
     env_file:
       - ./backend/.env
-      
-    # HF 모델 캐시 관리 주소
+
     environment:
       - HF_HOME=/app/.cache/huggingface
       - HF_HUB_CACHE=/app/.cache/huggingface/hub
+      - METRICS_SOURCE_USER=본인계정명
+      - METRICS_BACKEND_PORT=본인_BACKEND_포트
+      - METRICS_FRONTEND_PORT=본인_FRONTEND_포트
+      - METRICS_DEPLOY_ENV=dev
 
     # 개발 환경에서는 production entrypoint를 쓰지 않고,
     # Jupyter proxy root-path를 적용하기 위해 uvicorn을 직접 실행한다.
@@ -56,31 +58,21 @@ services:
       - --port
       - "8010"
       - --root-path
-      # 예시: /user/spai0913/proxy/8014
       - /user/본인계정명/proxy/본인_BACKEND_포트
 
     volumes: !override
-      # backend 코드 변경을 컨테이너에 바로 반영
       - ./backend:/app
-
-      # 개발용 로그 폴더
-      - ./backend/logs-dev:/app/logs
-
-      # hf 모델 캐시 관리 폴더
+      # 기본: ./backend/logs-dev (sudo 불필요)
+      # 팀 공용: .env 에 METRICS_LOG_HOST_PATH=/opt/biz-ad-ai-team-logs
+      - ${METRICS_LOG_HOST_PATH:-./backend/logs-dev}:/app/logs
       - /opt/hf-cache:/app/.cache/huggingface
 
     restart: "no"
 
   frontend:
-    # 개발용 공용 이미지 태그
     image: biz-ad-ai-frontend-dev:latest
-
-    # 예시: biz-ad-ai-frontend-dev-spai0913
     container_name: biz-ad-ai-frontend-dev-본인계정명
 
-    # 왼쪽: VM에서 접근할 개발용 frontend 포트
-    # 오른쪽: 컨테이너 내부 Streamlit 포트
-    # 예시: "8514:8501"
     ports: !override
       - "본인_FRONTEND_포트:8501"
 
@@ -88,18 +80,38 @@ services:
       - ./frontend/.env
 
     environment:
-      # Docker Compose 내부에서는 backend 서비스명을 DNS처럼 사용할 수 있음
       - API_BASE_URL=http://backend:8010
-
-      # 브라우저가 직접 접근하는 backend 주소
-      # 예시: http://34.60.252.165:8000/user/spai0913/proxy/8014
       - API_BROWSER_BASE_URL=http://34.60.252.165:8000/user/본인계정명/proxy/본인_BACKEND_포트
 
     volumes: !override
-      # frontend 코드 변경을 컨테이너에 바로 반영
       - ./frontend:/app
 
     depends_on:
       - backend
+
+    restart: "no"
+
+  metrics:
+    image: biz-ad-ai-frontend-dev:latest
+    container_name: biz-ad-ai-metrics-dev-shared
+
+    ports: !override
+      - "8555:8501"
+
+    environment:
+      - METRICS_LOG_DIR=/logs
+
+    entrypoint: !override
+      - streamlit
+      - run
+      - metrics_app.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+      - --server.headless=true
+
+    volumes: !override
+      - ./frontend:/app
+      # backend 와 같은 경로 (팀 공용이면 .env METRICS_LOG_HOST_PATH 로 맞춤)
+      - ${METRICS_LOG_HOST_PATH:-./backend/logs-dev}:/logs:ro
 
     restart: "no"

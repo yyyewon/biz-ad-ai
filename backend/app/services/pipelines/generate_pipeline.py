@@ -15,6 +15,7 @@ from app.core.model_config import (
 )
 from app.schemas.food_type import FoodType
 from app.schemas.image_ad import ImageAdRequest
+from app.services.eval.clip_quality_eval import schedule_clip_quality_eval
 from app.services.pipelines.food_type_resolver import require_food_type
 from app.services.pipelines.image_pipeline import generate_image_ads
 from app.services.pipelines.text_pipeline import run_text_pipeline
@@ -163,6 +164,49 @@ def _record_image_pipeline_stage_metrics(
         )
 
 
+def _model_key(model_info: dict[str, str]) -> str:
+    provider = model_info.get("provider") or "unknown"
+    model = model_info.get("model") or "unknown"
+    return f"{provider}/{model}"
+
+
+def _build_run_context_extra(
+    *,
+    purpose: str,
+    tone: str,
+    food: str,
+    has_image: bool,
+    text_model_info: dict[str, str],
+    image_model_info: dict[str, str] | None,
+) -> dict[str, Any]:
+    """
+    total_pipeline 메트릭 extra에 넣을 생성 조건·모델 정보.
+    Metrics 대시보드에서 필터·비교에 사용한다.
+    """
+
+    extra: dict[str, Any] = {
+        "purpose": purpose,
+        "tone": tone,
+        "has_image": has_image,
+        "text_provider": text_model_info["provider"],
+        "text_model": text_model_info["model"],
+        "text_model_key": _model_key(text_model_info),
+    }
+
+    if food and str(food).strip():
+        try:
+            extra["food_type"] = require_food_type(food)
+        except AppException:
+            extra["food_type"] = str(food).strip()
+
+    if image_model_info:
+        extra["image_provider"] = image_model_info["provider"]
+        extra["image_model"] = image_model_info["model"]
+        extra["image_model_key"] = _model_key(image_model_info)
+
+    return extra
+
+
 def _record_total_pipeline_metric(
     *,
     pipeline_request_id: str,
@@ -172,12 +216,17 @@ def _record_total_pipeline_metric(
     partial_success: bool = False,
     error_code: str | None = None,
     error_type: str | None = None,
+    run_context: dict[str, Any] | None = None,
 ) -> None:
     """
     통합 파이프라인 전체 소요 시간을 performance.jsonl에 기록한다.
     """
 
     elapsed_ms = (time.perf_counter() - total_started) * 1000
+
+    extra: dict[str, Any] = {"partial_success": partial_success}
+    if run_context:
+        extra.update(run_context)
 
     record_performance_metric(
         pipeline="ad_generate",
@@ -190,9 +239,7 @@ def _record_total_pipeline_metric(
         success=success,
         error_code=error_code,
         error_type=error_type,
-        extra={
-            "partial_success": partial_success,
-        },
+        extra=extra,
     )
 
 
@@ -234,8 +281,20 @@ async def run_generate_pipeline(
         food,
     )
 
+    text_model_info = _safe_model_info("text_generation")
+    image_model_info = (
+        _safe_model_info("image_generation") if image_bytes else None
+    )
+    run_context = _build_run_context_extra(
+        purpose=purpose,
+        tone=tone,
+        food=food,
+        has_image=bool(image_bytes),
+        text_model_info=text_model_info,
+        image_model_info=image_model_info,
+    )
+
     try:
-        text_model_info = _safe_model_info("text_generation")
 
         images: list[str] = []
         image_generation: dict[str, Any] = {}
@@ -243,6 +302,7 @@ async def run_generate_pipeline(
         partial_success = False
         image_generation_success: bool | None = None
         image_error_type: str | None = None
+        clip_eval_context: dict[str, Any] | None = None
 
         if image_bytes:
             resolved_food_type = require_food_type(food)
@@ -258,8 +318,6 @@ async def run_generate_pipeline(
                 price_text=price,
                 store_location=store_location,
             )
-            image_model_info = _safe_model_info("image_generation")
-
             async def _run_text_stage() -> str:
                 await _emit_progress(
                     on_progress,
@@ -362,6 +420,7 @@ async def run_generate_pipeline(
                         payload=image_payload,
                         source_image_bytes=image_bytes,
                         on_variant_done=_on_variant_done,
+                        metrics_request_id=pipeline_request_id,
                     )
 
                 _record_image_pipeline_stage_metrics(
@@ -394,6 +453,14 @@ async def run_generate_pipeline(
 
                 image_generation = _build_image_generation_response(image_result)
                 image_generation_success = True
+                clip_eval_context = {
+                    "upload_bytes": bytes(image_bytes),
+                    "generated_bytes_list": [
+                        bytes(item) for item in (image_result.image_bytes_list or [])
+                    ],
+                    "applied_variants": list(image_result.applied_variants or []),
+                    "variant_prompts": dict(image_result.variant_prompts or {}),
+                }
 
                 await _emit_progress(
                     on_progress,
@@ -537,7 +604,14 @@ async def run_generate_pipeline(
             partial_success=partial_success,
             error_code=total_error_code,
             error_type=total_error_type,
+            run_context=run_context,
         )
+
+        if clip_eval_context is not None:
+            schedule_clip_quality_eval(
+                request_id=pipeline_request_id,
+                **clip_eval_context,
+            )
 
         logger.info(
             "generate_pipeline_completed | request_id={} | partial_success={} | image_generation_success={}",
@@ -557,6 +631,7 @@ async def run_generate_pipeline(
             partial_success=False,
             error_code=exc.code,
             error_type=exc.__class__.__name__,
+            run_context=run_context,
         )
         raise
 
@@ -575,6 +650,7 @@ async def run_generate_pipeline(
             partial_success=False,
             error_code="UNHANDLED_EXCEPTION",
             error_type=exc.__class__.__name__,
+            run_context=run_context,
         )
 
         error_spec = getattr(errors, "GENERATE_PIPELINE_IMAGE_FAILED", errors.IMAGE_PIPELINE_FAILED)

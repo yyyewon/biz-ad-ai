@@ -4,7 +4,7 @@
 
 이 문서는 현재 백엔드에서 기록하는 공통 로그 항목을 정리한다.
 
-현재 로그는 크게 두 종류로 나뉜다.
+현재 로그는 크게 네 가지로 나뉜다.
 
 ```text
 1. 일반 실행 로그
@@ -14,6 +14,14 @@
 2. 성능 분석 로그
    - logs/performance.jsonl
    - pipeline/stage별 소요 시간, provider, model, 성공 여부를 JSONL로 기록
+
+3. 품질 eval 로그
+   - logs/quality.jsonl
+   - CLIP-I / CLIP-T 등 오프라인 품질 지표 (생성 완료 후 백그라운드 기록)
+
+4. Metrics 대시보드 (Streamlit, 별도 포트)
+   - frontend/metrics_app.py
+   - 위 JSONL 파일을 읽어 latency·success rate·CLIP score 시각화
 ```
 
 ---
@@ -206,6 +214,42 @@ JSONL은 한 줄에 JSON 객체 하나씩 기록되는 형식이다.
 
 ---
 
+## 4.1 JSONL 품질 로그 (`quality.jsonl`)
+
+품질 eval 로그는 아래 파일에 기록된다.
+
+```text
+backend/logs/quality.jsonl
+```
+
+dev Docker 환경:
+
+```text
+backend/logs-dev/quality.jsonl
+```
+
+예시 (CLIP-I):
+
+```json
+{
+  "event": "quality_metric",
+  "metric_id": "clip_i_similarity",
+  "request_id": "gen-xxxxxxxx",
+  "stage": "clip_i",
+  "success": true,
+  "extra": {
+    "variant": "poster",
+    "score": 0.618067
+  }
+}
+```
+
+CLIP eval은 이미지 생성 성공 후 백그라운드에서 실행되므로, `performance.jsonl` 기록 직후 1~2분 뒤에 추가될 수 있다.
+
+매핑표(contract)는 `backend/app/schemas/performance_metrics.py`의 `METRIC_REGISTRY`를 참고한다.
+
+---
+
 ## 5. `performance.jsonl` 공통 필드
 
 | 필드 | 설명 |
@@ -306,6 +350,14 @@ tail -n 100 logs/app.log
 
 ```bash
 tail -n 20 logs/performance.jsonl
+tail -n 20 logs/quality.jsonl
+```
+
+Streamlit Metrics 대시보드:
+
+```bash
+cd frontend
+streamlit run metrics_app.py --server.port 8555
 ```
 
 성능 로그 요약 확인:

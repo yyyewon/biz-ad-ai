@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from dataclasses import dataclass
 
 from loguru import logger
@@ -14,7 +15,9 @@ from PIL import Image
 
 from app.core.config import get_settings
 from app.core.model_config import get_poster_design_model_settings
+from app.schemas.performance_metrics import MetricId
 from app.utils.memory_monitor import ensure_model_load_memory, log_model_memory_snapshot
+from app.utils.performance_logger import record_registry_metric
 
 _MODEL = None
 _PROCESSOR = None
@@ -101,17 +104,37 @@ def warm_up_poster_vlm() -> None:
     _get_vlm_model(model_id=model_id, settings=settings)
 
 
-def analyze_poster_design_with_vlm(image: Image.Image) -> PosterVlmDesignHints | None:
-    """
-    VLM으로 포스터 디자인 힌트 분석
-    """
+def analyze_poster_design_with_vlm(
+    image: Image.Image,
+    *,
+    metrics_request_id: str | None = None,
+) -> PosterVlmDesignHints | None:
+    """VLM으로 포스터 디자인 힌트를 분석한다. 실패 시 None."""
 
     model_config = get_poster_design_model_settings()
     if model_config is None:
         return None
 
+    request_id = metrics_request_id or "unknown"
+    model_name = str(model_config.get("model_name", "unknown"))
+    provider_name = str(model_config.get("provider", "hf"))
+    inference_started: float | None = None
+
     try:
+        inference_started = time.perf_counter()
         raw_text = _run_vlm_inference(image, model_config)
+        inference_elapsed_ms = (time.perf_counter() - inference_started) * 1000
+
+        record_registry_metric(
+            MetricId.VLM_INFERENCE_LATENCY,
+            request_id=request_id,
+            elapsed_ms=inference_elapsed_ms,
+            success=True,
+            provider=provider_name,
+            model=model_name,
+            extra={"model": model_name},
+        )
+
         logger.debug("poster_vlm_raw_response | chars={} | text={}", len(raw_text), raw_text[:500])
         parsed = parse_poster_vlm_json(raw_text)
         if parsed is None:
@@ -120,24 +143,62 @@ def analyze_poster_design_with_vlm(image: Image.Image) -> PosterVlmDesignHints |
                 len(raw_text),
                 raw_text[:300],
             )
+            record_registry_metric(
+                MetricId.VLM_JSON_PARSE_SUCCESS_RATE,
+                request_id=request_id,
+                success=False,
+                provider=provider_name,
+                model=model_name,
+                extra={"model": model_name, "raw_chars": len(raw_text)},
+            )
             return None
+
+        record_registry_metric(
+            MetricId.VLM_JSON_PARSE_SUCCESS_RATE,
+            request_id=request_id,
+            success=True,
+            provider=provider_name,
+            model=model_name,
+            extra={"model": model_name, "raw_chars": len(raw_text)},
+        )
 
         width, height = image.size
         hints = _build_hints_from_parsed(parsed, width=width, height=height)
         logger.info(
             "poster_vlm_json | model={} | payload={}",
-            model_config["model_name"],
+            model_name,
             json.dumps(parsed, ensure_ascii=False),
         )
         logger.info(
             "poster_vlm_applied | model={} | primary_text={} | scrim_alpha={}",
-            model_config["model_name"],
+            model_name,
             hints.palette.primary_text,
             hints.scrim_max_alpha,
         )
         return hints
 
     except Exception as exc:
+        inference_kwargs: dict[str, object] = {
+            "request_id": request_id,
+            "success": False,
+            "provider": provider_name,
+            "model": model_name,
+            "error_type": exc.__class__.__name__,
+            "extra": {"model": model_name},
+        }
+        if inference_started is not None:
+            inference_kwargs["elapsed_ms"] = (time.perf_counter() - inference_started) * 1000
+
+        record_registry_metric(MetricId.VLM_INFERENCE_LATENCY, **inference_kwargs)
+        record_registry_metric(
+            MetricId.VLM_JSON_PARSE_SUCCESS_RATE,
+            request_id=request_id,
+            success=False,
+            provider=provider_name,
+            model=model_name,
+            error_type=exc.__class__.__name__,
+            extra={"model": model_name},
+        )
         logger.warning("poster_vlm_failed | error={}", str(exc))
         return None
 

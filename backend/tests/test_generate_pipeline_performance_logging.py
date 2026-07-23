@@ -54,6 +54,7 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
         "record_performance_metric",
         fake_record_performance_metric,
     )
+    monkeypatch.setattr(generate_pipeline, "schedule_clip_quality_eval", lambda **kwargs: None)
 
     async def fake_run_text_pipeline(**kwargs):
         return "생성된 광고 문구"
@@ -64,7 +65,7 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
         fake_run_text_pipeline,
     )
 
-    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None, on_variant_done=None):
+    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None, on_variant_done=None, metrics_request_id=None):
         assert source_image_bytes == source_bytes
 
         return ImageAdResponse(
@@ -82,6 +83,7 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
             poster_images=[poster_b64],
             image_bytes_list=[poster_bytes],
             applied_variants=["studio"],
+            variant_prompts={"studio": "poster prompt"},
         )
 
     monkeypatch.setattr(
@@ -122,7 +124,14 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
 
     assert total_pipeline_calls
     assert total_pipeline_calls[-1]["success"] is True
-    assert total_pipeline_calls[-1]["extra"]["partial_success"] is False
+    extra = total_pipeline_calls[-1]["extra"]
+    assert extra["partial_success"] is False
+    assert extra["purpose"] == "신메뉴 홍보"
+    assert extra["tone"] == "감성적인"
+    assert extra["has_image"] is True
+    assert extra["text_model_key"]
+    assert extra["image_model_key"]
+    assert extra["food_type"]
 
 
 def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
@@ -163,6 +172,7 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
         "record_performance_metric",
         fake_record_performance_metric,
     )
+    monkeypatch.setattr(generate_pipeline, "schedule_clip_quality_eval", lambda **kwargs: None)
 
     async def fake_run_text_pipeline(**kwargs):
         return "생성된 광고 문구"
@@ -173,7 +183,7 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
         fake_run_text_pipeline,
     )
 
-    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None, on_variant_done=None):
+    async def fake_generate_image_ads(*, payload, source_image_bytes, seed=None, on_variant_done=None, metrics_request_id=None):
         raise RuntimeError("image generation failed")
 
     monkeypatch.setattr(
@@ -207,6 +217,10 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
 
     assert total_pipeline_calls
     assert total_pipeline_calls[-1]["success"] is False
-    assert total_pipeline_calls[-1]["extra"]["partial_success"] is True
+    extra = total_pipeline_calls[-1]["extra"]
+    assert extra["partial_success"] is True
+    assert extra["purpose"] == "신메뉴 홍보"
+    assert extra["tone"] == "감성적인"
+    assert extra["text_model_key"]
     assert total_pipeline_calls[-1]["error_code"] == "UNHANDLED_EXCEPTION"
     assert total_pipeline_calls[-1]["error_type"] == "RuntimeError"

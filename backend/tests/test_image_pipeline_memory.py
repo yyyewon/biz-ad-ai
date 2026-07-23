@@ -253,7 +253,9 @@ def test_app_startup_warms_poster_layout_in_threadpool(monkeypatch):
     assert warmed == ["poster_layout"]
 
 
-def test_poster_generation_does_not_retry_provider_exception():
+def test_poster_generation_does_not_retry_provider_exception(monkeypatch):
+    monkeypatch.setattr(image_pipeline, "record_registry_metric", lambda *args, **kwargs: None)
+
     class FailingProvider:
         def __init__(self):
             self.calls = 0
@@ -270,6 +272,8 @@ def test_poster_generation_does_not_retry_provider_exception():
                 provider=provider,
                 source_image_bytes=_sample_source_bytes(),
                 base_prompt="poster prompt",
+                request_id="gen-retry-test",
+                variant="poster",
             )
         )
 
@@ -277,7 +281,9 @@ def test_poster_generation_does_not_retry_provider_exception():
     assert provider.calls == 1
 
 
-def test_poster_generation_retries_only_empty_results():
+def test_poster_generation_retries_only_empty_results(monkeypatch):
+    monkeypatch.setattr(image_pipeline, "record_registry_metric", lambda *args, **kwargs: None)
+
     class EmptyProvider:
         def __init__(self):
             self.calls = 0
@@ -294,6 +300,8 @@ def test_poster_generation_retries_only_empty_results():
                 provider=provider,
                 source_image_bytes=_sample_source_bytes(),
                 base_prompt="poster prompt",
+                request_id="gen-retry-test",
+                variant="poster",
             )
         )
 

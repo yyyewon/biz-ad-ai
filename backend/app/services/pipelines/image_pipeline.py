@@ -16,6 +16,7 @@ from app.schemas.image_ad import (
     ImageVariantType,
 )
 from app.core.model_config import get_provider_name, get_variant_image_size, get_model_settings
+from app.schemas.performance_metrics import MetricId
 from app.services.pipelines.food_type_prompts import uses_custom_template
 from app.services.pipelines.image_variant_prompts import (
     build_hf_variant_prompts,
@@ -35,6 +36,18 @@ from app.utils.image_text_overlay import (
     apply_variant_text_overlay,
     variant_uses_pil_text_overlay,
 )
+from app.utils.performance_logger import record_registry_metric
+
+
+def _safe_image_model_info(provider_name: str) -> dict[str, str]:
+    try:
+        model_info = get_model_settings("image_generation", provider_name=provider_name)
+        return {
+            "provider": str(model_info.get("provider", provider_name)),
+            "model": str(model_info.get("model_name", "unknown")),
+        }
+    except Exception:
+        return {"provider": provider_name, "model": "unknown"}
 
 
 def _prepare_edit_source_bytes(
@@ -84,13 +97,18 @@ async def _generate_poster_with_retries(
     provider,
     source_image_bytes: bytes,
     base_prompt: str,
+    request_id: str,
+    variant: ImageVariantType,
     mask_image_bytes: bytes | None = None,
     size: str | None = None,
     render_mode: ImageRenderMode = "photo_restyle",
     negative_prompt: str | None = None,
     img2img_strength: float | None = None,
 ) -> list[bytes]:
+    attempt_max = len(POSTER_EMPTY_RESULT_RETRY_SUFFIXES)
+
     for attempt_idx, suffix in enumerate(POSTER_EMPTY_RESULT_RETRY_SUFFIXES):
+        attempt = attempt_idx + 1
         retry_prompt = f"{base_prompt}, {suffix}" if suffix else base_prompt
 
         generate_kwargs = {
@@ -109,18 +127,40 @@ async def _generate_poster_with_retries(
         image_bytes_list = await provider.generate(**generate_kwargs)
 
         if image_bytes_list:
+            record_registry_metric(
+                MetricId.EMPTY_RESULT_RETRY_ATTEMPT,
+                request_id=request_id,
+                success=True,
+                extra={
+                    "variant": variant,
+                    "attempt": attempt,
+                    "attempt_max": attempt_max,
+                    "render_mode": render_mode,
+                },
+            )
             return image_bytes_list
 
         logger.warning(
             "poster_generation_empty_result | attempt={} | render_mode={}",
-            attempt_idx + 1,
+            attempt,
             render_mode,
+        )
+        record_registry_metric(
+            MetricId.EMPTY_RESULT_RETRY_ATTEMPT,
+            request_id=request_id,
+            success=False,
+            extra={
+                "variant": variant,
+                "attempt": attempt,
+                "attempt_max": attempt_max,
+                "render_mode": render_mode,
+            },
         )
 
     raise AppException(
         errors.IMAGE_POSTER_RETRY_FAILED,
         detail={
-            "attempt_count": len(POSTER_EMPTY_RESULT_RETRY_SUFFIXES),
+            "attempt_count": attempt_max,
             "reason": "empty_result",
         },
     )
@@ -131,6 +171,7 @@ async def generate_image_ads(
     source_image_bytes: bytes,
     seed: Optional[int] = None,
     on_variant_done: Callable[[int, int], Awaitable[None]] | None = None,
+    metrics_request_id: str | None = None,
 ) -> ImageAdResponse:
     """
     이미지 광고 생성 파이프라인.
@@ -149,6 +190,7 @@ async def generate_image_ads(
 
     started = time.perf_counter()
     request_id = f"img-{uuid.uuid4().hex[:10]}"
+    trace_request_id = metrics_request_id or request_id
 
     if not source_image_bytes:
         raise AppException(
@@ -176,6 +218,7 @@ async def generate_image_ads(
 
         provider = get_image_provider()
         image_provider_name = get_provider_name("image_generation")
+        image_model_info = _safe_image_model_info(image_provider_name)
 
         prompt_used = ""
         stage_latencies_ms: dict[str, int] = {}
@@ -234,18 +277,57 @@ async def generate_image_ads(
                 img2img_strength,
             )
 
-            provider_started = time.perf_counter()
-            variant_outputs = await _generate_poster_with_retries(
-                provider=provider,
-                source_image_bytes=edit_source_bytes,
-                base_prompt=variant_prompt,
-                size=variant_size,
-                render_mode=render_mode,
-                negative_prompt=negative_prompt,
-                img2img_strength=img2img_strength,
-            )
+            variant_started = time.perf_counter()
+            try:
+                variant_outputs = await _generate_poster_with_retries(
+                    provider=provider,
+                    source_image_bytes=edit_source_bytes,
+                    base_prompt=variant_prompt,
+                    request_id=trace_request_id,
+                    variant=variant,
+                    size=variant_size,
+                    render_mode=render_mode,
+                    negative_prompt=negative_prompt,
+                    img2img_strength=img2img_strength,
+                )
+            except Exception as exc:
+                elapsed_ms = (time.perf_counter() - variant_started) * 1000
+                error_code = exc.code if isinstance(exc, AppException) else "UNHANDLED_EXCEPTION"
+                record_registry_metric(
+                    MetricId.VARIANT_GENERATION_LATENCY,
+                    request_id=trace_request_id,
+                    elapsed_ms=elapsed_ms,
+                    success=False,
+                    provider=image_model_info["provider"],
+                    model=image_model_info["model"],
+                    error_code=error_code,
+                    error_type=exc.__class__.__name__,
+                    extra={
+                        "variant": variant,
+                        "render_mode": render_mode,
+                        "provider": image_provider_name,
+                        "image_request_id": request_id,
+                    },
+                )
+                raise
+            else:
+                elapsed_ms = (time.perf_counter() - variant_started) * 1000
+                record_registry_metric(
+                    MetricId.VARIANT_GENERATION_LATENCY,
+                    request_id=trace_request_id,
+                    elapsed_ms=elapsed_ms,
+                    success=True,
+                    provider=image_model_info["provider"],
+                    model=image_model_info["model"],
+                    extra={
+                        "variant": variant,
+                        "render_mode": render_mode,
+                        "provider": image_provider_name,
+                        "image_request_id": request_id,
+                    },
+                )
             provider_latency_ms = int(
-                (time.perf_counter() - provider_started) * 1000
+                (time.perf_counter() - variant_started) * 1000
             )
 
             if not variant_outputs:
@@ -321,6 +403,7 @@ async def generate_image_ads(
 
         poster_image_bytes: list[bytes] = []
         applied_variants: list[ImageVariantType] = []
+        variant_prompts: dict[str, str] = {}
         provider_latencies_ms: list[int] = []
         overlay_latencies_ms: list[int] = []
         for (
@@ -330,12 +413,10 @@ async def generate_image_ads(
             variant_prompt,
             provider_latency_ms,
             overlay_latency_ms,
-        ) in sorted(
-            variant_results,
-            key=lambda item: item[0],
-        ):
+        ) in variant_results:
             poster_image_bytes.append(poster_bytes)
             applied_variants.append(variant)
+            variant_prompts[variant] = variant_prompt
             provider_latencies_ms.append(provider_latency_ms)
             if overlay_latency_ms is not None:
                 overlay_latencies_ms.append(overlay_latency_ms)
@@ -384,6 +465,7 @@ async def generate_image_ads(
             poster_images=poster_images_base64,
             image_bytes_list=poster_image_bytes,
             applied_variants=applied_variants,
+            variant_prompts=variant_prompts,
             food_type=payload.food_type,
             seed=seed or payload.seed,
         )

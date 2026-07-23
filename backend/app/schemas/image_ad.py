@@ -120,6 +120,11 @@ class ImageAdResponse(BaseModel):
         default_factory=list,
         description="생성된 이미지 유형 순서(studio, poster, instagram_feed)",
     )
+    variant_prompts: dict[str, str] = Field(
+        default_factory=dict,
+        exclude=True,
+        description="variant별 생성 프롬프트 (CLIP-T eval용)",
+    )
     food_type: Optional[FoodType] = Field(default=None, description="적용된 음식 유형")
 
     seed: Optional[int] = None

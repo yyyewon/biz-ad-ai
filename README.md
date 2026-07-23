@@ -35,17 +35,36 @@ Provider는 `config/model.yaml`의 `active_profile`로 OpenAI / HuggingFace / Hy
 ```
 .
 ├── config/model.yaml      # AI provider / 모델 설정
-├── frontend/              # Streamlit 앱
+├── frontend/              # Streamlit 앱 (광고 UI + metrics_app.py)
+│   ├── app.py             # 메인: Step 1/2/3 광고 생성 플로우
+│   ├── metrics_app.py     # Metrics 전용 entry (별도 포트)
+│   ├── core/
+│   │   ├── metrics/       # JSONL 로더, 집계 (대시보드 전용)
+│   │   ├── api_client.py
+│   │   └── config.py
+│   └── components/        # Step UI 컴포넌트
 ├── backend/               # FastAPI 서버
 │   └── app/
 │       ├── api/           # 라우터 & 엔드포인트
 │       ├── core/          # 설정, 예외 처리
-│       ├── schemas/       # 요청/응답 스키마
-│       ├── services/      # pipeline, provider
-│       └── utils/         # 이미지 처리, 로깅
+│       ├── schemas/       # 요청/응답 스키마, performance_metrics registry
+│       ├── services/      # pipeline, provider, eval
+│       └── utils/         # 이미지 처리, performance_logger
 ├── docs/api-spec.md       # API 명세
 └── docker-compose.yml
 ```
+
+### Metrics 대시보드
+
+팀 **공용 JSONL** + **8555** 포트에서 dev·prod 생성분을 한 화면에서 확인합니다.
+
+**초기 세팅·수정 위치:** [`docs/metrics-setup-guide.md`](./docs/metrics-setup-guide.md)
+
+| 항목 | 설명 |
+|---|---|
+| 접속 (VM) | `http://34.60.252.165:8000/user/{계정}/proxy/8555/` |
+| JSONL | `/opt/biz-ad-ai-team-logs/performance.jsonl`, `quality.jsonl` |
+| 출처 필드 | `extra.source_user`, `backend_port`, `frontend_port`, `deploy_env` |
 
 ## 시작하기
 
@@ -61,6 +80,7 @@ Provider는 `config/model.yaml`의 `active_profile`로 OpenAI / HuggingFace / Hy
 |---|---|---|
 | `frontend/.env` | `API_BASE_URL` | 백엔드 주소 |
 | `frontend/.env` | `RG_MOCK_MODE` | `true`면 백엔드 없이 목업 데이터로 프론트만 실행 |
+| (선택) | `METRICS_LOG_DIR` | Metrics 컨테이너가 읽을 JSONL 디렉터리 (Docker dev: `/logs`) |
 | `backend/.env` | `CORS_ALLOWED_ORIGINS` | 허용할 프론트엔드 origin (콤마 구분) |
 | `backend/.env` | `MODEL_WARMUP_ENABLED` | 서버 시작 시 모델 자동 로딩 여부(기본 `false`) |
 | `backend/.env` | `MODEL_LOAD_MIN_AVAILABLE_RAM_GB` | 모델 로딩 전 최소 available RAM(GB), `0`이면 검사 해제 |
@@ -79,6 +99,7 @@ docker compose up --build
 
 ```bash
 cd backend && pytest
+cd frontend && pytest tests/test_metrics_jsonl_loader.py -q
 ```
 
 ##  산출물

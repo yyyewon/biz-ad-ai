@@ -47,8 +47,11 @@ http://34.60.252.165:8501/
 ### 주소 형식
 
 ```text
-Frontend:
+Frontend (광고 생성 UI):
 http://34.60.252.165:8000/user/{JUPYTER_USER}/proxy/{FRONTEND_PORT}/
+
+Metrics (JSONL 대시보드, 팀 공용 포트 8555):
+http://34.60.252.165:8000/user/{JUPYTER_USER}/proxy/8555/
 
 Backend Swagger:
 http://34.60.252.165:8000/user/{JUPYTER_USER}/proxy/{BACKEND_PORT}/docs
@@ -297,7 +300,7 @@ services:
 
     volumes: !override
       - ./backend:/app
-      - ./backend/logs-dev:/app/logs
+      - /opt/biz-ad-ai-team-logs:/app/logs
       - /opt/hf-cache:/app/.cache/huggingface
 
     restart: "no"
@@ -317,6 +320,32 @@ services:
 
     volumes: !override
       - ./frontend:/app
+
+    depends_on:
+      - backend
+
+    restart: "no"
+
+  metrics:
+    image: biz-ad-ai-frontend-dev:latest
+    container_name: biz-ad-ai-metrics-dev-shared
+    ports: !override
+      - "8555:8501"
+
+    environment:
+      - METRICS_LOG_DIR=/logs
+
+    entrypoint: !override
+      - streamlit
+      - run
+      - metrics_app.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+      - --server.headless=true
+
+    volumes: !override
+      - ./frontend:/app
+      - /opt/biz-ad-ai-team-logs:/logs:ro
 
     depends_on:
       - backend
@@ -498,8 +527,11 @@ docker compose \
 채영환 기준:
 
 ```text
-Frontend:
+Frontend (광고 생성):
 http://34.60.252.165:8000/user/spai0913/proxy/8514/
+
+Metrics (JSONL 대시보드):
+http://34.60.252.165:8000/user/spai0913/proxy/8555/
 
 Backend Swagger:
 http://34.60.252.165:8000/user/spai0913/proxy/8014/docs
@@ -514,12 +546,20 @@ http://34.60.252.165:8000/user/spai0913/proxy/8014/docs
 ```yaml
 backend volumes:
   - ./backend:/app
-  - ./backend/logs-dev:/app/logs
+  - /opt/biz-ad-ai-team-logs:/app/logs
   - /opt/hf-cache:/app/.cache/huggingface
 
 frontend volumes:
   - ./frontend:/app
+
+metrics volumes:
+  - ./frontend:/app
+  - /opt/biz-ad-ai-team-logs:/logs:ro
 ```
+
+팀 공용 JSONL은 `/opt/biz-ad-ai-team-logs`에 append 되며, 각 backend는 `METRICS_SOURCE_USER` / `METRICS_BACKEND_PORT` / `METRICS_FRONTEND_PORT`를 `extra`에 기록한다. Metrics(8555)는 **팀당 컨테이너 1개**만 실행한다.
+
+**초기 세팅·팀원별 수정 위치:** [metrics-setup-guide.md](./metrics-setup-guide.md)
 
 따라서 아래 변경은 비교적 바로 반영된다.
 
