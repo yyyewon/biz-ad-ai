@@ -32,7 +32,7 @@ version: 1
 # - hybrid_hf_text_openai_image
 #   → 텍스트 생성: HuggingFace
 #   → 이미지 생성: OpenAI
-active_profile: hybrid_openai_text_hf_image
+active_profile: all_openai
 
 # provider 조합 정의.
 #
@@ -435,6 +435,36 @@ hf:
         use_xformers: false
         cpu_offload_enabled: false
         max_resident_pipelines: 1
+
+        variants:
+          studio:
+            pipeline: inpaint
+            native_size: 1024x1024
+            num_inference_steps: 26
+            guidance_scale: 5.5
+            inpaint_strength: 0.95
+            img2img_strength: 0.42
+            ip_adapter_scale: 0.60
+            subject_height_ratio: 0.56
+            subject_bottom_margin_ratio: 0.10
+          poster:
+            pipeline: inpaint
+            native_size: 768x1152
+            num_inference_steps: 28
+            guidance_scale: 6.0
+            inpaint_strength: 0.95
+            img2img_strength: 0.42
+            ip_adapter_scale: 0.65
+            subject_height_ratio: 0.38
+            subject_bottom_margin_ratio: 0.08
+            text_safe_zone_ratio: 0.42
+          instagram_feed:
+            pipeline: img2img
+            native_size: 768x1152
+            num_inference_steps: 24
+            guidance_scale: 5.0
+            img2img_strength: 0.30
+            ip_adapter_scale: 0.30
 
       sd35_medium:
         model_id: stabilityai/stable-diffusion-3.5-medium

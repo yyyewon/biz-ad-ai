@@ -115,8 +115,29 @@ class OpenAIImageProvider(ImageGenerationProvider):
         render_mode: ImageRenderMode = "photo_restyle",
         negative_prompt: str | None = None,
         img2img_strength: float | None = None,
+        reference_image_bytes: bytes | None = None,
+        ip_adapter_scale: float | None = None,
+        prompt_2: str | None = None,
+        seed: int | None = None,
+        num_inference_steps: int | None = None,
+        guidance_scale: float | None = None,
+        inpaint_strength: float | None = None,
+        variant: str | None = None,
+        variant_strategy: str | None = None,
     ) -> list[bytes]:
-        _ = (negative_prompt, img2img_strength)
+        _ = (
+            negative_prompt,
+            img2img_strength,
+            reference_image_bytes,
+            ip_adapter_scale,
+            prompt_2,
+            seed,
+            num_inference_steps,
+            guidance_scale,
+            inpaint_strength,
+            variant,
+            variant_strategy,
+        )
         """
         입력 이미지를 기반으로 광고 이미지를 생성한다.
 

@@ -6,15 +6,19 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from app.schemas.food_type import FoodType
 from app.schemas.image_ad import ImageAdRequest, ImageVariantType
 from app.services.pipelines.food_type_prompts import build_food_variant_prompt
-from app.services.pipelines.hf_food_type_prompts import (
-    build_hf_food_variant_prompt,
-    build_hf_variant_negative_prompt,
-    strip_prompt_neg_line,
-)
 from app.services.providers.base import ImageRenderMode
+
+
+@dataclass(frozen=True)
+class SDXLPrompt:
+    prompt: str
+    prompt_2: str | None
+    negative_prompt: str
 
 
 def build_variant_prompt(
@@ -36,20 +40,19 @@ def resolve_variant_render_mode(
     image_provider: str,
 ) -> ImageRenderMode:
     """
-    OpenAI·HF 공통: 원본 사진 전체를 한 장으로 편집(photo_restyle).
-
-    OpenAI → images.edit, HF → img2img.
-    누끼 합성(background_swap)은 각도/조명이 어긋나므로 사용하지 않는다.
+    OpenAI는 기존 images.edit 경로를 유지한다.
+    HF studio/poster는 전경 보존 Inpaint, instagram_feed만 img2img를 사용한다.
   """
-    _ = (variant, image_provider)
+    if image_provider == "hf" and variant in ("studio", "poster"):
+        return "background_swap"
     return "photo_restyle"
 
 
 # HF img2img — variant별 strength (높을수록 배경·장면 변경 ↑, 음식 보존 ↓)
 _HF_VARIANT_IMG2IMG_STRENGTH: dict[ImageVariantType, float] = {
-    "studio": 0.68,
-    "poster": 0.65,
-    "instagram_feed": 0.45,
+    "studio": 0.42,
+    "poster": 0.42,
+    "instagram_feed": 0.30,
 }
 
 
@@ -66,11 +69,52 @@ def build_hf_variant_prompts(
     variant: ImageVariantType,
     *,
     food_type: FoodType,
-) -> tuple[str, str]:
-    """HF용 (positive_prompt, negative_prompt) — hf_food_type_prompts.py 기준."""
-    full_prompt = build_hf_food_variant_prompt(
-        payload,
-        variant,
-        food_type=food_type,
+) -> SDXLPrompt:
+    """Build compact SDXL prompts without Korean labels or PIL typography rules."""
+
+    _ = payload
+    subject = {
+        "soup_stew": "the same plated soup or stew",
+        "fried": "the same plated fried food",
+        "grilled_bbq": "the same plated grilled food",
+        "rice_dish": "the same plated rice dish",
+        "bread_dessert": "the same plated bread or dessert",
+        "burger_sandwich": "the same plated burger or sandwich",
+        "coffee_drink": "the same prepared coffee or drink",
+    }[food_type]
+
+    if variant == "studio":
+        prompt = (
+            f"commercial studio food photo of {subject}, faithful shape and texture, "
+            "clean warm neutral tabletop, soft diffused side light, realistic camera texture, "
+            "uncluttered background"
+        )
+    elif variant == "poster":
+        prompt = (
+            f"minimal vertical advertisement background for {subject}, simple tonal gradient, "
+            "soft studio lighting, clean empty upper area, subtle surface below, no interior scene"
+        )
+    else:
+        prompt = (
+            f"authentic smartphone cafe photo of {subject}, natural warm light, clearer food texture, "
+            "realistic in-store atmosphere, subtle depth of field, natural colors"
+        )
+
+    negative_prompt = (
+        "text, letters, numbers, logo, watermark, duplicate food, deformed food, "
+        "distorted plate, extra dish, plastic texture, CGI, oversaturated, blurry, low quality"
     )
-    return strip_prompt_neg_line(full_prompt), build_hf_variant_negative_prompt(variant)
+    return SDXLPrompt(
+        prompt=_limit_sdxl_tokens(prompt),
+        prompt_2="realistic food photography, natural materials, controlled light",
+        negative_prompt=negative_prompt,
+    )
+
+
+def _limit_sdxl_tokens(prompt: str, *, limit: int = 75) -> str:
+    """Conservative word-based guard before provider tokenizer validation."""
+
+    words = prompt.split()
+    if len(words) <= limit:
+        return prompt
+    return " ".join(words[:limit])

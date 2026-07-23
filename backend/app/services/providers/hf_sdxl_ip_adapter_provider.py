@@ -419,7 +419,6 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
             self._ip_adapter_repo_id,
             self._ip_adapter_subfolder,
             self._ip_adapter_weight_name,
-            self._ip_adapter_scale,
             str(dtype),
             device,
             self._cpu_offload_enabled,
@@ -616,6 +615,12 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
             raise ValueError("img2img_strength must be in the range (0, 1]")
         return strength
 
+    def _resolve_ip_adapter_scale(self, value: float | None) -> float:
+        scale = self._ip_adapter_scale if value is None else float(value)
+        if not 0.0 < scale <= 1.0:
+            raise ValueError("ip_adapter_scale must be in the range (0, 1]")
+        return scale
+
     @staticmethod
     def _fallback_size(size: tuple[int, int]) -> tuple[int, int] | None:
         width, height = size
@@ -653,6 +658,15 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
         render_mode: ImageRenderMode = "photo_restyle",
         negative_prompt: str | None = None,
         img2img_strength: float | None = None,
+        reference_image_bytes: bytes | None = None,
+        ip_adapter_scale: float | None = None,
+        prompt_2: str | None = None,
+        seed: int | None = None,
+        num_inference_steps: int | None = None,
+        guidance_scale: float | None = None,
+        inpaint_strength: float | None = None,
+        variant: str | None = None,
+        variant_strategy: str | None = None,
     ) -> list[bytes]:
         return await run_in_threadpool(
             self._generate_sync,
@@ -664,6 +678,15 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
             render_mode=render_mode,
             negative_prompt=negative_prompt,
             img2img_strength=img2img_strength,
+            reference_image_bytes=reference_image_bytes,
+            ip_adapter_scale=ip_adapter_scale,
+            prompt_2=prompt_2,
+            seed=seed,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            inpaint_strength=inpaint_strength,
+            variant=variant,
+            variant_strategy=variant_strategy,
         )
 
     def _generate_sync(
@@ -677,6 +700,15 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
         render_mode: ImageRenderMode,
         negative_prompt: str | None,
         img2img_strength: float | None,
+        reference_image_bytes: bytes | None,
+        ip_adapter_scale: float | None,
+        prompt_2: str | None,
+        seed: int | None,
+        num_inference_steps: int | None,
+        guidance_scale: float | None,
+        inpaint_strength: float | None,
+        variant: str | None,
+        variant_strategy: str | None,
     ) -> list[bytes]:
         if not input_image_bytes:
             raise AppException(
@@ -703,12 +735,29 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
             raise ValueError(f"Unsupported render_mode: {render_mode}")
 
         source_rgba = image_bytes_to_pil(input_image_bytes).convert("RGBA")
+        if reference_image_bytes:
+            reference_rgb = image_bytes_to_pil(reference_image_bytes).convert("RGB")
+            reference_fallback_used = False
+        else:
+            reference_rgb = source_rgba.convert("RGB")
+            reference_fallback_used = True
+            logger.warning(
+                "hf_sdxl_reference_fallback | variant={} | strategy={} | reason=missing_reference",
+                variant,
+                variant_strategy,
+            )
         mask = None
         pipeline_kind: PipelineKind = "img2img"
         strength = self._resolve_img2img_strength(img2img_strength)
         if mask_image_bytes is not None or render_mode == "background_swap":
             pipeline_kind = "inpaint"
-            strength = self._inpaint_strength
+            strength = (
+                self._inpaint_strength
+                if inpaint_strength is None
+                else float(inpaint_strength)
+            )
+            if not 0.0 < strength <= 1.0:
+                raise ValueError("inpaint_strength must be in the range (0, 1]")
             mask = self._build_inpaint_mask(
                 source_rgba=source_rgba,
                 mask_image_bytes=mask_image_bytes,
@@ -716,6 +765,7 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
 
         return self._generate_images_sync(
             source_rgba=source_rgba,
+            reference_rgb=reference_rgb,
             mask=mask,
             pipeline_kind=pipeline_kind,
             prompt=prompt,
@@ -723,12 +773,21 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
             num_images=num_images,
             requested_size=self._parse_requested_size(size),
             strength=strength,
+            ip_adapter_scale=self._resolve_ip_adapter_scale(ip_adapter_scale),
+            prompt_2=prompt_2,
+            seed=seed,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            variant=variant,
+            variant_strategy=variant_strategy,
+            reference_fallback_used=reference_fallback_used,
         )
 
     def _generate_images_sync(
         self,
         *,
         source_rgba: Image.Image,
+        reference_rgb: Image.Image,
         mask: Image.Image | None,
         pipeline_kind: PipelineKind,
         prompt: str,
@@ -736,6 +795,14 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
         num_images: int,
         requested_size: tuple[int, int],
         strength: float,
+        ip_adapter_scale: float,
+        prompt_2: str | None,
+        seed: int | None,
+        num_inference_steps: int | None,
+        guidance_scale: float | None,
+        variant: str | None,
+        variant_strategy: str | None,
+        reference_fallback_used: bool,
     ) -> list[bytes]:
         request_id = f"hf-sdxl-gen-{uuid.uuid4().hex[:10]}"
         native_size = self._resolve_native_size(requested_size)
@@ -744,11 +811,17 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
         load_meta: dict[str, Any] = {}
         used_native_size = native_size
         fallback_used = False
+        effective_steps = int(num_inference_steps or self._num_inference_steps)
+        effective_guidance = float(
+            self._guidance_scale if guidance_scale is None else guidance_scale
+        )
 
         try:
             with _PIPELINE_INFERENCE_LOCK:
                 pipe, load_meta = self._load_pipeline(pipeline_kind)
                 self._log_prompt_token_count(pipe, prompt)
+                if self._ip_adapter_enabled:
+                    pipe.set_ip_adapter_scale(ip_adapter_scale)
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                     torch.cuda.reset_peak_memory_stats()
@@ -767,12 +840,19 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
                             "negative_prompt": negative_prompt,
                             "image": prepared_image,
                             "strength": strength,
-                            "num_inference_steps": self._num_inference_steps,
-                            "guidance_scale": self._guidance_scale,
+                            "num_inference_steps": effective_steps,
+                            "guidance_scale": effective_guidance,
                             "num_images_per_prompt": 1,
                         }
+                        if prompt_2:
+                            kwargs["prompt_2"] = prompt_2
+                        if seed is not None:
+                            generator_device = "cuda" if torch.cuda.is_available() else "cpu"
+                            kwargs["generator"] = torch.Generator(
+                                device=generator_device
+                            ).manual_seed(int(seed) + image_index)
                         if self._ip_adapter_enabled:
-                            kwargs["ip_adapter_image"] = prepared_image
+                            kwargs["ip_adapter_image"] = reference_rgb
                         if pipeline_kind == "inpaint":
                             if mask is None:
                                 raise ValueError("inpaint pipeline requires a mask")
@@ -799,9 +879,9 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
                             attempt_size[0],
                             attempt_size[1],
                             strength,
-                            self._num_inference_steps,
-                            self._guidance_scale,
-                            self._ip_adapter_scale,
+                            effective_steps,
+                            effective_guidance,
+                            ip_adapter_scale,
                         )
                         try:
                             result = pipe(**kwargs)
@@ -809,7 +889,10 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
                             can_retry = (
                                 attempt_index == 0
                                 and len(attempt_sizes) == 2
-                                and self._is_cuda_oom(exc)
+                                and (
+                                    self._is_cuda_oom(exc)
+                                    or pipeline_kind == "inpaint"
+                                )
                             )
                             if not can_retry:
                                 raise
@@ -863,11 +946,14 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
                 "native_width": used_native_size[0],
                 "native_height": used_native_size[1],
                 "num_images": len(output_images),
-                "num_inference_steps": self._num_inference_steps,
-                "guidance_scale": self._guidance_scale,
+                "num_inference_steps": effective_steps,
+                "guidance_scale": effective_guidance,
                 "strength": strength,
-                "ip_adapter_scale": self._ip_adapter_scale,
+                "ip_adapter_scale": ip_adapter_scale,
                 "oom_fallback_used": fallback_used,
+                "reference_fallback_used": reference_fallback_used,
+                "variant": variant,
+                "variant_strategy": variant_strategy,
             }
             record_performance_metric(
                 pipeline="hf_sdxl_ip_adapter",
@@ -913,6 +999,10 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
                     "native_size": used_native_size,
                     "strength": strength,
                     "oom_fallback_used": fallback_used,
+                    "ip_adapter_scale": ip_adapter_scale,
+                    "reference_fallback_used": reference_fallback_used,
+                    "variant": variant,
+                    "variant_strategy": variant_strategy,
                     **memory,
                 },
             )

@@ -6,6 +6,7 @@ import uuid
 from typing import Awaitable, Callable, Optional
 
 from loguru import logger
+from PIL import Image
 
 from app.core import error_constants as errors
 from app.core.exceptions import AppException
@@ -17,15 +18,15 @@ from app.schemas.image_ad import (
 )
 from app.core.model_config import get_provider_name, get_variant_image_size, get_model_settings
 from app.schemas.performance_metrics import MetricId
-from app.services.pipelines.food_type_prompts import uses_custom_template
 from app.services.pipelines.image_variant_prompts import (
+    SDXLPrompt,
     build_hf_variant_prompts,
     build_variant_prompt,
-    resolve_hf_img2img_strength,
     resolve_variant_render_mode,
 )
 from app.services.providers.base import ImageRenderMode
 from app.services.providers.factory import get_image_provider
+from app.utils.food_subject import PreparedFoodSubject, prepare_food_subject
 from app.utils.image_processor import shrink_and_pad_for_wider_framing, zoom_center_crop
 from app.utils.image_bytes import (
     encode_image_bytes_to_base64,
@@ -37,6 +38,12 @@ from app.utils.image_text_overlay import (
     variant_uses_pil_text_overlay,
 )
 from app.utils.performance_logger import record_registry_metric
+from app.utils.variant_compositor import (
+    PreparedVariantInput,
+    evaluate_poster_background,
+    prepare_variant_input,
+    recomposite_subject,
+)
 
 
 def _safe_image_model_info(provider_name: str) -> dict[str, str]:
@@ -65,7 +72,7 @@ def _prepare_edit_source_bytes(
 
     image = image_bytes_to_pil(source_bytes).convert("RGB")
 
-    if food_type and uses_custom_template(food_type, variant):
+    if food_type:
         if variant == "studio":
             image = shrink_and_pad_for_wider_framing(image)
         elif variant == "instagram_feed":
@@ -104,6 +111,14 @@ async def _generate_poster_with_retries(
     render_mode: ImageRenderMode = "photo_restyle",
     negative_prompt: str | None = None,
     img2img_strength: float | None = None,
+    reference_image_bytes: bytes | None = None,
+    ip_adapter_scale: float | None = None,
+    prompt_2: str | None = None,
+    seed: int | None = None,
+    num_inference_steps: int | None = None,
+    guidance_scale: float | None = None,
+    inpaint_strength: float | None = None,
+    variant_strategy: str | None = None,
 ) -> list[bytes]:
     attempt_max = len(POSTER_EMPTY_RESULT_RETRY_SUFFIXES)
 
@@ -123,6 +138,20 @@ async def _generate_poster_with_retries(
             generate_kwargs["negative_prompt"] = negative_prompt
         if img2img_strength is not None:
             generate_kwargs["img2img_strength"] = img2img_strength
+        if reference_image_bytes is not None:
+            generate_kwargs.update(
+                {
+                    "reference_image_bytes": reference_image_bytes,
+                    "ip_adapter_scale": ip_adapter_scale,
+                    "prompt_2": prompt_2,
+                    "seed": seed,
+                    "num_inference_steps": num_inference_steps,
+                    "guidance_scale": guidance_scale,
+                    "inpaint_strength": inpaint_strength,
+                    "variant": variant,
+                    "variant_strategy": variant_strategy,
+                }
+            )
 
         image_bytes_list = await provider.generate(**generate_kwargs)
 
@@ -219,6 +248,24 @@ async def generate_image_ads(
         provider = get_image_provider()
         image_provider_name = get_provider_name("image_generation")
         image_model_info = _safe_image_model_info(image_provider_name)
+        hf_variant_settings: dict[str, dict[str, object]] = {}
+        prepared_subject: PreparedFoodSubject | None = None
+        if image_provider_name == "hf":
+            hf_settings = get_model_settings(
+                role="image_generation",
+                provider_name="hf",
+            )["settings"]
+            configured_variants = hf_settings.get("variants", {})
+            if isinstance(configured_variants, dict):
+                hf_variant_settings = {
+                    str(key): value
+                    for key, value in configured_variants.items()
+                    if isinstance(value, dict)
+                }
+            prepared_subject = await asyncio.to_thread(
+                prepare_food_subject,
+                source_rgb,
+            )
 
         prompt_used = ""
         stage_latencies_ms: dict[str, int] = {}
@@ -230,16 +277,36 @@ async def generate_image_ads(
         ) -> tuple[int, ImageVariantType, bytes, str, int, int | None]:
             variant = _resolve_image_variant(idx)
             variant_size = get_variant_image_size(variant)
-            render_mode = resolve_variant_render_mode(
-                variant,
-                image_provider=image_provider_name,
-            )
+            prepared_variant: PreparedVariantInput | None = None
+            sdxl_prompt: SDXLPrompt | None = None
+            background_fallback_used = False
 
-            if image_provider_name == "hf":
-                variant_prompt, negative_prompt = build_hf_variant_prompts(
+            if image_provider_name == "hf" and prepared_subject is not None:
+                sdxl_prompt = build_hf_variant_prompts(
                     payload,
                     variant,
                     food_type=payload.food_type,
+                )
+                variant_prompt = sdxl_prompt.prompt
+                negative_prompt = sdxl_prompt.negative_prompt
+                prepared_variant = await asyncio.to_thread(
+                    prepare_variant_input,
+                    prepared_subject,
+                    variant,
+                    food_type=payload.food_type,
+                    settings=hf_variant_settings.get(variant),
+                )
+                edit_source_bytes = prepared_variant.init_image_bytes
+                render_mode = prepared_variant.render_mode
+                img2img_strength = prepared_variant.img2img_strength
+                variant_strategy = (
+                    "subject_inpaint"
+                    if render_mode == "background_swap"
+                    else (
+                        "scene_img2img"
+                        if variant == "instagram_feed"
+                        else "segmentation_img2img_fallback"
+                    )
                 )
             else:
                 variant_prompt = build_variant_prompt(
@@ -248,26 +315,59 @@ async def generate_image_ads(
                     food_type=payload.food_type,
                 )
                 negative_prompt = None
-
-            edit_source_bytes = _prepare_edit_source_bytes(
-                prepared_source_bytes,
-                food_type=payload.food_type,
-                variant=variant,
-            )
-
-            img2img_strength: float | None = None
-            if image_provider_name == "hf":
-                hf_settings = get_model_settings(
-                    role="image_generation",
-                    provider_name="hf",
-                )["settings"]
-                default_strength = float(
-                    hf_settings.get("img2img_restyle_strength", 0.45)
+                edit_source_bytes = _prepare_edit_source_bytes(
+                    prepared_source_bytes,
+                    food_type=payload.food_type,
+                    variant=variant,
                 )
-                img2img_strength = resolve_hf_img2img_strength(
+                render_mode = resolve_variant_render_mode(
                     variant,
-                    default_strength=default_strength,
+                    image_provider=image_provider_name,
                 )
+                img2img_strength = None
+                variant_strategy = "openai_photo_restyle"
+
+            pipeline_kind = (
+                "inpaint" if render_mode == "background_swap" else "img2img"
+            )
+            metric_extra = {
+                "variant": variant,
+                "variant_strategy": variant_strategy,
+                "pipeline_kind": pipeline_kind,
+                "render_mode": render_mode,
+                "provider": image_provider_name,
+                "image_request_id": request_id,
+                "final_size": variant_size,
+                "segmentation_valid": (
+                    prepared_variant.segmentation_valid if prepared_variant else None
+                ),
+                "segmentation_fallback_reason": (
+                    prepared_variant.segmentation_fallback_reason
+                    if prepared_variant
+                    else None
+                ),
+                "native_size": (
+                    f"{prepared_variant.native_size[0]}x{prepared_variant.native_size[1]}"
+                    if prepared_variant
+                    else None
+                ),
+                "img2img_strength": img2img_strength,
+                "inpaint_strength": (
+                    prepared_variant.inpaint_strength if prepared_variant else None
+                ),
+                "ip_adapter_scale": (
+                    prepared_variant.ip_adapter_scale if prepared_variant else None
+                ),
+                "subject_bbox": (
+                    prepared_variant.subject_bbox if prepared_variant else None
+                ),
+                "subject_area_ratio": (
+                    prepared_variant.subject_area_ratio if prepared_variant else None
+                ),
+                "text_safe_zone_ratio": (
+                    prepared_variant.text_safe_zone_ratio if prepared_variant else None
+                ),
+            }
 
             logger.info(
                 "image_variant_generation_started | variant={} | provider={} | render_mode={} | img2img_strength={}",
@@ -289,43 +389,61 @@ async def generate_image_ads(
                     render_mode=render_mode,
                     negative_prompt=negative_prompt,
                     img2img_strength=img2img_strength,
+                    mask_image_bytes=(
+                        prepared_variant.mask_image_bytes if prepared_variant else None
+                    ),
+                    reference_image_bytes=(
+                        prepared_variant.reference_image_bytes if prepared_variant else None
+                    ),
+                    ip_adapter_scale=(
+                        prepared_variant.ip_adapter_scale if prepared_variant else None
+                    ),
+                    prompt_2=sdxl_prompt.prompt_2 if sdxl_prompt else None,
+                    seed=(seed if seed is not None else payload.seed),
+                    num_inference_steps=(
+                        prepared_variant.num_inference_steps if prepared_variant else None
+                    ),
+                    guidance_scale=(
+                        prepared_variant.guidance_scale if prepared_variant else None
+                    ),
+                    inpaint_strength=(
+                        prepared_variant.inpaint_strength if prepared_variant else None
+                    ),
+                    variant_strategy=variant_strategy,
                 )
             except Exception as exc:
                 elapsed_ms = (time.perf_counter() - variant_started) * 1000
-                error_code = exc.code if isinstance(exc, AppException) else "UNHANDLED_EXCEPTION"
-                record_registry_metric(
-                    MetricId.VARIANT_GENERATION_LATENCY,
-                    request_id=trace_request_id,
-                    elapsed_ms=elapsed_ms,
-                    success=False,
-                    provider=image_model_info["provider"],
-                    model=image_model_info["model"],
-                    error_code=error_code,
-                    error_type=exc.__class__.__name__,
-                    extra={
-                        "variant": variant,
-                        "render_mode": render_mode,
-                        "provider": image_provider_name,
-                        "image_request_id": request_id,
-                    },
-                )
-                raise
-            else:
-                elapsed_ms = (time.perf_counter() - variant_started) * 1000
-                record_registry_metric(
-                    MetricId.VARIANT_GENERATION_LATENCY,
-                    request_id=trace_request_id,
-                    elapsed_ms=elapsed_ms,
-                    success=True,
-                    provider=image_model_info["provider"],
-                    model=image_model_info["model"],
-                    extra={
-                        "variant": variant,
-                        "render_mode": render_mode,
-                        "provider": image_provider_name,
-                        "image_request_id": request_id,
-                    },
-                )
+                if (
+                    prepared_variant is not None
+                    and prepared_variant.background_fallback_bytes is not None
+                    and render_mode == "background_swap"
+                ):
+                    background_fallback_used = True
+                    variant_outputs = [prepared_variant.background_fallback_bytes]
+                    logger.warning(
+                        "image_variant_inpaint_fallback | variant={} | error_type={} | error={}",
+                        variant,
+                        exc.__class__.__name__,
+                        str(exc),
+                    )
+                else:
+                    error_code = (
+                        exc.code
+                        if isinstance(exc, AppException)
+                        else "UNHANDLED_EXCEPTION"
+                    )
+                    record_registry_metric(
+                        MetricId.VARIANT_GENERATION_LATENCY,
+                        request_id=trace_request_id,
+                        elapsed_ms=elapsed_ms,
+                        success=False,
+                        provider=image_model_info["provider"],
+                        model=image_model_info["model"],
+                        error_code=error_code,
+                        error_type=exc.__class__.__name__,
+                        extra={**metric_extra, "background_fallback_used": False},
+                    )
+                    raise
             provider_latency_ms = int(
                 (time.perf_counter() - variant_started) * 1000
             )
@@ -343,6 +461,61 @@ async def generate_image_ads(
 
             poster_bytes = variant_outputs[0]
             overlay_latency_ms: int | None = None
+
+            if prepared_variant is not None:
+                generated_image = image_bytes_to_pil(poster_bytes).convert("RGB")
+                final_width, final_height = (
+                    int(value) for value in variant_size.lower().split("x", maxsplit=1)
+                )
+                if generated_image.size != (final_width, final_height):
+                    generated_image = generated_image.resize(
+                        (final_width, final_height),
+                        Image.Resampling.LANCZOS,
+                    )
+
+                if variant == "poster" and not background_fallback_used:
+                    quality = evaluate_poster_background(generated_image)
+                    logger.info(
+                        "poster_background_quality | accepted={} | edge_mean={:.3f} | luminance_variance={:.3f}",
+                        quality.accepted,
+                        quality.edge_mean,
+                        quality.luminance_variance,
+                    )
+                    if (
+                        not quality.accepted
+                        and prepared_variant.background_fallback_bytes is not None
+                    ):
+                        background_fallback_used = True
+                        generated_image = image_bytes_to_pil(
+                            prepared_variant.background_fallback_bytes
+                        ).convert("RGB").resize(
+                            (final_width, final_height),
+                            Image.Resampling.LANCZOS,
+                        )
+
+                if prepared_variant.subject_layer_bytes is not None:
+                    subject_layer = image_bytes_to_pil(
+                        prepared_variant.subject_layer_bytes
+                    ).convert("RGBA")
+                    generated_image = recomposite_subject(
+                        generated_image,
+                        subject_layer,
+                    )
+                poster_bytes = pil_image_to_png_bytes(generated_image)
+
+            elapsed_ms = (time.perf_counter() - variant_started) * 1000
+            record_registry_metric(
+                MetricId.VARIANT_GENERATION_LATENCY,
+                request_id=trace_request_id,
+                elapsed_ms=elapsed_ms,
+                success=True,
+                provider=image_model_info["provider"],
+                model=image_model_info["model"],
+                extra={
+                    **metric_extra,
+                    "background_fallback_used": background_fallback_used,
+                },
+            )
 
             if variant_uses_pil_text_overlay(payload.food_type, variant):
                 overlay_started = time.perf_counter()
@@ -371,33 +544,46 @@ async def generate_image_ads(
                 overlay_latency_ms,
             )
 
-        tasks = [
-            asyncio.create_task(_generate_variant_image(idx))
-            for idx in range(payload.num_images)
-        ]
         variant_results: list[
             tuple[int, ImageVariantType, bytes, str, int, int | None]
         ] = []
 
-        try:
-            for completed in asyncio.as_completed(tasks):
-                result = await completed
-                variant_results.append(result)
+        async def _notify_progress() -> None:
+            if on_variant_done is None:
+                return
+            try:
+                await on_variant_done(len(variant_results), payload.num_images)
+            except Exception as exc:
+                logger.warning(
+                    "image_variant_progress_callback_failed | error={}",
+                    str(exc),
+                )
 
-                if on_variant_done is not None:
-                    try:
-                        await on_variant_done(len(variant_results), payload.num_images)
-                    except Exception as exc:
-                        logger.warning(
-                            "image_variant_progress_callback_failed | error={}",
-                            str(exc),
-                        )
-        finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-
-            await asyncio.gather(*tasks, return_exceptions=True)
+        if image_provider_name == "hf":
+            execution_indices = sorted(
+                range(payload.num_images),
+                key=lambda index: (
+                    1 if _resolve_image_variant(index) == "instagram_feed" else 0,
+                    index,
+                ),
+            )
+            for idx in execution_indices:
+                variant_results.append(await _generate_variant_image(idx))
+                await _notify_progress()
+        else:
+            tasks = [
+                asyncio.create_task(_generate_variant_image(idx))
+                for idx in range(payload.num_images)
+            ]
+            try:
+                for completed in asyncio.as_completed(tasks):
+                    variant_results.append(await completed)
+                    await _notify_progress()
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
 
         variant_results.sort(key=lambda item: item[0])
 
