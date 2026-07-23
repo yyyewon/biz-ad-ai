@@ -31,6 +31,7 @@ from core.metrics.catalog import (
 )
 from core.metrics.config import PERFORMANCE_LOG_PATH, QUALITY_LOG_PATH
 from core.metrics.jsonl_loader import (
+    filter_by_run_context,
     filter_records,
     load_jsonl,
     unique_extra_values,
@@ -146,6 +147,9 @@ def _render_sidebar_filters(all_records: list) -> dict[str, str | None]:
     with st.sidebar.expander("지표 설명"):
         st.markdown(GLOSSARY_MD)
 
+    total_runs = filter_records(all_records, stage="total_pipeline")
+
+    st.sidebar.subheader("운영 · 로그")
     source_user = st.sidebar.selectbox(
         "사용자 (source_user)",
         options=[_FILTER_ALL] + unique_extra_values(all_records, "source_user"),
@@ -167,6 +171,31 @@ def _render_sidebar_filters(all_records: list) -> dict[str, str | None]:
         options=[_FILTER_ALL] + unique_request_ids(all_records)[::-1],
     )
 
+    st.sidebar.divider()
+    st.sidebar.subheader("생성 조건")
+    st.sidebar.caption("total_pipeline에 기록된 입력값·이미지 모델로 run을 좁힙니다.")
+
+    image_model = st.sidebar.selectbox(
+        "이미지 모델 (provider/model)",
+        options=[_FILTER_ALL] + unique_extra_values(total_runs, "image_model_key"),
+        key="filter_image_model",
+    )
+    purpose = st.sidebar.selectbox(
+        "홍보 목적 (purpose)",
+        options=[_FILTER_ALL] + unique_extra_values(total_runs, "purpose"),
+        key="filter_purpose",
+    )
+    food_type = st.sidebar.selectbox(
+        "음식 형태 (food_type)",
+        options=[_FILTER_ALL] + unique_extra_values(total_runs, "food_type"),
+        key="filter_food_type",
+    )
+    tone = st.sidebar.selectbox(
+        "톤앤매너 (tone)",
+        options=[_FILTER_ALL] + unique_extra_values(total_runs, "tone"),
+        key="filter_tone",
+    )
+
     with st.sidebar.expander("로그 경로"):
         st.code(str(PERFORMANCE_LOG_PATH), language=None)
         st.code(str(QUALITY_LOG_PATH), language=None)
@@ -180,11 +209,15 @@ def _render_sidebar_filters(all_records: list) -> dict[str, str | None]:
         "backend_port": _pick(backend_port),
         "frontend_port": _pick(frontend_port),
         "deploy_env": _pick(deploy_env),
+        "image_model_key": _pick(image_model),
+        "purpose": _pick(purpose),
+        "food_type": _pick(food_type),
+        "tone": _pick(tone),
     }
 
 
 def _apply_filters(records: list, filters: dict[str, str | None]) -> list:
-    return filter_records(
+    filtered = filter_records(
         records,
         request_id=filters.get("request_id"),
         source_user=filters.get("source_user"),
@@ -192,17 +225,43 @@ def _apply_filters(records: list, filters: dict[str, str | None]) -> list:
         frontend_port=filters.get("frontend_port"),
         deploy_env=filters.get("deploy_env"),
     )
+    return filter_by_run_context(
+        filtered,
+        purpose=filters.get("purpose"),
+        tone=filters.get("tone"),
+        food_type=filters.get("food_type"),
+        image_model_key=filters.get("image_model_key"),
+    )
 
 
-def _active_filter_caption(filters: dict[str, str | None]) -> str:
+_OPERATIONS_FILTER_KEYS = (
+    "source_user",
+    "deploy_env",
+    "backend_port",
+    "frontend_port",
+    "request_id",
+)
+_GENERATION_FILTER_KEYS = (
+    "image_model_key",
+    "purpose",
+    "food_type",
+    "tone",
+)
+
+
+def _filter_caption(filters: dict[str, str | None], keys: tuple[str, ...]) -> str:
     labels = {
         "source_user": "사용자",
         "deploy_env": "환경",
         "backend_port": "BE",
         "frontend_port": "FE",
         "request_id": "요청",
+        "image_model_key": "이미지모델",
+        "purpose": "목적",
+        "food_type": "음식형태",
+        "tone": "톤",
     }
-    parts = [f"{labels.get(k, k)}={v}" for k, v in filters.items() if v]
+    parts = [f"{labels.get(k, k)}={filters[k]}" for k in keys if filters.get(k)]
     return " · ".join(parts) if parts else "전체"
 
 
@@ -256,7 +315,75 @@ def _render_integrated_api_section(
         f"{partial}%" if partial is not None else "-",
         help=METRIC_HELP["Partial Success Rate"],
     )
-    st.caption(f"Runs (`total_pipeline`): **{summary['count']}**")
+    st.caption(f"Runs (`total_pipeline`): **{summary['count']}** · 문구-only run 포함")
+    _render_run_context_comparison(total_records)
+
+
+def _records_for_image_runs(
+    performance_records: list,
+    *,
+    stage: str,
+) -> list:
+    """
+    image_pipeline_total 이 있는 request_id만 묶어 stage별 latency를 맞춘다.
+    Total vs Image 비교 시 같은 run 집합을 쓰기 위함.
+    """
+
+    image_run_ids = {
+        str(record["request_id"])
+        for record in filter_records(performance_records, stage="image_pipeline_total")
+        if record.get("request_id")
+    }
+    if not image_run_ids:
+        return []
+
+    return [
+        record
+        for record in filter_records(performance_records, stage=stage)
+        if str(record.get("request_id")) in image_run_ids
+    ]
+
+
+def _render_run_context_comparison(total_records: list) -> None:
+    if not total_records:
+        return
+
+    dimensions = [
+        ("image_model_key", "이미지 모델"),
+        ("purpose", "홍보 목적"),
+        ("food_type", "음식 형태"),
+        ("tone", "톤앤매너"),
+    ]
+
+    with st.expander("생성 조건별 latency 비교"):
+        st.caption("현재 필터 범위 안에서 그룹별 평균 total_pipeline elapsed_ms")
+        for key, label in dimensions:
+            grouped = group_mean_elapsed_ms(total_records, key)
+            counts = count_by_extra(total_records, key)
+            if not grouped:
+                continue
+
+            st.markdown(f"**{label}**")
+            rows = []
+            for group_name, mean_ms in sorted(grouped.items(), key=lambda item: item[1]):
+                rows.append(
+                    {
+                        "group": group_name,
+                        "runs": counts.get(group_name, 0),
+                        "mean_sec": round(mean_ms / 1000, 2),
+                    }
+                )
+            df = pd.DataFrame(rows)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            _vertical_bar_chart(
+                pd.Series(
+                    {row["group"]: row["mean_sec"] for row in rows},
+                    name="mean_sec",
+                ),
+                category_col="group",
+                value_col="mean_sec",
+                height=220,
+            )
 
 
 def _render_image_generation_section(
@@ -270,17 +397,51 @@ def _render_image_generation_section(
     image_records = filter_records(performance_records, stage="image_pipeline_total")
     image_summary = latency_summary(image_records)
 
+    aligned_text = latency_summary(
+        _records_for_image_runs(performance_records, stage="text_generation")
+    )
+    aligned_total = latency_summary(
+        _records_for_image_runs(performance_records, stage="total_pipeline")
+    )
+
     c1, c2 = st.columns(2)
     c1.metric(
-        "Image Generation Latency (P50)",
+        "Image Pipeline Total (P50)",
         format_ms(image_summary["p50_ms"]),
         help=METRIC_HELP["Image Generation Latency (P50)"],
     )
     c2.metric(
-        "Image Generation Latency (P95)",
+        "Image Pipeline Total (P95)",
         format_ms(image_summary["p95_ms"]),
         help=METRIC_HELP["Image Generation Latency (P50)"],
     )
+    st.caption(
+        f"Runs (`image_pipeline_total`): **{image_summary['count']}** · "
+        "stage=`image_pipeline_total` (이미지 3장+PIL 내부)"
+    )
+
+    if aligned_text["count"] or aligned_total["count"]:
+        st.markdown("**같은 run 기준 병렬 비교** (이미지 포함 요청만)")
+        st.caption(
+            "문구·이미지는 동시 실행 → Total Pipeline은 max(문구, 이미지)에 가깝습니다. "
+            "순차 합(문구+이미지)이 아닙니다."
+        )
+        t1, t2, t3 = st.columns(3)
+        t1.metric(
+            "Text Generation (P50)",
+            format_ms(aligned_text["p50_ms"]),
+            help="stage=`text_generation` · 이미지 run과 동일 request_id",
+        )
+        t2.metric(
+            "Image Pipeline Total (P50)",
+            format_ms(image_summary["p50_ms"]),
+            help="stage=`image_pipeline_total`",
+        )
+        t3.metric(
+            "Total Pipeline (P50)",
+            format_ms(aligned_total["p50_ms"]),
+            help="stage=`total_pipeline` · API 전체 wall clock",
+        )
 
     variant_records = filter_records(performance_records, stage="variant_generation")
     variant_means = group_mean_elapsed_ms(variant_records, "variant")
@@ -415,7 +576,8 @@ def render_metrics_dashboard() -> None:
     performance_records = _apply_filters(all_performance, filters)
     quality_records = _apply_filters(all_quality, filters)
 
-    st.info(f"필터: **{_active_filter_caption(filters)}**")
+    st.info(f"운영 · 로그: **{_filter_caption(filters, _OPERATIONS_FILTER_KEYS)}**")
+    st.info(f"생성 조건: **{_filter_caption(filters, _GENERATION_FILTER_KEYS)}**")
 
     if not performance_records and not quality_records:
         st.warning("로그가 없거나 필터 조건에 맞는 데이터가 없습니다.")

@@ -124,7 +124,14 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
 
     assert total_pipeline_calls
     assert total_pipeline_calls[-1]["success"] is True
-    assert total_pipeline_calls[-1]["extra"]["partial_success"] is False
+    extra = total_pipeline_calls[-1]["extra"]
+    assert extra["partial_success"] is False
+    assert extra["purpose"] == "신메뉴 홍보"
+    assert extra["tone"] == "감성적인"
+    assert extra["has_image"] is True
+    assert extra["text_model_key"]
+    assert extra["image_model_key"]
+    assert extra["food_type"]
 
 
 def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
@@ -210,6 +217,10 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
 
     assert total_pipeline_calls
     assert total_pipeline_calls[-1]["success"] is False
-    assert total_pipeline_calls[-1]["extra"]["partial_success"] is True
+    extra = total_pipeline_calls[-1]["extra"]
+    assert extra["partial_success"] is True
+    assert extra["purpose"] == "신메뉴 홍보"
+    assert extra["tone"] == "감성적인"
+    assert extra["text_model_key"]
     assert total_pipeline_calls[-1]["error_code"] == "UNHANDLED_EXCEPTION"
     assert total_pipeline_calls[-1]["error_type"] == "RuntimeError"

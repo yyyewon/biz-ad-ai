@@ -57,8 +57,8 @@ METRIC_CATALOG: dict[MetricCategory, tuple[MetricCatalogItem, ...]] = {
         MetricCatalogItem(
             "Total Pipeline Latency",
             "total_pipeline",
-            "API 1회(문구+이미지) 전체 소요",
-            "사용자 체감 대기 시간",
+            "API 1회 전체 (문구+이미지 **병렬**)",
+            "사용자 체감 대기. 이미지가 더 길면 Total ≈ Image Pipeline",
             "✅",
         ),
         MetricCatalogItem(
@@ -176,8 +176,15 @@ CLIP_I_CHART_HELP = metric_help_by_name("CLIP-I (Image–Image Similarity)") + "
 CLIP_T_CHART_HELP = metric_help_by_name("CLIP-T (Image–Text Alignment)") + "\n\n점수 **0~1**."
 
 METRIC_HELP = {
-    "Total Pipeline Latency (P50)": metric_help_by_name("Total Pipeline Latency"),
-    "Total Pipeline Latency (P95)": metric_help_by_name("Total Pipeline Latency"),
+    "Total Pipeline Latency (P50)": (
+        metric_help_by_name("Total Pipeline Latency")
+        + "\n\n**참고:** 문구·이미지는 **동시에** 돌아갑니다. 이미지가 더 오래 걸리면 "
+        "Total Pipeline ≈ Image Pipeline Total 이 됩니다 (순차 합이 아님)."
+    ),
+    "Total Pipeline Latency (P95)": (
+        metric_help_by_name("Total Pipeline Latency")
+        + "\n\n**참고:** 문구·이미지는 **동시에** 돌아갑니다."
+    ),
     "Pipeline Success Rate": metric_help_by_name("Pipeline Success Rate"),
     "Partial Success Rate": metric_help_by_name("Partial Success Rate"),
     "Image Generation Latency (P50)": metric_help_by_name("Image Generation Latency"),

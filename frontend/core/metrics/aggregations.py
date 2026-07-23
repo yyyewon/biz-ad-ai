@@ -126,7 +126,7 @@ def format_ms(value: float | None) -> str:
         return f"{minutes}분 {seconds:.1f}초"
 
     if value >= 1000:
-        return f"{value / 1000:.1f}초"
+        return f"{value / 1000:.2f}초"
 
     return f"{value:.0f}ms"
 
