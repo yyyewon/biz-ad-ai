@@ -20,7 +20,7 @@ dev backend (8013 등) ──┐
 
 ---
 
-## 1. VM 공통 (최초 1회)
+## 1. VM 공통 (최초 1회) - 완료
 
 ```bash
 sudo mkdir -p /opt/biz-ad-ai-team-logs
@@ -29,16 +29,20 @@ sudo chmod 1777 /opt/biz-ad-ai-team-logs
 
 ---
 
+
+
 ## 2. 개인 dev (각자)
+
+
 
 ### 2.1 compose 복사·수정
 
 ```bash
-cp docker-compose.dev.proxy.example.yml docker-compose.dev.proxy.yml
-mkdir -p backend/logs-dev   # sudo 없을 때 기본 로그 폴더
+cp docker-compose.dev.proxy.example.yml docker-compose.dev.proxy.yml # 수정
+cp .env.example .env   # YOUR_USER · 포트 수정
 ```
 
-**로그 경로 (`.env` 또는 shell, 선택):**
+**로그 경로 (**`.env` **또는 shell, 선택):**
 
 ```env
 # sudo 없음 → 생략 (기본 ./backend/logs-dev, 본인만)
@@ -48,19 +52,23 @@ METRICS_LOG_HOST_PATH=/opt/biz-ad-ai-team-logs
 
 `docker-compose.dev.proxy.yml`에서 **본인 계정·포트**로 바꿉니다 (`spai0908` / `8013` / `8513` 예시):
 
-| 항목 | 값 |
-|---|---|
-| `container_name` | `biz-ad-ai-backend-dev-spai0908` 등 |
-| backend ports | `"8013:8010"` |
-| frontend ports | `"8513:8501"` |
-| `--root-path` | `/user/spai0908/proxy/8013` |
-| `API_BROWSER_BASE_URL` | `http://34.60.252.165:8000/user/spai0908/proxy/8013` |
-| `METRICS_SOURCE_USER` | `spai0908` |
-| `METRICS_BACKEND_PORT` | `8013` |
-| `METRICS_FRONTEND_PORT` | `8513` |
-| logs | 기본 `logs-dev` (팀 공용은 `.env`에 `METRICS_LOG_HOST_PATH=/opt/biz-ad-ai-team-logs`) |
+
+| 항목                      | 값                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| `container_name`        | `biz-ad-ai-backend-dev-spai0908` 등                                             |
+| backend ports           | `"8013:8010"`                                                                  |
+| frontend ports          | `"8513:8501"`                                                                  |
+| `--root-path`           | `/user/spai0908/proxy/8013`                                                    |
+| `API_BROWSER_BASE_URL`  | `http://34.60.252.165:8000/user/spai0908/proxy/8013`                           |
+| `METRICS_SOURCE_USER`   | `spai0908`                                                                     |
+| `METRICS_BACKEND_PORT`  | `8013`                                                                         |
+| `METRICS_FRONTEND_PORT` | `8513`                                                                         |
+| logs                    | 기본 `logs-dev` (팀 공용은 `.env`에 `METRICS_LOG_HOST_PATH=/opt/biz-ad-ai-team-logs`) |
+
 
 > `./backend/logs-dev` 는 **본인 dev만** 대시board에 보임. 팀 합산은 `/opt/...` 필요.
+
+
 
 ### 2.2 `frontend/.env`
 
@@ -68,13 +76,15 @@ METRICS_LOG_HOST_PATH=/opt/biz-ad-ai-team-logs
 API_BASE_URL=http://backend:8010
 ```
 
+
+
 ### 2.3 실행
 
 ```bash
 docker compose \
   -f docker-compose.yml \
   -f docker-compose.dev.proxy.yml \
-  -p biz-ad-ai-dev-spai0908 \
+  -p biz-ad-ai-dev-본인계정 \
   up -d --build
 ```
 
@@ -83,7 +93,9 @@ docker compose \
 
 ---
 
-## 3. 배포 prod
+
+
+## 3. 배포 prod - 완료
 
 VM `/opt/biz-ad-ai/.env`에 추가:
 
@@ -104,6 +116,8 @@ docker compose up -d --build
 
 ---
 
+
+
 ## 4. 확인
 
 ```bash
@@ -118,24 +132,18 @@ docker ps --filter name=biz-ad-ai-metrics-dev-shared
 
 ---
 
-## 자주 하는 실수
 
-| 증상 | 해결 |
-|---|---|
-| 대시보드 비어 있음 | backend volume을 `/opt/biz-ad-ai-team-logs:/app/logs`로 |
-| 배포 로그만 없음 | `/opt/biz-ad-ai/.env`에 `METRICS_LOG_HOST_PATH` 추가 |
-| 8555 접속 불가 | metrics 컨테이너 1개 up |
-| 프론트 API 실패 | `frontend/.env` → `API_BASE_URL=http://backend:8010` |
-
----
 
 ## 관련 파일
 
-| 파일 | Git | 비고 |
-|---|---|---|
-| `docker-compose.dev.proxy.example.yml` | O | 템플릿 |
-| `docker-compose.dev.proxy.yml` | X | 본인 dev 설정 |
-| `frontend/.env` | X | Docker dev용 API URL |
-| `/opt/biz-ad-ai/.env` | X | 배포 METRICS 설정 |
+
+| 파일                                     | Git | 비고                                |
+| -------------------------------------- | --- | --------------------------------- |
+| `docker-compose.dev.proxy.example.yml` | O   | 템플릿                               |
+| `.env.example`                         | O   | `cp .env.example .env` 후 본인 계정·포트 |
+| `docker-compose.dev.proxy.yml`         | X   | 본인 dev 설정                         |
+| `frontend/.env`                        | X   | Docker dev용 API URL               |
+| `/opt/biz-ad-ai/.env`                  | X   | 배포 METRICS 설정                     |
+
 
 더 자세한 dev 실행: [jupyterlab-dev-server-guide.md](./jupyterlab-dev-server-guide.md)
