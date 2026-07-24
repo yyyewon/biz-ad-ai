@@ -4,8 +4,18 @@ JSONL performance / quality log loader for the metrics dashboard.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+_PROVIDER_REQUEST_PREFIXES = (
+    "hf-boogu-gen-",
+    "hf-sdxl-gen-",
+    "hf-sd15-gen-",
+    "img-",
+)
+_PIPELINE_REQUEST_PREFIX = "gen-"
+_REQUEST_CLUSTER_WINDOW_SEC = 120.0
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -85,18 +95,126 @@ def unique_extra_values(records: list[dict[str, Any]], key: str) -> list[str]:
     return ordered
 
 
+def _parse_timestamp(record: dict[str, Any]) -> float | None:
+    timestamp = record.get("timestamp")
+    if not isinstance(timestamp, str) or not timestamp.strip():
+        return None
+    try:
+        return datetime.fromisoformat(timestamp.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _record_times(records: list[dict[str, Any]], request_id: str) -> list[float]:
+    return [
+        parsed
+        for record in records
+        if str(record.get("request_id")) == request_id
+        for parsed in (_parse_timestamp(record),)
+        if parsed is not None
+    ]
+
+
+def resolve_request_id_cluster(
+    records: list[dict[str, Any]],
+    request_id: str,
+    *,
+    window_sec: float = _REQUEST_CLUSTER_WINDOW_SEC,
+) -> set[str]:
+    """
+    Join pipeline request ids (`gen-*`) with provider-local ids (`hf-boogu-gen-*`).
+
+    Older logs recorded Boogu inference under a separate request_id, so filtering
+    by either id should return the full run.
+    """
+
+    cluster = {request_id}
+
+    if request_id.startswith(_PIPELINE_REQUEST_PREFIX):
+        run_times = _record_times(records, request_id)
+        if not run_times:
+            return cluster
+
+        start = min(run_times) - window_sec
+        end = max(run_times) + window_sec
+        for record in records:
+            candidate = str(record.get("request_id") or "")
+            if not candidate.startswith(_PROVIDER_REQUEST_PREFIXES):
+                continue
+            parsed = _parse_timestamp(record)
+            if parsed is not None and start <= parsed <= end:
+                cluster.add(candidate)
+        return cluster
+
+    if request_id.startswith(_PROVIDER_REQUEST_PREFIXES):
+        provider_times = _record_times(records, request_id)
+        if not provider_times:
+            return cluster
+
+        center = sum(provider_times) / len(provider_times)
+        for record in records:
+            candidate = str(record.get("request_id") or "")
+            if not candidate.startswith(_PIPELINE_REQUEST_PREFIX):
+                continue
+            parsed = _parse_timestamp(record)
+            if parsed is not None and abs(parsed - center) <= window_sec:
+                cluster.add(candidate)
+
+        for pipeline_id in list(cluster):
+            if pipeline_id.startswith(_PIPELINE_REQUEST_PREFIX):
+                cluster.update(
+                    resolve_request_id_cluster(
+                        records,
+                        pipeline_id,
+                        window_sec=window_sec,
+                    )
+                )
+        return cluster
+
+    return cluster
+
+
+def filter_records_by_request_cluster(
+    records: list[dict[str, Any]],
+    request_ids: set[str],
+) -> list[dict[str, Any]]:
+    return [
+        record
+        for record in records
+        if str(record.get("request_id")) in request_ids
+    ]
+
+
 def unique_request_ids(records: list[dict[str, Any]]) -> list[str]:
+    """
+    Pipeline run ids (`gen-*`) first, then orphan provider ids for legacy logs.
+    """
+
     seen: set[str] = set()
-    ordered: list[str] = []
+    pipeline_ids: list[str] = []
+    other_ids: list[str] = []
+
+    for record in filter_records(records, stage="total_pipeline"):
+        request_id = record.get("request_id")
+        if not request_id:
+            continue
+        text = str(request_id)
+        if text in seen:
+            continue
+        seen.add(text)
+        pipeline_ids.append(text)
 
     for record in records:
         request_id = record.get("request_id")
-        if not request_id or request_id in seen:
+        if not request_id:
             continue
-        seen.add(str(request_id))
-        ordered.append(str(request_id))
+        text = str(request_id)
+        if text in seen:
+            continue
+        seen.add(text)
+        other_ids.append(text)
 
-    return ordered
+    return pipeline_ids + other_ids
 
 
 def unique_profile_values(
@@ -204,9 +322,14 @@ def apply_dashboard_filters(
     performance 의 request_id 로 join 한다.
     """
 
+    if request_id is not None:
+        request_ids = resolve_request_id_cluster(performance_records, request_id)
+        perf = filter_records_by_request_cluster(performance_records, request_ids)
+    else:
+        perf = list(performance_records)
+
     perf = filter_records(
-        performance_records,
-        request_id=request_id,
+        perf,
         source_user=source_user,
         backend_port=backend_port,
         frontend_port=frontend_port,

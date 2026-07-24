@@ -43,6 +43,7 @@ class ImageGenerationProvider(ABC):
         render_mode: ImageRenderMode = "photo_restyle",
         negative_prompt: str | None = None,
         img2img_strength: float | None = None,
+        request_id: str | None = None,
     ) -> list[bytes]:
         """
         입력 이미지 bytes를 기반으로 광고 이미지 bytes 목록을 생성한다.

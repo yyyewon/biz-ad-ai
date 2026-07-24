@@ -15,7 +15,8 @@ from app.core.model_config import (
 )
 from app.schemas.food_type import FoodType
 from app.schemas.image_ad import ImageAdRequest
-from app.services.eval.clip_quality_eval import schedule_clip_quality_eval
+from app.services.eval.clip_quality_eval import run_clip_quality_eval
+from app.utils.gpu_resource_manager import release_all_generation_gpu_resources
 from app.services.pipelines.food_type_resolver import require_food_type
 from app.services.pipelines.image_pipeline import generate_image_ads
 from app.services.pipelines.text_pipeline import run_text_pipeline
@@ -294,6 +295,8 @@ async def run_generate_pipeline(
         image_model_info=image_model_info,
     )
 
+    image_gpu_touched = False
+
     try:
 
         images: list[str] = []
@@ -305,6 +308,7 @@ async def run_generate_pipeline(
         clip_eval_context: dict[str, Any] | None = None
 
         if image_bytes:
+            image_gpu_touched = True
             resolved_food_type = require_food_type(food)
             poster_headline = resolve_poster_headline(purpose, tone)
             image_payload = _build_image_payload(
@@ -608,7 +612,7 @@ async def run_generate_pipeline(
         )
 
         if clip_eval_context is not None:
-            schedule_clip_quality_eval(
+            await run_clip_quality_eval(
                 request_id=pipeline_request_id,
                 **clip_eval_context,
             )
@@ -663,3 +667,10 @@ async def run_generate_pipeline(
                 "error": str(exc),
             },
         ) from exc
+
+    finally:
+        if image_gpu_touched:
+            await asyncio.to_thread(
+                release_all_generation_gpu_resources,
+                reason="generate_pipeline_finished",
+            )

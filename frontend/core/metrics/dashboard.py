@@ -169,6 +169,7 @@ def _render_sidebar_filters(all_records: list) -> dict[str, str | None]:
     selected_request = st.sidebar.selectbox(
         "요청 ID (request_id)",
         options=[_FILTER_ALL] + unique_request_ids(all_records)[::-1],
+        help="API run은 `gen-*` 입니다. 예전 로그의 `hf-boogu-gen-*` 도 같은 run과 묶어 표시합니다.",
     )
 
     st.sidebar.divider()

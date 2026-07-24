@@ -32,12 +32,14 @@ class FakeImageProvider:
         render_mode: str | None = None,
         negative_prompt: str | None = None,
         img2img_strength: float | None = None,
+        request_id: str | None = None,
     ) -> list[bytes]:
         self.calls.append(
             {
                 "input_bytes_len": len(input_image_bytes),
                 "prompt": prompt,
                 "num_images": num_images,
+                "request_id": request_id,
                 "has_mask": bool(mask_image_bytes),
             }
         )

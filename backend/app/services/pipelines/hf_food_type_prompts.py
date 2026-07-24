@@ -71,6 +71,7 @@ _HF_NEGATIVE_FOOD_CORE = _sentence(
     "Do not add exaggerated gloss, oil, smoke, toppings, foam, cream, or condensation "
     "that is not in the original photo",
     "Do not oversaturate food colors",
+    "Do not make chocolate, ganache, or cream look plastic, waxy, or CGI",
 )
 
 _HF_NEGATIVE_TOP_DOWN = _sentence(
@@ -85,7 +86,7 @@ _HF_NEGATIVE_FOOD_PRESERVATION = _sentence(
 
 HF_NEGATIVE_CLUTTER = _sentence(
     "Do not keep empty plates, water cups or glasses, napkins, call bells, receipts, "
-    "or unrelated drinks and table clutter",
+    "menus, random forks lying in crumbs, or unrelated drinks and table clutter",
 )
 
 HF_NEGATIVE_COMMON = _sentence(
@@ -232,9 +233,24 @@ _HF_STUDIO_RICE_DISH_SUBJECT = _sentence(
     "Keep rice, noodle, and topping layers visible with natural colors",
 )
 
+_HF_DESSERT_TEXTURE_DETAIL = _sentence(
+    "Preserve natural sponge, cream, ganache, and layer texture with realistic matte and gloss balance",
+    "Keep chocolate toppings looking like real food, not plastic, waxy, or CGI",
+    "Preserve readable cake layers, crumb structure, and topping detail",
+)
+
+_HF_DESSERT_PROP_RULES = _sentence(
+    "Remove receipts, napkins, menus, call bells, and unrelated table clutter",
+    "Remove messy scattered crumbs from the plate unless they are intentional garnish on the dessert itself",
+    "If a fork or spoon is kept, place it neatly as a styled dessert prop, not a half-eaten casual snapshot",
+    "Use clean premium patisserie plating on a simple white or ceramic plate",
+)
+
 _HF_STUDIO_BREAD_DESSERT_SUBJECT = _sentence(
     _HF_STUDIO_FOOD_BASE,
-    "Preserve natural crumb, cream, and layer texture",
+    _HF_DESSERT_TEXTURE_DETAIL,
+    _HF_DESSERT_PROP_RULES,
+    "Style the dessert as a fresh menu hero shot, not a half-eaten table photo",
 )
 
 _HF_STUDIO_BURGER_SANDWICH_SUBJECT = _sentence(
@@ -293,7 +309,10 @@ _HF_STUDIO_RICE_DISH_SCENE = _sentence(
 
 _HF_STUDIO_BREAD_DESSERT_SCENE = _sentence(
     _HF_STUDIO_SCENE_BASE,
-    "Use a bright cafe-style table and soft diffused light with the full dessert in frame",
+    "Use a bright bakery-style marble or light wood table with soft window-side diffused light",
+    "Add a subtle natural contact shadow under the plate for depth",
+    "Keep the full dessert and plate in frame with elegant minimal styling",
+    "Let the dessert occupy about 58-68% of the frame",
 )
 
 _HF_STUDIO_BURGER_SANDWICH_SCENE = _sentence(
@@ -404,7 +423,10 @@ _HF_POSTER_RICE_DISH_FOOD = _sentence(
 
 _HF_POSTER_BREAD_DESSERT_FOOD = _sentence(
     _HF_POSTER_FOOD_BASE,
-    "Preserve crumb, cream, and topping detail",
+    _HF_DESSERT_TEXTURE_DETAIL,
+    _HF_DESSERT_PROP_RULES,
+    "Let the dessert slice occupy about 38-48% of frame height with a clean hero silhouette",
+    "Add a soft natural drop shadow under the plate on the poster backdrop",
 )
 
 _HF_POSTER_BURGER_SANDWICH_FOOD = _sentence(
@@ -493,8 +515,35 @@ _HF_REELS_SOUP_STEW_FOOD = _sentence(
     "Use a modest tighter crop if needed while keeping the stew hero and side dishes readable",
 )
 
+_HF_REELS_BREAD_DESSERT_FOOD = _sentence(
+    _HF_SUBJECT_HERO_REELS,
+    _HF_DESSERT_TEXTURE_DETAIL,
+    _HF_DESSERT_PROP_RULES,
+    "Let the dessert occupy about 60-72% of the frame as the clear hero",
+    "Use a modest tighter crop if needed while keeping layers and toppings readable",
+)
+
+_HF_REELS_BREAD_DESSERT_SCENE = _sentence(
+    "Transform the scene into a bright, cozy patisserie or dessert cafe in-store photo",
+    "Use warm window light from one side so plate shadow and food lighting match the background",
+    "Use a clean wood or marble cafe table with subtle patisserie interior blur",
+    "If the reference background is plain or mismatched, replace it with a coherent cafe interior",
+    "The dessert must sit naturally on the table with matching perspective, shadow, and color temperature",
+    "Do not replace the scene with a studio sweep or flat solid-color backdrop",
+    "Do not include people",
+    "Leave the bottom-left 20% relatively empty for later text overlay",
+)
+
+_HF_REELS_BREAD_DESSERT_REALISM_EXTRA = _sentence(
+    "Keep an authentic in-store smartphone single-shot look rather than a pasted composite",
+    "The dessert must look naturally placed in the cafe scene with consistent lighting and shadow",
+    "Preserve natural food texture for sponge, cream, ganache, and toppings",
+    "Do not add fake bokeh, plastic sheen, beauty-filter smoothing, or a CGI advertisement look",
+)
+
 HF_FOOD_REELS_SUBJECT_RULES: dict[FoodType, str] = {
     "soup_stew": _HF_REELS_SOUP_STEW_FOOD,
+    "bread_dessert": _HF_REELS_BREAD_DESSERT_FOOD,
     "coffee_drink": _sentence(
         _HF_SUBJECT_HERO_REELS,
         _HF_COFFEE_DRINK_RULES,
@@ -525,6 +574,7 @@ HF_REELS_SCENE_RULES = _sentence(
 
 HF_FOOD_REELS_SCENE_RULES: dict[FoodType, str] = {
     "soup_stew": _HF_REELS_SOUP_STEW_SCENE,
+    "bread_dessert": _HF_REELS_BREAD_DESSERT_SCENE,
 }
 
 HF_REELS_SCENE_RULES_FLEXIBLE = _sentence(
@@ -551,6 +601,7 @@ _HF_REELS_SOUP_STEW_REALISM_EXTRA = _sentence(
 
 HF_FOOD_REELS_REALISM_EXTRA: dict[FoodType, str] = {
     "soup_stew": _HF_REELS_SOUP_STEW_REALISM_EXTRA,
+    "bread_dessert": _HF_REELS_BREAD_DESSERT_REALISM_EXTRA,
 }
 
 _HF_REELS_INSTRUCTION_TEMPLATE = """

@@ -589,6 +589,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
         img2img_strength: float | None = None,
         image_guidance_scale: float | None = None,
         text_guidance_scale: float | None = None,
+        request_id: str | None = None,
     ) -> list[bytes]:
         _ = (mask_image_bytes, img2img_strength)
         return await run_in_threadpool(
@@ -601,6 +602,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             negative_prompt=negative_prompt,
             image_guidance_scale=image_guidance_scale,
             text_guidance_scale=text_guidance_scale,
+            request_id=request_id,
         )
 
     def _generate_sync(
@@ -614,6 +616,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
         negative_prompt: str | None,
         image_guidance_scale: float | None = None,
         text_guidance_scale: float | None = None,
+        request_id: str | None = None,
     ) -> list[bytes]:
         if not input_image_bytes:
             raise AppException(
@@ -658,7 +661,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             else float(text_guidance_scale)
         )
         device = self._resolve_device()
-        request_id = f"hf-boogu-gen-{uuid.uuid4().hex[:10]}"
+        metric_request_id = request_id or f"hf-boogu-gen-{uuid.uuid4().hex[:10]}"
         started = time.perf_counter()
 
         reference_image = ImageOps.exif_transpose(
@@ -691,7 +694,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                     "hf_boogu_edit_inference_started | request_id={} | "
                     "sequential_offload={} | cpu_offload={} | gpu_allocated_gb={} | "
                     "gpu_reserved_gb={} | num_inference_steps={}",
-                    request_id,
+                    metric_request_id,
                     load_meta.get("sequential_offload_enabled"),
                     load_meta.get("cpu_offload_enabled"),
                     memory_before.get("gpu_memory_allocated_gb"),
@@ -746,7 +749,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             record_performance_metric(
                 pipeline="hf_boogu_edit",
                 stage="inference",
-                request_id=request_id,
+                request_id=metric_request_id,
                 provider="hf",
                 model=self._model_key,
                 elapsed_ms=elapsed_ms,
@@ -780,7 +783,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             record_performance_metric(
                 pipeline="hf_boogu_edit",
                 stage="inference",
-                request_id=request_id,
+                request_id=metric_request_id,
                 provider="hf",
                 model=self._model_key,
                 elapsed_ms=elapsed_ms,

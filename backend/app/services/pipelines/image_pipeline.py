@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import gc
 import time
 import uuid
 from typing import Awaitable, Callable, Optional
@@ -96,9 +95,11 @@ def _prepare_edit_source_bytes(
 
 _STUDIO_SUBJECT_SCALE_BY_FOOD: dict[str, float] = {
     "soup_stew": 0.85,
+    "bread_dessert": 0.82,
 }
 _REELS_ZOOM_BY_FOOD: dict[str, float] = {
     "soup_stew": 1.18,
+    "bread_dessert": 1.14,
 }
 _DEFAULT_STUDIO_SUBJECT_SCALE = 0.78
 _DEFAULT_REELS_ZOOM = 1.12
@@ -146,6 +147,7 @@ async def _generate_poster_with_retries(
             generate_kwargs["negative_prompt"] = negative_prompt
         if img2img_strength is not None:
             generate_kwargs["img2img_strength"] = img2img_strength
+        generate_kwargs["request_id"] = request_id
 
         image_bytes_list = await provider.generate(**generate_kwargs)
 
@@ -191,92 +193,9 @@ async def _generate_poster_with_retries(
 
 def _release_all_image_gpu_resources(provider: object, *, reason: str) -> None:
     """파이프라인 종료 후 Boogu/VLM/CLIP GPU 캐시를 모두 비운다."""
-    logger.info("image_pipeline_gpu_release_all | reason={}", reason)
+    from app.utils.gpu_resource_manager import release_all_generation_gpu_resources
 
-    release_gpu = getattr(provider, "release_gpu_resources", None)
-    if callable(release_gpu):
-        try:
-            release_gpu()
-        except Exception as exc:
-            logger.warning(
-                "image_pipeline_release_boogu_failed | error={}",
-                str(exc),
-            )
-
-    try:
-        from app.utils.poster_vlm import release_poster_vlm_gpu
-
-        release_poster_vlm_gpu()
-    except Exception as exc:
-        logger.warning(
-            "image_pipeline_release_vlm_failed | error={}",
-            str(exc),
-        )
-
-    try:
-        from app.services.providers.food_classifier_provider import (
-            food_classifier_provider,
-        )
-
-        food_classifier_provider.release_gpu()
-    except Exception as exc:
-        logger.warning(
-            "image_pipeline_release_food_classifier_failed | error={}",
-            str(exc),
-        )
-
-    try:
-        from app.utils.poster_layout import release_rembg_session
-
-        release_rembg_session()
-    except Exception as exc:
-        logger.warning(
-            "image_pipeline_release_rembg_failed | error={}",
-            str(exc),
-        )
-
-    try:
-        from app.services.providers.hf_boogu_edit_provider import (
-            HFBooguEditImageProvider,
-        )
-
-        HFBooguEditImageProvider._aggressive_cuda_cleanup()
-        gc.collect()
-        HFBooguEditImageProvider._aggressive_cuda_cleanup()
-
-        try:
-            from app.utils.poster_vlm import _finalize_cuda_release
-
-            _finalize_cuda_release()
-        except Exception:
-            pass
-
-        try:
-            import torch
-
-            snapshot = HFBooguEditImageProvider._memory_stats()
-            free_gb: float | None = None
-            total_gb: float | None = None
-            if torch.cuda.is_available():
-                free_bytes, total_bytes = torch.cuda.mem_get_info()
-                free_gb = round(free_bytes / (1024**3), 3)
-                total_gb = round(total_bytes / (1024**3), 3)
-            logger.info(
-                "image_pipeline_gpu_release_all_done | reason={} | "
-                "gpu_allocated_gb={} | gpu_reserved_gb={} | gpu_free_gb={} | gpu_total_gb={}",
-                reason,
-                snapshot.get("gpu_memory_allocated_gb"),
-                snapshot.get("gpu_memory_reserved_gb"),
-                free_gb,
-                total_gb,
-            )
-        except Exception:
-            logger.info("image_pipeline_gpu_release_all_done | reason={}", reason)
-    except Exception as exc:
-        logger.warning(
-            "image_pipeline_cuda_cleanup_failed | error={}",
-            str(exc),
-        )
+    release_all_generation_gpu_resources(reason=reason, provider=provider)
 
 
 async def generate_image_ads(
@@ -576,6 +495,16 @@ async def generate_image_ads(
                             item[4],
                         )
                         break
+
+            try:
+                from app.utils.poster_vlm import release_poster_vlm_gpu
+
+                release_poster_vlm_gpu()
+            except Exception as exc:
+                logger.warning(
+                    "image_pipeline_post_overlay_release_vlm_failed | error={}",
+                    str(exc),
+                )
 
         poster_image_bytes: list[bytes] = []
         applied_variants: list[ImageVariantType] = []

@@ -579,8 +579,10 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
         negative_prompt: str | None = None,
         render_mode: ImageRenderMode = "photo_restyle",
         img2img_strength: float | None = None,
+        request_id: str | None = None,
     ) -> list[bytes]:
         _ = mask_image_bytes
+        _ = request_id
         _ = render_mode
         _ = img2img_strength
 

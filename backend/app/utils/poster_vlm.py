@@ -149,6 +149,12 @@ def _force_module_off_gpu(module: object | None) -> None:
     if module is None:
         return
     try:
+        from accelerate.hooks import remove_hook_from_submodules
+
+        remove_hook_from_submodules(module)
+    except Exception:
+        pass
+    try:
         import torch
 
         if hasattr(module, "hf_device_map"):
@@ -280,6 +286,8 @@ def analyze_poster_design_with_vlm(
         )
         logger.warning("poster_vlm_failed | error={}", str(exc))
         return None
+    finally:
+        release_poster_vlm_gpu()
 
 
 def parse_poster_vlm_json(raw_text: str) -> dict | None:
@@ -532,6 +540,19 @@ def _get_vlm_model(*, model_id: str, settings: dict):
         )
         model.eval()
 
+        if device_setting == "cpu":
+            _force_module_off_gpu(model)
+
+        cuda_param_count = sum(
+            1 for param in model.parameters() if getattr(param, "is_cuda", False)
+        )
+        logger.info(
+            "poster_vlm_loaded | model_id={} | device_map={} | cuda_param_count={}",
+            model_id,
+            device_map,
+            cuda_param_count,
+        )
+
         _MODEL = model
         _PROCESSOR = processor
         log_model_memory_snapshot(
@@ -539,7 +560,6 @@ def _get_vlm_model(*, model_id: str, settings: dict):
             model_name=model_id,
             torch_module=torch,
         )
-        logger.info("poster_vlm_loaded | model_id={}", model_id)
         return _MODEL, _PROCESSOR
 
 
