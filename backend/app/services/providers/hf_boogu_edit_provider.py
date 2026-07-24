@@ -51,7 +51,9 @@ _PIPELINE_INFERENCE_LOCK = threading.Lock()
 DEFAULT_NEGATIVE_INSTRUCTION = (
     "blurry, low quality, distorted, deformed, duplicate food, bad anatomy, "
     "text artifacts, watermark, logo, signature, unreadable text, "
-    "oversaturated, plastic texture, fake 3d render"
+    "oversaturated, plastic texture, fake 3d render, "
+    "steam, vapor, smoke on iced drinks, overhead top-down angle change, "
+    "changed cup shape, wrong drink layers"
 )
 
 

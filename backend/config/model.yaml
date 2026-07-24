@@ -418,7 +418,7 @@ hf:
 
         num_inference_steps: 30
         text_guidance_scale: 5.0
-        image_guidance_scale: 1.0
+        image_guidance_scale: 1.5
         num_images_per_prompt: 1
 
         # VLM instruction encoder (Qwen3-VL) — vision token 절약

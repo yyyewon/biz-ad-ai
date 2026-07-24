@@ -60,8 +60,19 @@ def _sentence(*parts: str) -> str:
 
 HF_REALISM_RULES = _sentence(
     "Keep a real camera editorial food photo look with natural texture, gloss, and grain",
-    "Add steam only if the dish is hot",
+    "Do not add steam, vapor, or smoke unless it is already visible in the reference photo",
     "Do not use CGI, plastic sheen, HDR, neon colors, or beauty-filter smoothing",
+)
+
+_HF_NEGATIVE_FOOD_PRESERVATION = _sentence(
+    "Do not add steam, vapor, or smoke unless already visible in the reference photo",
+    "Do not change iced drinks into hot drinks or add steam to beverages with visible ice",
+    "Do not change the camera angle or perspective away from the reference",
+    "Do not switch to an overhead top-down view unless the reference is already top-down",
+    "Do not replace the cup, vessel, or drink layers with a different product",
+    "Do not add exaggerated gloss, oil, smoke, toppings, foam, cream, or condensation "
+    "that is not in the original photo",
+    "Do not oversaturate food colors",
 )
 
 HF_NEGATIVE_CLUTTER = _sentence(
@@ -85,29 +96,30 @@ HF_NEGATIVE_POSTER = _sentence(
     "Do not vertically center the food hero or let food occupy the upper 40% of the frame",
     "Do not create an oversized soup pot or giant ttukbaegi close-up filling the frame",
     HF_NEGATIVE_CLUTTER,
+    _HF_NEGATIVE_FOOD_PRESERVATION,
 )
 
 HF_NEGATIVE_REELS = _sentence(
     HF_NEGATIVE_COMMON,
     "Do not add hook text, captions, Korean or English letters, menu titles, prices, "
     "or store labels in the image pixels",
+    _HF_NEGATIVE_FOOD_PRESERVATION,
 )
 
 HF_NEGATIVE_STUDIO = _sentence(
     HF_NEGATIVE_COMMON,
-    "Do not add exaggerated gloss, oil, smoke, steam, toppings, foam, cream, or condensation "
-    "that is not in the original photo",
-    "Do not oversaturate food colors",
+    _HF_NEGATIVE_FOOD_PRESERVATION,
 )
 
 _HF_PRESERVE_FOOD_BASE = _sentence(
     "Preserve the main menu item, its toppings, and its serving vessel exactly as in the reference photo",
+    "Preserve the same camera angle, perspective, and viewing direction as the reference photo",
     "Do not add or remove food items, and do not float or crop the vessel unnaturally",
 )
 
 _HF_EXCLUDE_TABLE_CLUTTER = _sentence(
     "Remove empty plates, water cups and glasses, napkins, call bells, menus, unrelated drinks, "
-    "and other table clutter from the scene",
+    "and other table clutter around the hero item without repainting or altering the main menu item",
 )
 
 _HF_SUBJECT_HERO_COMMON = _sentence(
@@ -120,6 +132,7 @@ _HF_STUDIO_SCENE_BASE = _sentence(
     "Replace the casual dining setup with a clean studio food-photo look",
     "Use a tidy surface, soft even professional lighting, and an uncluttered background",
     "Use medium-wide framing with the food occupying about 55-65% of the frame",
+    "Preserve the reference camera angle and perspective; widen framing by extending the studio surface around the hero, not by re-shooting from a new angle",
     "Do not include people",
 )
 
@@ -131,6 +144,8 @@ _HF_STUDIO_FOOD_BASE = _sentence(
 
 _HF_POSTER_FOOD_BASE = _sentence(
     "Preserve the original main dish and keep the ordered menu item as the hero",
+    "Keep the reference camera angle and perspective; do not re-shoot from overhead unless the reference is top-down",
+    "Reposition the hero within the portrait frame by extending the designed background, not by changing the shoot angle",
     "Place the food in the lower third of the frame, not vertically centered",
     "Keep the visual mass center of the food below 60% of the frame height",
     "Do not add extra food",
@@ -157,7 +172,7 @@ Scene changes: {studio_scene_rules}
 
 Quality: {realism_rules}
 
-Make the food slightly more appetizing through lighting, background, and composition only. Do not change the food shape, portions, vessel, layering, or color away from the reference.
+Make the food slightly more appetizing through lighting and background only. Do not change the food shape, portions, vessel, layering, color, camera angle, or perspective away from the reference.
 
 The image must contain no readable text, numbers, labels, logos, or watermarks.
 Tone: {tone}.
@@ -167,6 +182,7 @@ _HF_STUDIO_SOUP_STEW_SUBJECT = _sentence(
     _HF_STUDIO_FOOD_BASE,
     "Keep the main pot and any side dishes that belong to the dish",
     "Preserve natural broth color",
+    "Preserve natural steam only if it is already visible in the reference photo",
 )
 
 _HF_STUDIO_FRIED_SUBJECT = _sentence(
@@ -194,10 +210,15 @@ _HF_STUDIO_BURGER_SANDWICH_SUBJECT = _sentence(
     "Keep bun, patty, vegetable, and sauce layers natural and not collapsed",
 )
 
+_HF_COFFEE_DRINK_PRESERVE = _sentence(
+    "Preserve the exact cup shape, drink color, layering, ice cubes, foam, straw, and lid exactly as in the reference",
+    "If ice cubes are visible in the reference, keep it an iced drink with no steam or vapor",
+    "Do not remove accessories that are already in the reference such as a straw or stirrer",
+)
+
 _HF_STUDIO_COFFEE_DRINK_SUBJECT = _sentence(
     _HF_STUDIO_FOOD_BASE,
-    "Preserve the cup shape and drink layers exactly as in the photo",
-    "Do not add foam or toppings that are not in the original",
+    _HF_COFFEE_DRINK_PRESERVE,
 )
 
 _HF_STUDIO_SOUP_STEW_SCENE = _sentence(
@@ -284,7 +305,7 @@ Background: {poster_background_rules}
 
 Quality: {realism_rules}
 
-Preserve the food shape and vessel from the reference. Redesign only the background, lighting, and composition. Do not add any typography in the image pixels.
+Preserve the exact camera angle, cup shape, drink layers, ice, and accessories from the reference. Redesign only the background, lighting, and portrait layout margins—not by re-photographing from a new angle. Do not add any typography in the image pixels.
 
 The image must contain no readable text, numbers, labels, logos, or watermarks.
 Tone: {tone}.
@@ -326,9 +347,8 @@ _HF_POSTER_BURGER_SANDWICH_FOOD = _sentence(
 
 _HF_POSTER_COFFEE_DRINK_FOOD = _sentence(
     _HF_POSTER_FOOD_BASE,
-    "Preserve cup shape and foam, ice, or beverage layers clearly",
-    "Do not add a straw, stirrer, or drinking accessories",
-    "Keep the open cup rim visible",
+    _HF_COFFEE_DRINK_PRESERVE,
+    "Keep the open cup rim visible without forcing a new overhead angle",
 )
 
 _HF_POSTER_SOUP_STEW_BACKGROUND = _sentence(
@@ -395,25 +415,33 @@ _HF_POSTER_TEMPLATE = _HF_POSTER_INSTRUCTION_TEMPLATE
 
 HF_REELS_FOOD_RULES = _sentence(
     _HF_SUBJECT_HERO_COMMON,
-    "Use an extreme close-up so the main dish fills about 70-85% of the frame",
+    "Use a modest tighter crop if needed while preserving the reference camera angle",
     "Keep side items only at the edges if needed",
 )
 
+HF_FOOD_REELS_SUBJECT_RULES: dict[FoodType, str] = {
+    "coffee_drink": _sentence(
+        _HF_SUBJECT_HERO_COMMON,
+        _HF_COFFEE_DRINK_PRESERVE,
+        "Use a modest tighter crop if needed while preserving the reference camera angle",
+    ),
+}
+
 HF_REELS_SCENE_RULES = _sentence(
-    "Preserve the original restaurant or store interior, table decor, lighting, and signage from the reference",
+    "Preserve the original restaurant or store interior, table decor, lighting, signage, and camera angle from the reference",
     "Shallow background blur is acceptable",
     "Do not replace the scene with a studio table or solid-color backdrop",
     "Make it look like a bright, sharp, appetizing smartphone restaurant reels thumbnail",
-    "Use a 45-degree or slight top-down angle",
+    "Do not force a 45-degree or top-down angle if the reference uses a different viewpoint",
     "Do not include people",
     "Leave the bottom-left 20% relatively empty for later text overlay",
 )
 
 HF_REELS_SCENE_RULES_FLEXIBLE = _sentence(
-    "Preserve the restaurant or store interior from the reference photo",
+    "Preserve the restaurant or store interior and camera angle from the reference photo",
     "The user may adjust lighting, mood, color, or table styling only within the same in-store location",
     "Do not replace the background with a studio or solid-color backdrop",
-    "Use an extreme close-up with the main dish filling about 70-85% of the frame",
+    "Use a modest tighter crop if needed while preserving the reference viewpoint",
     "Do not include people",
     "Leave the bottom-left 20% relatively empty for later text overlay",
 )
@@ -433,7 +461,7 @@ Scene: {reels_scene_rules}
 
 Quality: {realism_rules}. {reels_realism_extra}
 
-Keep the food appearance and store interior faithful to the reference. Make the food slightly more appetizing without changing what the dish is.
+Keep the food appearance, camera angle, and store interior faithful to the reference. Improve lighting only; do not change what the dish is or re-shoot from a new angle.
 
 Do not add hook text, captions, prices, store labels, or any readable text in the image pixels.
 Tone: {tone}.
@@ -467,8 +495,14 @@ def _lookup_hf_food_rules(
     food_type: FoodType,
     *,
     registry_name: str,
+    fallback: str | None = None,
 ) -> str:
-    return _require_hf(registry.get(food_type), f"{registry_name}[{food_type!r}]")
+    value = registry.get(food_type)
+    if value is not None:
+        return _require_hf(value, f"{registry_name}[{food_type!r}]")
+    if fallback is not None:
+        return _require_hf(fallback, f"{registry_name}_fallback")
+    return _require_hf(value, f"{registry_name}[{food_type!r}]")
 
 
 def _format_user_priority_block(extra_notes: str) -> str:
@@ -578,7 +612,12 @@ def build_hf_template_context(
                 store_location,
             ),
         ),
-        "reels_food_rules": _require_hf(HF_REELS_FOOD_RULES, "HF_REELS_FOOD_RULES"),
+        "reels_food_rules": _lookup_hf_food_rules(
+            HF_FOOD_REELS_SUBJECT_RULES,
+            food_type,
+            registry_name="HF_FOOD_REELS_SUBJECT_RULES",
+            fallback=HF_REELS_FOOD_RULES,
+        ),
         "reels_scene_rules": _build_hf_reels_scene_rules(extra_notes),
         "reels_realism_extra": _require_hf(HF_REELS_REALISM_EXTRA, "HF_REELS_REALISM_EXTRA"),
         "reels_hook_line": openai_prompts._build_reels_hook_line(  # noqa: SLF001

@@ -67,9 +67,9 @@ def _prepare_edit_source_bytes(
 
     if food_type and uses_custom_template(food_type, variant):
         if variant == "studio":
-            image = shrink_and_pad_for_wider_framing(image)
+            image = shrink_and_pad_for_wider_framing(image, subject_scale=0.78)
         elif variant == "instagram_feed":
-            image = zoom_center_crop(image, zoom_factor=1.28)
+            image = zoom_center_crop(image, zoom_factor=1.12)
 
         logger.info(
             "image_edit_source_reframed | food_type={} | variant={} | size={}",
