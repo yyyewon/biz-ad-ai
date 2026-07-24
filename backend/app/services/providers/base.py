@@ -58,3 +58,7 @@ class ImageGenerationProvider(ABC):
         """
         배경 이미지 bytes 목록을 생성한다.
         """
+
+    def release_gpu_resources(self) -> None:
+        """Optional hook to free GPU memory before a downstream GPU stage."""
+        return None

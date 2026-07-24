@@ -236,7 +236,34 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             torch.cuda.empty_cache()
         logger.info("hf_boogu_pipeline_evicted")
 
-    def _load_fp8_transformer(self, *, dtype: Any) -> Any:
+    @classmethod
+    def release_resident_pipeline(cls) -> None:
+        """Drop cached Boogu weights from GPU (e.g. before poster VLM overlay)."""
+        cls._evict_resident_pipeline()
+
+    def release_gpu_resources(self) -> None:
+        self.release_resident_pipeline()
+
+    def _resolve_local_pipeline_path(self) -> str:
+        """
+        Boogu custom pipeline은 Hub repo id 직접 로드 시 diffusers가
+        model_index.json custom .py 경로를 찾지 못할 수 있다.
+        snapshot_download 로컬 디렉터리에서 로드한다 (Boogu inference.py 와 동일).
+        """
+        from huggingface_hub import snapshot_download
+
+        local_path = snapshot_download(
+            repo_id=self._model_id,
+            token=self._hf_token or None,
+        )
+        logger.info(
+            "hf_boogu_edit_local_snapshot | model_id={} | local_path={}",
+            self._model_id,
+            local_path,
+        )
+        return local_path
+
+    def _load_fp8_transformer(self, *, local_pipeline_path: str, dtype: Any) -> Any:
         assert BooguImageTransformer2DModel is not None
         if "fp8" not in self._model_id.lower():
             raise AppException(
@@ -250,12 +277,11 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 },
             )
         _disable_deepgemm_for_fp8_vlm()
+        fp8_transformer_path = os.path.join(local_pipeline_path, "transformer")
         return BooguImageTransformer2DModel.from_pretrained(
-            self._model_id,
-            subfolder="transformer",
+            fp8_transformer_path,
             torch_dtype=dtype,
             use_safetensors=False,
-            token=self._hf_token or None,
             low_cpu_mem_usage=self._low_cpu_mem_usage,
         )
 
@@ -324,6 +350,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             pipe: Any | None = None
 
             try:
+                _disable_deepgemm_for_fp8_vlm()
                 logger.info(
                     "hf_boogu_edit_pipeline_loading | model_key={} | model_id={} | "
                     "device={} | dtype={} | use_fp8_weights={}",
@@ -337,19 +364,22 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 load_kwargs: dict[str, Any] = {
                     "torch_dtype": dtype,
                     "trust_remote_code": True,
-                    "token": self._hf_token or None,
                     "low_cpu_mem_usage": self._low_cpu_mem_usage,
                 }
+                local_pipeline_path = self._resolve_local_pipeline_path()
                 if self._use_fp8_weights:
-                    fp8_transformer = self._load_fp8_transformer(dtype=dtype)
+                    fp8_transformer = self._load_fp8_transformer(
+                        local_pipeline_path=local_pipeline_path,
+                        dtype=dtype,
+                    )
                     pipe = BooguImagePipeline.from_pretrained(
-                        self._model_id,
+                        local_pipeline_path,
                         transformer=fp8_transformer,
                         **load_kwargs,
                     )
                 else:
                     pipe = BooguImagePipeline.from_pretrained(
-                        self._model_id,
+                        local_pipeline_path,
                         **load_kwargs,
                     )
 
@@ -565,6 +595,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
 
                 if torch is not None and torch.cuda.is_available():
                     torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
 
             images = self._normalize_output_images(result)
             if not images:

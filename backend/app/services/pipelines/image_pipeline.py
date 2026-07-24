@@ -227,7 +227,7 @@ async def generate_image_ads(
 
         async def _generate_variant_image(
             idx: int,
-        ) -> tuple[int, ImageVariantType, bytes, str, int, int | None]:
+        ) -> tuple[int, ImageVariantType, bytes, str, int]:
             variant = _resolve_image_variant(idx)
             variant_size = get_variant_image_size(variant)
             render_mode = resolve_variant_render_mode(
@@ -342,25 +342,6 @@ async def generate_image_ads(
                 )
 
             poster_bytes = variant_outputs[0]
-            overlay_latency_ms: int | None = None
-
-            if variant_uses_pil_text_overlay(payload.food_type, variant):
-                overlay_started = time.perf_counter()
-                poster_bytes = await asyncio.to_thread(
-                    apply_variant_text_overlay,
-                    poster_bytes,
-                    payload=payload,
-                    variant=variant,
-                )
-                overlay_latency_ms = int(
-                    (time.perf_counter() - overlay_started) * 1000
-                )
-                logger.info(
-                    "image_text_overlay_applied | variant={} | food_type={} | latency_ms={}",
-                    variant,
-                    payload.food_type,
-                    overlay_latency_ms,
-                )
 
             return (
                 idx,
@@ -368,16 +349,13 @@ async def generate_image_ads(
                 poster_bytes,
                 variant_prompt,
                 provider_latency_ms,
-                overlay_latency_ms,
             )
 
         tasks = [
             asyncio.create_task(_generate_variant_image(idx))
             for idx in range(payload.num_images)
         ]
-        variant_results: list[
-            tuple[int, ImageVariantType, bytes, str, int, int | None]
-        ] = []
+        variant_results: list[tuple[int, ImageVariantType, bytes, str, int]] = []
 
         try:
             for completed in asyncio.as_completed(tasks):
@@ -401,6 +379,51 @@ async def generate_image_ads(
 
         variant_results.sort(key=lambda item: item[0])
 
+        overlay_latencies_by_idx: dict[int, int] = {}
+        overlay_targets = [
+            (idx, variant, poster_bytes)
+            for idx, variant, poster_bytes, _, _ in variant_results
+            if variant_uses_pil_text_overlay(payload.food_type, variant)
+        ]
+        if overlay_targets:
+            release_gpu = getattr(provider, "release_gpu_resources", None)
+            if callable(release_gpu):
+                logger.info(
+                    "image_text_overlay_deferred | reason=free_gpu_before_poster_vlm | "
+                    "overlay_count={}",
+                    len(overlay_targets),
+                )
+                release_gpu()
+
+            for idx, variant, poster_bytes in overlay_targets:
+                overlay_started = time.perf_counter()
+                overlaid_bytes = await asyncio.to_thread(
+                    apply_variant_text_overlay,
+                    poster_bytes,
+                    payload=payload,
+                    variant=variant,
+                )
+                overlay_latency_ms = int(
+                    (time.perf_counter() - overlay_started) * 1000
+                )
+                overlay_latencies_by_idx[idx] = overlay_latency_ms
+                logger.info(
+                    "image_text_overlay_applied | variant={} | food_type={} | latency_ms={}",
+                    variant,
+                    payload.food_type,
+                    overlay_latency_ms,
+                )
+                for result_idx, item in enumerate(variant_results):
+                    if item[0] == idx:
+                        variant_results[result_idx] = (
+                            item[0],
+                            item[1],
+                            overlaid_bytes,
+                            item[3],
+                            item[4],
+                        )
+                        break
+
         poster_image_bytes: list[bytes] = []
         applied_variants: list[ImageVariantType] = []
         variant_prompts: dict[str, str] = {}
@@ -412,12 +435,12 @@ async def generate_image_ads(
             poster_bytes,
             variant_prompt,
             provider_latency_ms,
-            overlay_latency_ms,
         ) in variant_results:
             poster_image_bytes.append(poster_bytes)
             applied_variants.append(variant)
             variant_prompts[variant] = variant_prompt
             provider_latencies_ms.append(provider_latency_ms)
+            overlay_latency_ms = overlay_latencies_by_idx.get(idx)
             if overlay_latency_ms is not None:
                 overlay_latencies_ms.append(overlay_latency_ms)
 

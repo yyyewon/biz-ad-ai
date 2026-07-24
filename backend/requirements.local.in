@@ -56,6 +56,8 @@ cache-dit>=1.3,<2
 einops>=0.7
 omegaconf>=2.3,<3
 webdataset>=1.0,<2
+# Boogu FP8 VLM (Qwen3-VL): transformers finegrained_fp8 requires kernels 0.15.x
+kernels>=0.15.2,<0.16
 # Poster design VLM (Qwen2-VL GPTQ)
 qwen-vl-utils
 optimum
