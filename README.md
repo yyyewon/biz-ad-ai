@@ -88,13 +88,6 @@ Provider는 `config/model.yaml`의 `active_profile`로 OpenAI / HuggingFace / Hy
 | 루트 `.env` | `BACKEND_MEMORY_LIMIT` | 백엔드 컨테이너 RAM 제한(기본 `12g`) |
 | 루트 `.env` | `BACKEND_MEMORY_SWAP_LIMIT` | RAM+swap 제한(기본 `16g`) |
 
-
-### 실행
-
-```bash
-docker compose up --build
-```
-
 ## 테스트
 
 ```bash

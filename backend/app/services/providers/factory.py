@@ -94,6 +94,16 @@ def get_image_provider() -> ImageGenerationProvider:
         # ------------------------------------------------------------
         provider_type = str(model_settings.get("provider_type", "sd3")).lower()
 
+        if provider_type == "sdxl_ip_adapter":
+            from app.services.providers.hf_sdxl_ip_adapter_provider import (
+                HFSDXLIPAdapterImageProvider,
+            )
+
+            return HFSDXLIPAdapterImageProvider(
+                model_name=resolved["model_name"],
+                model_settings=model_settings,
+            )
+
         if provider_type == "sdxl_lightning":
             from app.services.providers.hf_sdxl_lightning_provider import (
                 HFSDXLLightningImageProvider,

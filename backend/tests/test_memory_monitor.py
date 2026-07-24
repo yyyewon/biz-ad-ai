@@ -33,13 +33,21 @@ def test_cgroup_v2_reads_limit_current_and_available(monkeypatch):
         {
             memory_monitor._CGROUP_V2_MEMORY_MAX: str(12 * _GIB),
             memory_monitor._CGROUP_V2_MEMORY_CURRENT: str(3 * _GIB),
+            memory_monitor._CGROUP_V2_MEMORY_STAT: (
+                f"anon {_GIB}\nfile {2 * _GIB}\n"
+                f"inactive_file {int(1.5 * _GIB)}\nactive_file {int(0.5 * _GIB)}\n"
+            ),
         },
     )
 
     assert memory_monitor._read_cgroup_v2_memory() == {
         "cgroup_memory_limit_gb": 12.0,
         "cgroup_memory_current_gb": 3.0,
-        "cgroup_memory_available_gb": 9.0,
+        "cgroup_memory_available_gb": 11.0,
+        "cgroup_inactive_file_gb": 1.5,
+        "cgroup_active_file_gb": 0.5,
+        "cgroup_reclaimable_file_gb": 2.0,
+        "cgroup_working_set_gb": 1.0,
     }
 
 
