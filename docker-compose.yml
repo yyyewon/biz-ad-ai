@@ -63,6 +63,7 @@ services:
       - METRICS_FRONTEND_PORT=${METRICS_FRONTEND_PORT:-8501}
       - METRICS_DEPLOY_ENV=${METRICS_DEPLOY_ENV:-prod}
       - U2NET_HOME=/models/rembg
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     volumes:
       - backend_data:/app/data
       # VM: METRICS_LOG_HOST_PATH=/opt/biz-ad-ai-team-logs → dev Metrics(8555)와 공유

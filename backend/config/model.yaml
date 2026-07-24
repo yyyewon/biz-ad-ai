@@ -418,7 +418,7 @@ hf:
 
         num_inference_steps: 30
         text_guidance_scale: 5.0
-        image_guidance_scale: 1.0
+        image_guidance_scale: 1.5
         num_images_per_prompt: 1
 
         # VLM instruction encoder (Qwen3-VL) — vision token 절약
@@ -427,7 +427,8 @@ hf:
         max_sequence_length: 1280
         truncate_instruction_sequence: false
 
-        # L4 24GB: fp8 + offload 없이 1K
+        # L4 24GB: fp8 ~22GB. competing model 해제 + expandable_segments 로 OOM 완화.
+        # sequential_cpu_offload 는 GPU 거의 안 쓰고 CPU에서 극단적으로 느림(멈춘 것처럼 보임).
         cpu_offload_enabled: false
         enable_sequential_cpu_offload: false
         low_cpu_mem_usage: true

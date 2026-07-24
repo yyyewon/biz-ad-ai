@@ -51,7 +51,9 @@ _PIPELINE_INFERENCE_LOCK = threading.Lock()
 DEFAULT_NEGATIVE_INSTRUCTION = (
     "blurry, low quality, distorted, deformed, duplicate food, bad anatomy, "
     "text artifacts, watermark, logo, signature, unreadable text, "
-    "oversaturated, plastic texture, fake 3d render"
+    "oversaturated, plastic texture, fake 3d render, "
+    "steam, vapor, smoke on iced drinks, overhead top-down angle change, "
+    "changed cup shape, wrong drink layers"
 )
 
 
@@ -105,6 +107,18 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
         )
         self._image_guidance_scale = float(
             self._settings.get("image_guidance_scale", 1.0)
+        )
+        self._poster_image_guidance_scale = float(
+            self._settings.get(
+                "poster_image_guidance_scale",
+                self._image_guidance_scale,
+            )
+        )
+        self._poster_text_guidance_scale = float(
+            self._settings.get(
+                "poster_text_guidance_scale",
+                self._text_guidance_scale,
+            )
         )
 
         self._max_vlm_input_pil_pixels = int(
@@ -223,18 +237,63 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             return default_width, default_height
         return width, height
 
+    @staticmethod
+    def _release_competing_gpu_models() -> None:
+        """Free GPU memory held by poster VLM / food classifier before Boogu (~22GB)."""
+        try:
+            from app.utils.poster_vlm import release_poster_vlm_gpu
+
+            release_poster_vlm_gpu()
+        except Exception as exc:
+            logger.warning(
+                "hf_boogu_release_poster_vlm_failed | error={}",
+                str(exc),
+            )
+        try:
+            from app.services.providers.food_classifier_provider import (
+                food_classifier_provider,
+            )
+
+            food_classifier_provider.release_gpu()
+        except Exception as exc:
+            logger.warning(
+                "hf_boogu_release_food_classifier_failed | error={}",
+                str(exc),
+            )
+
+    @staticmethod
+    def _is_cuda_oom(exc: BaseException) -> bool:
+        name = exc.__class__.__name__
+        return name == "OutOfMemoryError" or "out of memory" in str(exc).lower()
+
+    @classmethod
+    def _aggressive_cuda_cleanup(cls) -> None:
+        gc.collect()
+        if torch is None or not torch.cuda.is_available():
+            return
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        ipc_collect = getattr(torch.cuda, "ipc_collect", None)
+        if callable(ipc_collect):
+            ipc_collect()
+
+    @classmethod
+    def _cleanup_failed_pipeline(cls, pipe: Any | None) -> None:
+        if pipe is not None:
+            del pipe
+        cls._aggressive_cuda_cleanup()
+
     @classmethod
     def _evict_resident_pipeline(cls) -> None:
         pipeline = _PIPELINE_SLOT.get("pipeline")
         _PIPELINE_SLOT.update({"cache_key": None, "pipeline": None, "meta": None})
-        if pipeline is None:
-            return
-        logger.info("hf_boogu_pipeline_evicting | model_key={}", "boogu_edit")
-        del pipeline
-        gc.collect()
-        if torch is not None and torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        logger.info("hf_boogu_pipeline_evicted")
+        had_pipeline = pipeline is not None
+        if had_pipeline:
+            logger.info("hf_boogu_pipeline_evicting | model_key={}", "boogu_edit")
+            del pipeline
+        cls._aggressive_cuda_cleanup()
+        if had_pipeline:
+            logger.info("hf_boogu_pipeline_evicted")
 
     @classmethod
     def release_resident_pipeline(cls) -> None:
@@ -309,6 +368,33 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             "device": device,
         }
 
+    def _instantiate_pipeline(
+        self,
+        *,
+        local_pipeline_path: str,
+        dtype: Any,
+    ) -> Any:
+        assert BooguImagePipeline is not None
+        load_kwargs: dict[str, Any] = {
+            "torch_dtype": dtype,
+            "trust_remote_code": True,
+            "low_cpu_mem_usage": self._low_cpu_mem_usage,
+        }
+        if self._use_fp8_weights:
+            fp8_transformer = self._load_fp8_transformer(
+                local_pipeline_path=local_pipeline_path,
+                dtype=dtype,
+            )
+            return BooguImagePipeline.from_pretrained(
+                local_pipeline_path,
+                transformer=fp8_transformer,
+                **load_kwargs,
+            )
+        return BooguImagePipeline.from_pretrained(
+            local_pipeline_path,
+            **load_kwargs,
+        )
+
     def _load_pipeline(self) -> tuple[Any, dict[str, Any]]:
         self._ensure_dependencies_available()
         assert BooguImagePipeline is not None
@@ -346,111 +432,119 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 snapshot=before_load,
             )
 
-            self._evict_resident_pipeline()
+            self._release_competing_gpu_models()
+            if _PIPELINE_SLOT.get("pipeline") is not None:
+                self._evict_resident_pipeline()
+            else:
+                self._aggressive_cuda_cleanup()
+            local_pipeline_path = self._resolve_local_pipeline_path()
             pipe: Any | None = None
+            last_exc: Exception | None = None
 
-            try:
-                _disable_deepgemm_for_fp8_vlm()
-                logger.info(
-                    "hf_boogu_edit_pipeline_loading | model_key={} | model_id={} | "
-                    "device={} | dtype={} | use_fp8_weights={}",
-                    self._model_key,
-                    self._model_id,
-                    device,
-                    str(dtype),
-                    self._use_fp8_weights,
-                )
+            for attempt in range(2):
+                pipe = None
+                try:
+                    _disable_deepgemm_for_fp8_vlm()
+                    logger.info(
+                        "hf_boogu_edit_pipeline_loading | model_key={} | model_id={} | "
+                        "device={} | dtype={} | use_fp8_weights={} | attempt={}",
+                        self._model_key,
+                        self._model_id,
+                        device,
+                        str(dtype),
+                        self._use_fp8_weights,
+                        attempt + 1,
+                    )
 
-                load_kwargs: dict[str, Any] = {
-                    "torch_dtype": dtype,
-                    "trust_remote_code": True,
-                    "low_cpu_mem_usage": self._low_cpu_mem_usage,
-                }
-                local_pipeline_path = self._resolve_local_pipeline_path()
-                if self._use_fp8_weights:
-                    fp8_transformer = self._load_fp8_transformer(
+                    pipe = self._instantiate_pipeline(
                         local_pipeline_path=local_pipeline_path,
                         dtype=dtype,
                     )
-                    pipe = BooguImagePipeline.from_pretrained(
-                        local_pipeline_path,
-                        transformer=fp8_transformer,
-                        **load_kwargs,
+                    meta = self._configure_pipeline(pipe, device=device)
+                    elapsed_ms = (time.perf_counter() - started) * 1000
+                    memory = self._memory_stats()
+
+                    _PIPELINE_SLOT.update(
+                        {
+                            "cache_key": cache_key,
+                            "pipeline": pipe,
+                            "meta": meta,
+                        }
                     )
-                else:
-                    pipe = BooguImagePipeline.from_pretrained(
-                        local_pipeline_path,
-                        **load_kwargs,
+
+                    record_performance_metric(
+                        pipeline="hf_boogu_edit",
+                        stage="model_load",
+                        request_id=request_id,
+                        provider="hf",
+                        model=self._model_key,
+                        elapsed_ms=elapsed_ms,
+                        success=True,
+                        extra={
+                            "provider_type": "boogu_edit",
+                            "model_id": self._model_id,
+                            "use_fp8_weights": self._use_fp8_weights,
+                            "load_attempt": attempt + 1,
+                            **meta,
+                            **memory,
+                        },
                     )
+                    logger.info(
+                        "hf_boogu_edit_pipeline_loaded | model_key={} | model_id={} | "
+                        "device={} | elapsed_ms={:.2f} | load_attempt={}",
+                        self._model_key,
+                        self._model_id,
+                        device,
+                        elapsed_ms,
+                        attempt + 1,
+                    )
+                    return pipe, meta
 
-                meta = self._configure_pipeline(pipe, device=device)
-                elapsed_ms = (time.perf_counter() - started) * 1000
-                memory = self._memory_stats()
+                except AppException:
+                    self._cleanup_failed_pipeline(pipe)
+                    raise
+                except Exception as exc:
+                    last_exc = exc
+                    self._cleanup_failed_pipeline(pipe)
+                    if attempt == 0 and self._is_cuda_oom(exc):
+                        logger.warning(
+                            "hf_boogu_pipeline_load_oom_retry | model_key={} | attempt=1 | error={}",
+                            self._model_key,
+                            str(exc),
+                        )
+                        self._evict_resident_pipeline()
+                        self._aggressive_cuda_cleanup()
+                        continue
+                    break
 
-                _PIPELINE_SLOT.update(
-                    {
-                        "cache_key": cache_key,
-                        "pipeline": pipe,
-                        "meta": meta,
-                    }
-                )
-
-                record_performance_metric(
-                    pipeline="hf_boogu_edit",
-                    stage="model_load",
-                    request_id=request_id,
-                    provider="hf",
-                    model=self._model_key,
-                    elapsed_ms=elapsed_ms,
-                    success=True,
-                    extra={
-                        "provider_type": "boogu_edit",
-                        "model_id": self._model_id,
-                        "use_fp8_weights": self._use_fp8_weights,
-                        **meta,
-                        **memory,
-                    },
-                )
-                logger.info(
-                    "hf_boogu_edit_pipeline_loaded | model_key={} | model_id={} | "
-                    "device={} | elapsed_ms={:.2f}",
-                    self._model_key,
-                    self._model_id,
-                    device,
-                    elapsed_ms,
-                )
-                return pipe, meta
-
-            except AppException:
-                raise
-            except Exception as exc:
-                elapsed_ms = (time.perf_counter() - started) * 1000
-                record_performance_metric(
-                    pipeline="hf_boogu_edit",
-                    stage="model_load",
-                    request_id=request_id,
-                    provider="hf",
-                    model=self._model_key,
-                    elapsed_ms=elapsed_ms,
-                    success=False,
-                    error_code="HF_BOOGU_EDIT_MODEL_LOAD_FAILED",
-                    error_type=exc.__class__.__name__,
-                    extra={
-                        "provider_type": "boogu_edit",
-                        "model_id": self._model_id,
-                    },
-                )
-                raise AppException(
-                    errors.HF_IMAGE_MODEL_LOAD_FAILED,
-                    detail={
-                        "provider": "hf",
-                        "role": "image_generation",
-                        "provider_type": "boogu_edit",
-                        "model_name": self._model_key,
-                        "model_id": self._model_id,
-                        "error": str(exc),
-                    },
-                ) from exc
+            assert last_exc is not None
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            record_performance_metric(
+                pipeline="hf_boogu_edit",
+                stage="model_load",
+                request_id=request_id,
+                provider="hf",
+                model=self._model_key,
+                elapsed_ms=elapsed_ms,
+                success=False,
+                error_code="HF_BOOGU_EDIT_MODEL_LOAD_FAILED",
+                error_type=last_exc.__class__.__name__,
+                extra={
+                    "provider_type": "boogu_edit",
+                    "model_id": self._model_id,
+                },
+            )
+            raise AppException(
+                errors.HF_IMAGE_MODEL_LOAD_FAILED,
+                detail={
+                    "provider": "hf",
+                    "role": "image_generation",
+                    "provider_type": "boogu_edit",
+                    "model_name": self._model_key,
+                    "model_id": self._model_id,
+                    "error": str(last_exc),
+                },
+            ) from last_exc
 
     @staticmethod
     def _normalize_output_images(raw: Any) -> list[Image.Image]:
@@ -493,6 +587,8 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
         render_mode: ImageRenderMode = "photo_restyle",
         negative_prompt: str | None = None,
         img2img_strength: float | None = None,
+        image_guidance_scale: float | None = None,
+        text_guidance_scale: float | None = None,
     ) -> list[bytes]:
         _ = (mask_image_bytes, img2img_strength)
         return await run_in_threadpool(
@@ -503,6 +599,8 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             size=size,
             render_mode=render_mode,
             negative_prompt=negative_prompt,
+            image_guidance_scale=image_guidance_scale,
+            text_guidance_scale=text_guidance_scale,
         )
 
     def _generate_sync(
@@ -514,6 +612,8 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
         size: str | None,
         render_mode: ImageRenderMode,
         negative_prompt: str | None,
+        image_guidance_scale: float | None = None,
+        text_guidance_scale: float | None = None,
     ) -> list[bytes]:
         if not input_image_bytes:
             raise AppException(
@@ -547,6 +647,16 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             default_height=self._height,
         )
         effective_num_images = max(1, int(num_images or 1))
+        effective_image_guidance_scale = (
+            self._image_guidance_scale
+            if image_guidance_scale is None
+            else float(image_guidance_scale)
+        )
+        effective_text_guidance_scale = (
+            self._text_guidance_scale
+            if text_guidance_scale is None
+            else float(text_guidance_scale)
+        )
         device = self._resolve_device()
         request_id = f"hf-boogu-gen-{uuid.uuid4().hex[:10]}"
         started = time.perf_counter()
@@ -557,12 +667,14 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
 
         logger.info(
             "hf_boogu_edit_generation_started | model_key={} | width={} | height={} | "
-            "num_images={} | instruction_chars={}",
+            "num_images={} | instruction_chars={} | text_guidance_scale={} | image_guidance_scale={}",
             self._model_key,
             width,
             height,
             effective_num_images,
             len(instruction),
+            effective_text_guidance_scale,
+            effective_image_guidance_scale,
         )
 
         try:
@@ -570,7 +682,22 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 pipe, load_meta = self._load_pipeline()
                 generator = None
                 if device.startswith("cuda") and torch is not None:
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
                     generator = torch.Generator(device=device)
+
+                memory_before = self._memory_stats()
+                logger.info(
+                    "hf_boogu_edit_inference_started | request_id={} | "
+                    "sequential_offload={} | cpu_offload={} | gpu_allocated_gb={} | "
+                    "gpu_reserved_gb={} | num_inference_steps={}",
+                    request_id,
+                    load_meta.get("sequential_offload_enabled"),
+                    load_meta.get("cpu_offload_enabled"),
+                    memory_before.get("gpu_memory_allocated_gb"),
+                    memory_before.get("gpu_memory_reserved_gb"),
+                    self._num_inference_steps,
+                )
 
                 result = pipe(
                     instruction=instruction,
@@ -585,8 +712,8 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                     max_sequence_length=self._max_sequence_length,
                     truncate_instruction_sequence=self._truncate_instruction_sequence,
                     num_inference_steps=self._num_inference_steps,
-                    text_guidance_scale=self._text_guidance_scale,
-                    image_guidance_scale=self._image_guidance_scale,
+                    text_guidance_scale=effective_text_guidance_scale,
+                    image_guidance_scale=effective_image_guidance_scale,
                     num_images_per_instruction=effective_num_images,
                     generator=generator,
                     output_type="pil",
@@ -631,7 +758,8 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                     "height": height,
                     "num_images": len(output_bytes),
                     "num_inference_steps": self._num_inference_steps,
-                    "text_guidance_scale": self._text_guidance_scale,
+                    "text_guidance_scale": effective_text_guidance_scale,
+                    "image_guidance_scale": effective_image_guidance_scale,
                     **load_meta,
                     **memory,
                 },

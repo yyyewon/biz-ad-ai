@@ -46,6 +46,7 @@ services:
       - METRICS_BACKEND_PORT=본인_BACKEND_포트
       - METRICS_FRONTEND_PORT=본인_FRONTEND_포트
       - METRICS_DEPLOY_ENV=dev
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
     # 개발 환경에서는 production entrypoint를 쓰지 않고,
     # Jupyter proxy root-path를 적용하기 위해 uvicorn을 직접 실행한다.

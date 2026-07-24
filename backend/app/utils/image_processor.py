@@ -77,6 +77,33 @@ def shrink_and_pad_for_wider_framing(
     return canvas
 
 
+def pad_to_portrait_poster_framing(
+    image: Image.Image,
+    *,
+    portrait_aspect: float = 1.5,
+    hero_center_y_ratio: float = 0.58,
+    top_padding_rgb: tuple[int, int, int] = (245, 242, 236),
+) -> Image.Image:
+    """
+    포스터(2:3) 입력용: 위쪽만 여백을 추가하고 hero 중심을 세로 58% 근처에 둔다.
+
+    참조 측면/3/4 구도는 그대로 두고, 바닥에 붙여 넣지 않아
+    포스터에서 음식이 과하게 아래로 쳐지는 문제를 줄인다.
+    """
+
+    width, height = image.size
+    target_height = max(height, int(round(width * portrait_aspect)))
+    if target_height <= height:
+        return image
+
+    canvas = Image.new("RGB", (width, target_height), top_padding_rgb)
+    desired_center_y = int(target_height * hero_center_y_ratio)
+    offset_y = desired_center_y - height // 2
+    offset_y = max(0, min(offset_y, target_height - height))
+    canvas.paste(image, (0, offset_y))
+    return canvas
+
+
 def prepare_upload_image(
     image_bytes: bytes,
     *,

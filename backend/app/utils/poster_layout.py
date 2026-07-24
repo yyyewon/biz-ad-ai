@@ -780,8 +780,38 @@ def _get_rembg_session():
         if _rembg_session is None:
             from rembg import new_session
 
-            _rembg_session = new_session("u2net")
+            # rembg는 CPU만 사용 — ONNX CUDA provider가 VRAM을 점유하는 것 방지
+            _rembg_session = new_session(
+                "u2net",
+                providers=["CPUExecutionProvider"],
+            )
         return _rembg_session
+
+
+def release_rembg_session() -> None:
+    """Drop cached rembg ONNX session (may hold CUDA provider memory)."""
+    global _rembg_session
+
+    with _rembg_lock:
+        if _rembg_session is None:
+            return
+        logger.info("poster_rembg_session_releasing")
+        session = _rembg_session
+        _rembg_session = None
+
+    del session
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+    logger.info("poster_rembg_session_released")
 
 
 def warm_up_poster_layout() -> None:

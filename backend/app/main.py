@@ -101,6 +101,7 @@ async def _warm_up_food_classifier() -> bool:
         logger.info("food_classifier_warmup_started | vram_before_gb={:.3f}", before)
 
         await run_in_threadpool(food_classifier_provider._ensure_model_loaded)
+        await run_in_threadpool(food_classifier_provider.release_gpu)
 
         after = await run_in_threadpool(_cuda_memory_allocated_gb)
         logger.info(

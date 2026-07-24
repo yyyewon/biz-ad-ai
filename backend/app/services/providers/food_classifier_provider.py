@@ -38,8 +38,30 @@ class FoodClassifierProvider:
             "커피, 음료": "coffee, beverage, tea, latte, juice, soda, cocktail, soft drink, iced beverage"
         }
 
+    def release_gpu(self) -> None:
+        """Drop cached CLIP weights so image generation can use the GPU."""
+        with self._load_lock:
+            if self._classifier is None:
+                return
+            logger.info("food_classifier_gpu_releasing")
+            del self._classifier
+            self._classifier = None
+
+        import gc
+
+        gc.collect()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+        logger.info("food_classifier_gpu_released")
+
     def _ensure_model_loaded(self) -> None:
-        """처음 분류 요청이 들어올 때 모델을 메모리(가능하면 GPU)에 올립니다."""
+        """분류 시 GPU에 올리고, classify() 종료 후 release_gpu()로 내린다."""
         if self._classifier is not None:
             return
 
@@ -66,12 +88,12 @@ class FoodClassifierProvider:
                 device = 0 if torch.cuda.is_available() else -1
                 logger.info(
                     "food_classifier | Loading CLIP model on device: {}",
-                    "cuda" if device == 0 else "cpu"
+                    "cuda" if device == 0 else "cpu",
                 )
                 self._classifier = pipeline(
                     "zero-shot-image-classification",
                     model=model_name,
-                    device=device
+                    device=device,
                 )
                 log_model_memory_snapshot(
                     "after_food_classifier_load",
@@ -102,6 +124,8 @@ class FoodClassifierProvider:
         except Exception as e:
             logger.error("food_classification_failed | error={}, fallback to '국, 찌개'", str(e))
             return "국, 찌개"
+        finally:
+            self.release_gpu()
 
 # 싱글톤 인스턴스 노출
 food_classifier_provider = FoodClassifierProvider()

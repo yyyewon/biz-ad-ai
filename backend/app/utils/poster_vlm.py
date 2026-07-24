@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import gc
 import json
 import re
 import threading
@@ -90,6 +91,26 @@ def is_poster_vlm_enabled() -> bool:
     return get_poster_design_model_settings() is not None
 
 
+def poster_vlm_uses_gpu() -> bool:
+    """True when poster VLM is configured to use CUDA (requires evicting Boogu first)."""
+    model_config = get_poster_design_model_settings()
+    if model_config is None:
+        return False
+
+    device_setting = str(model_config["settings"].get("device", "auto")).lower()
+    if device_setting == "cpu":
+        return False
+    if device_setting in {"cuda", "gpu"}:
+        return True
+
+    try:
+        import torch
+
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
+
+
 def warm_up_poster_vlm() -> None:
     """
     서버 시작 시 VLM 가중치를 GPU(또는 설정된 device)에 미리 로드
@@ -102,6 +123,64 @@ def warm_up_poster_vlm() -> None:
     settings = model_config["settings"]
     model_id = str(settings["model_id"])
     _get_vlm_model(model_id=model_id, settings=settings)
+
+
+def release_poster_vlm_gpu() -> None:
+    """Drop cached poster VLM weights so Boogu image generation can use the full GPU."""
+    global _MODEL, _PROCESSOR
+
+    with _VLM_LOCK:
+        if _MODEL is None and _PROCESSOR is None:
+            logger.debug("poster_vlm_gpu_release_skipped | reason=not_loaded")
+            return
+        logger.info("poster_vlm_gpu_releasing")
+        model = _MODEL
+        processor = _PROCESSOR
+        _MODEL = None
+        _PROCESSOR = None
+
+    _force_module_off_gpu(model)
+    del model, processor
+    gc.collect()
+    _finalize_cuda_release()
+
+
+def _force_module_off_gpu(module: object | None) -> None:
+    if module is None:
+        return
+    try:
+        import torch
+
+        if hasattr(module, "hf_device_map"):
+            module.hf_device_map = {}
+        if hasattr(module, "to"):
+            module.to("cpu")
+        for param in getattr(module, "parameters", lambda: [])():
+            if param.is_cuda:
+                param.data = param.data.cpu()
+                if param.grad is not None and param.grad.is_cuda:
+                    param.grad = param.grad.cpu()
+    except Exception as exc:
+        logger.warning("poster_vlm_force_off_gpu_failed | error={}", str(exc))
+
+
+def _finalize_cuda_release() -> None:
+    gc.collect()
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        ipc_collect = getattr(torch.cuda, "ipc_collect", None)
+        if callable(ipc_collect):
+            ipc_collect()
+        gc.collect()
+        torch.cuda.empty_cache()
+    except ImportError:
+        pass
+    logger.info("poster_vlm_gpu_released")
 
 
 def analyze_poster_design_with_vlm(

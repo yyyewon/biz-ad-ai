@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import time
 import uuid
 from typing import Awaitable, Callable, Optional
@@ -26,7 +27,11 @@ from app.services.pipelines.image_variant_prompts import (
 )
 from app.services.providers.base import ImageRenderMode
 from app.services.providers.factory import get_image_provider
-from app.utils.image_processor import shrink_and_pad_for_wider_framing, zoom_center_crop
+from app.utils.image_processor import (
+    pad_to_portrait_poster_framing,
+    shrink_and_pad_for_wider_framing,
+    zoom_center_crop,
+)
 from app.utils.image_bytes import (
     encode_image_bytes_to_base64,
     image_bytes_to_pil,
@@ -60,6 +65,7 @@ def _prepare_edit_source_bytes(
     provider 입력용 소스 이미지를 준비한다.
 
     - studio: 축소·패딩으로 미디엄 와이드 구도 유도
+    - poster: 위쪽 여백만 추가(2:3), hero 중심 ~58% — 바닥 밀착 없음
     - instagram_feed: 중앙 줌으로 릴스용 음식 클로즈업 유도
     """
 
@@ -67,9 +73,16 @@ def _prepare_edit_source_bytes(
 
     if food_type and uses_custom_template(food_type, variant):
         if variant == "studio":
-            image = shrink_and_pad_for_wider_framing(image)
+            subject_scale = _STUDIO_SUBJECT_SCALE_BY_FOOD.get(
+                food_type,
+                _DEFAULT_STUDIO_SUBJECT_SCALE,
+            )
+            image = shrink_and_pad_for_wider_framing(image, subject_scale=subject_scale)
+        elif variant == "poster":
+            image = pad_to_portrait_poster_framing(image)
         elif variant == "instagram_feed":
-            image = zoom_center_crop(image, zoom_factor=1.28)
+            zoom_factor = _REELS_ZOOM_BY_FOOD.get(food_type, _DEFAULT_REELS_ZOOM)
+            image = zoom_center_crop(image, zoom_factor=zoom_factor)
 
         logger.info(
             "image_edit_source_reframed | food_type={} | variant={} | size={}",
@@ -79,6 +92,16 @@ def _prepare_edit_source_bytes(
         )
 
     return pil_image_to_png_bytes(image)
+
+
+_STUDIO_SUBJECT_SCALE_BY_FOOD: dict[str, float] = {
+    "soup_stew": 0.85,
+}
+_REELS_ZOOM_BY_FOOD: dict[str, float] = {
+    "soup_stew": 1.18,
+}
+_DEFAULT_STUDIO_SUBJECT_SCALE = 0.78
+_DEFAULT_REELS_ZOOM = 1.12
 
 
 POSTER_EMPTY_RESULT_RETRY_SUFFIXES: list[str] = [
@@ -166,6 +189,96 @@ async def _generate_poster_with_retries(
     )
 
 
+def _release_all_image_gpu_resources(provider: object, *, reason: str) -> None:
+    """파이프라인 종료 후 Boogu/VLM/CLIP GPU 캐시를 모두 비운다."""
+    logger.info("image_pipeline_gpu_release_all | reason={}", reason)
+
+    release_gpu = getattr(provider, "release_gpu_resources", None)
+    if callable(release_gpu):
+        try:
+            release_gpu()
+        except Exception as exc:
+            logger.warning(
+                "image_pipeline_release_boogu_failed | error={}",
+                str(exc),
+            )
+
+    try:
+        from app.utils.poster_vlm import release_poster_vlm_gpu
+
+        release_poster_vlm_gpu()
+    except Exception as exc:
+        logger.warning(
+            "image_pipeline_release_vlm_failed | error={}",
+            str(exc),
+        )
+
+    try:
+        from app.services.providers.food_classifier_provider import (
+            food_classifier_provider,
+        )
+
+        food_classifier_provider.release_gpu()
+    except Exception as exc:
+        logger.warning(
+            "image_pipeline_release_food_classifier_failed | error={}",
+            str(exc),
+        )
+
+    try:
+        from app.utils.poster_layout import release_rembg_session
+
+        release_rembg_session()
+    except Exception as exc:
+        logger.warning(
+            "image_pipeline_release_rembg_failed | error={}",
+            str(exc),
+        )
+
+    try:
+        from app.services.providers.hf_boogu_edit_provider import (
+            HFBooguEditImageProvider,
+        )
+
+        HFBooguEditImageProvider._aggressive_cuda_cleanup()
+        gc.collect()
+        HFBooguEditImageProvider._aggressive_cuda_cleanup()
+
+        try:
+            from app.utils.poster_vlm import _finalize_cuda_release
+
+            _finalize_cuda_release()
+        except Exception:
+            pass
+
+        try:
+            import torch
+
+            snapshot = HFBooguEditImageProvider._memory_stats()
+            free_gb: float | None = None
+            total_gb: float | None = None
+            if torch.cuda.is_available():
+                free_bytes, total_bytes = torch.cuda.mem_get_info()
+                free_gb = round(free_bytes / (1024**3), 3)
+                total_gb = round(total_bytes / (1024**3), 3)
+            logger.info(
+                "image_pipeline_gpu_release_all_done | reason={} | "
+                "gpu_allocated_gb={} | gpu_reserved_gb={} | gpu_free_gb={} | gpu_total_gb={}",
+                reason,
+                snapshot.get("gpu_memory_allocated_gb"),
+                snapshot.get("gpu_memory_reserved_gb"),
+                free_gb,
+                total_gb,
+            )
+        except Exception:
+            logger.info("image_pipeline_gpu_release_all_done | reason={}", reason)
+    except Exception as exc:
+        logger.warning(
+            "image_pipeline_cuda_cleanup_failed | error={}",
+            str(exc),
+        )
+
+
 async def generate_image_ads(
     payload: ImageAdRequest,
     source_image_bytes: bytes,
@@ -212,6 +325,9 @@ async def generate_image_ads(
         len(source_image_bytes),
     )
 
+    provider: object | None = None
+    image_provider_name: str | None = None
+
     try:
         source_rgb = image_bytes_to_pil(source_image_bytes).convert("RGB")
         prepared_source_bytes = pil_image_to_png_bytes(source_rgb)
@@ -219,6 +335,28 @@ async def generate_image_ads(
         provider = get_image_provider()
         image_provider_name = get_provider_name("image_generation")
         image_model_info = _safe_image_model_info(image_provider_name)
+
+        if image_provider_name == "hf":
+            try:
+                from app.utils.poster_vlm import release_poster_vlm_gpu
+
+                release_poster_vlm_gpu()
+            except Exception as exc:
+                logger.warning(
+                    "image_pipeline_pre_release_vlm_failed | error={}",
+                    str(exc),
+                )
+            try:
+                from app.services.providers.food_classifier_provider import (
+                    food_classifier_provider,
+                )
+
+                food_classifier_provider.release_gpu()
+            except Exception as exc:
+                logger.warning(
+                    "image_pipeline_pre_release_food_classifier_failed | error={}",
+                    str(exc),
+                )
 
         prompt_used = ""
         stage_latencies_ms: dict[str, int] = {}
@@ -351,17 +489,13 @@ async def generate_image_ads(
                 provider_latency_ms,
             )
 
-        tasks = [
-            asyncio.create_task(_generate_variant_image(idx))
-            for idx in range(payload.num_images)
-        ]
         variant_results: list[tuple[int, ImageVariantType, bytes, str, int]] = []
 
-        try:
-            for completed in asyncio.as_completed(tasks):
-                result = await completed
+        if image_provider_name == "hf":
+            # Boogu 등 HF diffusion: GPU 직렬 추론 — 병렬 task 는 lock 대기만 쌓임.
+            for idx in range(payload.num_images):
+                result = await _generate_variant_image(idx)
                 variant_results.append(result)
-
                 if on_variant_done is not None:
                     try:
                         await on_variant_done(len(variant_results), payload.num_images)
@@ -370,12 +504,31 @@ async def generate_image_ads(
                             "image_variant_progress_callback_failed | error={}",
                             str(exc),
                         )
-        finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
+        else:
+            tasks = [
+                asyncio.create_task(_generate_variant_image(idx))
+                for idx in range(payload.num_images)
+            ]
 
-            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                for completed in asyncio.as_completed(tasks):
+                    result = await completed
+                    variant_results.append(result)
+
+                    if on_variant_done is not None:
+                        try:
+                            await on_variant_done(len(variant_results), payload.num_images)
+                        except Exception as exc:
+                            logger.warning(
+                                "image_variant_progress_callback_failed | error={}",
+                                str(exc),
+                            )
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+
+                await asyncio.gather(*tasks, return_exceptions=True)
 
         variant_results.sort(key=lambda item: item[0])
 
@@ -509,3 +662,10 @@ async def generate_image_ads(
                 "error": str(exc),
             },
         ) from exc
+
+    finally:
+        if image_provider_name == "hf" and provider is not None:
+            _release_all_image_gpu_resources(
+                provider,
+                reason="image_pipeline_finished",
+            )
