@@ -42,7 +42,7 @@ def render() -> None:
                     "대표 메뉴 이름",
                     value=business["menu_name"],
                     placeholder="예) 트러플 크림 파스타",
-                    max_chars=30,
+                    max_chars=20,
                     help="이번에 홍보하고 싶으신 핵심 메뉴를 적어주세요."
                 )
             
