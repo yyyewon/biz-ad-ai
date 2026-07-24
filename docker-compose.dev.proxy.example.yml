@@ -48,8 +48,7 @@ services:
       - METRICS_DEPLOY_ENV=dev
 
     # 개발 환경에서는 production entrypoint를 쓰지 않고,
-    # Jupyter proxy root-path를 적용하기 위해 uvicorn을 직접 실행한다.
-    # 대형 모델 프로세스 중복을 막기 위해 reload는 사용하지 않는다.
+    # Jupyter proxy root-path와 reload를 적용하기 위해 uvicorn을 직접 실행한다.
     entrypoint: !override
       - uvicorn
       - app.main:app
@@ -57,6 +56,7 @@ services:
       - 0.0.0.0
       - --port
       - "8010"
+      - --reload
       - --root-path
       - /user/본인계정명/proxy/본인_BACKEND_포트
 

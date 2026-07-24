@@ -1245,6 +1245,59 @@ def composite_poster_text(
 
     cursor_y += max(line_gap, int(height * template.headline_menu_gap_ratio))
     menu_line_gap = max(4, int(height * 0.004))
+
+    food_top = layout.food_visual_top
+    if food_top is None and layout.food_bbox:
+        food_top = layout.food_bbox[1]
+
+    # centered/framed는 메뉴명+가격 배지를 합쳐서 음식과 안 겹치도록
+    # 미리 폰트를 같이 축소한다. (editorial은 의도적 겹침 로직을 그대로 둔다)
+    if template.composition != "editorial" and food_top is not None:
+        min_menu_ratio = _RATIO_BOUNDS["menu_size_ratio"][0]
+        shrink_ratio = resolved_menu_ratio
+        price_gap_est = (
+            max(10, int(height * 0.008))
+            if template.price_style == "stamp"
+            else max(12, int(height * 0.012))
+        )
+        safety_pad = max(8, int(height * 0.02))
+
+        for _ in range(_MAX_FONT_SHRINK_STEPS):
+            measured_menu_h = sum(_text_box(draw, line, menu_font)[1] for line in menu_lines)
+            measured_menu_h += menu_line_gap * max(0, len(menu_lines) - 1)
+
+            badge_h_est = 0
+            if overlay_copy.price_text:
+                _, badge_h_est = _price_component_metrics(
+                    image,
+                    text=_format_price_text(overlay_copy.price_text),
+                    font=price_font,
+                    template=template,
+                )
+                needed_h = measured_menu_h + price_gap_est + badge_h_est
+            else:
+                needed_h = measured_menu_h
+
+            available_h = food_top - cursor_y - safety_pad
+            if needed_h <= available_h or shrink_ratio <= min_menu_ratio:
+                break
+
+            shrink_ratio = max(min_menu_ratio, shrink_ratio * _MENU_FONT_SHRINK_FACTOR)
+            menu_font = _scale_overlay_font(
+                image, TextOverlayRole.POSTER_MENU, shrink_ratio,
+                tone=tone, food_type=food_type, variant="poster",
+            )
+            menu_lines = _wrap_text(
+                overlay_copy.menu_name, font=menu_font, max_width=menu_max_width, draw=draw,
+            )
+            price_font = _scale_overlay_font(
+                image, TextOverlayRole.POSTER_PRICE,
+                template.price_size_ratio * (shrink_ratio / template.menu_size_ratio),
+                tone=tone, food_type=food_type, variant="poster",
+            )
+
+        resolved_menu_ratio = shrink_ratio
+
     measured_menu_h = sum(_text_box(draw, line, menu_font)[1] for line in menu_lines)
     measured_menu_h += menu_line_gap * max(0, len(menu_lines) - 1)
     food_top = layout.food_visual_top
@@ -1303,6 +1356,12 @@ def composite_poster_text(
             else:
                 badge_cx = width // 2
             badge_cy = int(menu_end_y + lockup_gap + badge_h / 2)
+            badge_cx, badge_cy = layout.clamp_price_badge_center(
+                center_x=badge_cx,
+                center_y=badge_cy,
+                badge_width=badge_w,
+                badge_height=badge_h,
+            )
         else:
             content_right = width - text_margin_x
             menu_right = anchor_x + menu_drawn_width
@@ -1322,6 +1381,12 @@ def composite_poster_text(
             else:
                 badge_cx = text_margin_x + badge_w // 2
                 badge_cy = int(menu_end_y + lockup_gap + badge_h / 2)
+            badge_cx, badge_cy = layout.clamp_price_badge_center(
+                center_x=badge_cx,
+                center_y=badge_cy,
+                badge_width=badge_w,
+                badge_height=badge_h,
+            )
 
         _draw_price_component(
             image,
