@@ -29,10 +29,10 @@ echo "[install] pip:    $(which python -m pip)"
 python -m pip install -U pip wheel
 python -m pip install "setuptools>=75,<82"
 
-echo "[install] 1/5 torch..."
+echo "[install] 1/6 torch..."
 python -m pip install -r "$BACKEND/requirements-torch.txt"
 
-echo "[install] 2/5 numpy (gptqmodel pin)..."
+echo "[install] 2/6 numpy (gptqmodel pin)..."
 python -m pip install "numpy==2.2.6"
 
 if [[ -d /usr/local/cuda/bin ]]; then
@@ -41,14 +41,18 @@ if [[ -d /usr/local/cuda/bin ]]; then
   echo "[install] CUDA_HOME=$CUDA_HOME"
 fi
 
-echo "[install] 3/5 backend..."
+echo "[install] 3/6 backend..."
 python -m pip install -r "$BACKEND/requirements.txt" --no-build-isolation
 
-echo "[install] 4/5 frontend..."
+echo "[install] 4/6 frontend..."
 python -m pip install -r "$ROOT/frontend/requirements.txt"
 
-echo "[install] 5/5 numpy pin (frontend가 올린 버전 되돌림)..."
+echo "[install] 5/6 numpy pin (frontend가 올린 버전 되돌림)..."
 python -m pip install "numpy==2.2.6"
+
+echo "[install] 6/6 boogu-image (git --no-deps, diffusers pin 충돌 회피)..."
+python -m pip install --no-deps \
+  "boogu-image @ git+https://github.com/boogu-project/Boogu-Image.git"
 
 echo "[install] fonts..."
 (cd "$BACKEND" && python scripts/setup_fonts.py)

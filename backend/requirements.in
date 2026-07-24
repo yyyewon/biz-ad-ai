@@ -41,6 +41,7 @@ torchaudio==2.8.0
 #
 # HuggingFace / Diffusers 기반 이미지 생성
 # - SDXL Lightning 4-step
+# - Boogu-Image-0.1 Edit-fp8 (boogu-image 패키지는 install script/Dockerfile 에서 git --no-deps)
 openai
 diffusers
 transformers
@@ -50,6 +51,12 @@ huggingface-hub
 sentencepiece
 protobuf
 xformers==0.0.32.post2
+
+# Boogu-Image-0.1 Edit inference runtime
+cache-dit>=1.3,<2
+einops>=0.7
+omegaconf>=2.3,<3
+webdataset>=1.0,<2
 
 # Poster design VLM (Qwen2-VL GPTQ) — torch>=2.8 필요
 qwen-vl-utils
@@ -71,6 +78,9 @@ numpy==2.2.6
 
 # gptqmodel→datasets 는 fsspec<=2026.4.0 요구 (torch compile 시 2026.6.0 과 충돌)
 fsspec==2026.4.0
+
+# boogu-image @ git+... 는 pyproject 가 diffusers<0.39 를 요구 → requirements.in 에 넣지 않고
+# install_requirements.sh / Dockerfile 에서 --no-deps 로만 설치 (main stack 은 diffusers 0.39)
 
 # TestClient dependency for Starlette/FastAPI tests
 httpx2

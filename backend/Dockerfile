@@ -23,7 +23,9 @@ ENV U2NET_HOME=/models/u2net
 COPY requirements-torch.txt requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements-torch.txt && \
-    pip install --no-cache-dir -r requirements.txt --no-build-isolation
+    pip install --no-cache-dir -r requirements.txt --no-build-isolation && \
+    pip install --no-cache-dir --no-deps \
+      "boogu-image @ git+https://github.com/boogu-project/Boogu-Image.git"
 
 # 소스 전체 복사
 COPY . .

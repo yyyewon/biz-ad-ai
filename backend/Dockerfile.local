@@ -21,7 +21,9 @@ ARG BACKEND_REQUIREMENTS=requirements.local.txt
 
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements-torch.txt && \
-    pip install --no-cache-dir -r "$BACKEND_REQUIREMENTS" --no-build-isolation
+    pip install --no-cache-dir -r "$BACKEND_REQUIREMENTS" --no-build-isolation && \
+    pip install --no-cache-dir --no-deps \
+      "boogu-image @ git+https://github.com/boogu-project/Boogu-Image.git"
 
 COPY . .
 
