@@ -1,10 +1,13 @@
 """
-HF image generation prompts (Stable Diffusion img2img / ControlNet).
+HF image generation prompts (Boogu-Image-0.1-Edit TI2I).
 
 OpenAI 경로: food_type_prompts.py
 HF 경로: 이 파일만 수정한다. OpenAI fallback 없음 — 비어 있으면 즉시 오류.
 
-Read order (food_type_prompts.py 와 동일 — 옆 파일과 줄 맞춰 보면 됨):
+Boogu Edit는 CLIP comma tag가 아니라 **자연어 edit instruction** 을 사용한다.
+positive → `instruction`, negative → `negative_instruction` (provider 분리).
+
+Read order (food_type_prompts.py 와 동일):
     Meta · hints
     0. Global shared blocks (negative, realism)
     1. Studio — template + per food-type subject/scene
@@ -12,10 +15,6 @@ Read order (food_type_prompts.py 와 동일 — 옆 파일과 줄 맞춰 보면 
     3. Reels (instagram_feed)
     4. Template registry
     Public API
-
-편집 규칙:
-    - OpenAI와 동일 상수명 패턴 (_HF_STUDIO_FRIED_SUBJECT ↔ _STUDIO_FRIED_SUBJECT)
-    - 상수를 비우거나 None 으로 두면 생성 시 ValueError (조용히 OpenAI 로 넘어가지 않음)
 
 Preview:
     cd backend
@@ -28,6 +27,7 @@ from app.schemas.food_type import FOOD_TYPE_LABELS, FoodType
 from app.schemas.image_ad import ImageAdRequest, ImageVariantType
 from app.services.pipelines import food_type_prompts as openai_prompts
 from app.utils.poster_taglines import resolve_poster_headline
+
 
 # =============================================================================
 # Meta · hints (참고용 — OpenAI 와 동일 값)
@@ -46,83 +46,101 @@ def _require_hf(value: str | None, name: str) -> str:
     return str(value).strip()
 
 
+def _sentence(*parts: str) -> str:
+    """Join non-empty fragments into one instruction sentence block."""
+    cleaned = [part.strip().rstrip(".") for part in parts if part and part.strip()]
+    if not cleaned:
+        return ""
+    return ". ".join(cleaned) + "."
+
+
 # =============================================================================
-# 0. Global shared keyword blocks
+# 0. Global shared blocks
 # =============================================================================
-# ref openai: _REALISM_RULES, _NEGATIVE_*, _PRESERVE_FOOD_BASE, ...
 
-HF_REALISM_RULES = (
-    "real camera editorial food photo, natural texture/gloss/grain, steam if hot, "
-    "no CGI/plastic/HDR/neon/beauty filter"
+HF_REALISM_RULES = _sentence(
+    "Keep a real camera editorial food photo look with natural texture, gloss, and grain",
+    "Add steam only if the dish is hot",
+    "Do not use CGI, plastic sheen, HDR, neon colors, or beauty-filter smoothing",
 )
 
-HF_NEGATIVE_CLUTTER = (
-    "no empty plate, no water cup, no water glass, no napkin, no call bell, "
-    "no receipt, no extra unrelated cups or tableware"
+HF_NEGATIVE_CLUTTER = _sentence(
+    "Do not keep empty plates, water cups or glasses, napkins, call bells, receipts, "
+    "or unrelated drinks and table clutter",
 )
 
-HF_NEGATIVE_COMMON = (
-    "no text, numbers, logo, watermark, UI, dish name, menu title, caption, subtitle in image, "
-    f"{HF_NEGATIVE_CLUTTER}"
+HF_NEGATIVE_COMMON = _sentence(
+    "Do not add text, numbers, logos, watermarks, UI, dish names, menu titles, captions, "
+    "or subtitles anywhere in the image",
+    HF_NEGATIVE_CLUTTER,
 )
 
-HF_NEGATIVE_POSTER = (
-    "no text, letters, numbers, price, currency, Korean menu title, dish name, store label, "
-    "English words STORE NAME MENU PRICE, location, address, logo, watermark, UI, "
-    "caption, subtitle, price badge, pill badge, placeholder typography in image pixels, "
-    "typography added in post-processing only, do not burn any words into image, "
-    "no cafe interior, no dining room, no brick wall backdrop, no wood table photo, "
-    "no decorative pattern texture in top text zone, "
-    "no vertically centered food hero, no food occupying upper 40% of frame, "
-    "no oversized soup pot filling entire frame, no giant ttukbaegi closeup, "
-    f"{HF_NEGATIVE_CLUTTER}"
+HF_NEGATIVE_POSTER = _sentence(
+    "Do not add any letters, numbers, prices, Korean menu titles, dish names, store labels, "
+    "English words such as STORE, NAME, MENU, or PRICE, addresses, logos, watermarks, UI, "
+    "captions, subtitles, price badges, or placeholder typography in the image pixels",
+    "Typography will be added later in post-processing, so the generated image must contain zero words",
+    "Do not use a cafe interior, dining room, brick wall, wood-table photo, or decorative pattern "
+    "in the upper text zone",
+    "Do not vertically center the food hero or let food occupy the upper 40% of the frame",
+    "Do not create an oversized soup pot or giant ttukbaegi close-up filling the frame",
+    HF_NEGATIVE_CLUTTER,
 )
 
-HF_NEGATIVE_REELS = (
-    f"{HF_NEGATIVE_COMMON}, hook/caption via PIL only, not in image pixels, "
-    "no Korean/English letters, no menu title, no price, no store label in image"
+HF_NEGATIVE_REELS = _sentence(
+    HF_NEGATIVE_COMMON,
+    "Do not add hook text, captions, Korean or English letters, menu titles, prices, "
+    "or store labels in the image pixels",
 )
 
-HF_NEGATIVE_STUDIO = (
-    f"{HF_NEGATIVE_COMMON}, no exaggerated gloss/oil/smoke/steam, "
-    "no added toppings/foam/cream/condensation, no oversaturated food colors, "
-    "no Korean/English letters, no menu title, no price, no store label, no caption"
+HF_NEGATIVE_STUDIO = _sentence(
+    HF_NEGATIVE_COMMON,
+    "Do not add exaggerated gloss, oil, smoke, steam, toppings, foam, cream, or condensation "
+    "that is not in the original photo",
+    "Do not oversaturate food colors",
 )
 
-_HF_PRESERVE_FOOD_BASE = (
-    "preserve original main-menu food/toppings and its serving vessel, "
-    "no add/remove food items, no floating/cropped vessels"
+_HF_PRESERVE_FOOD_BASE = _sentence(
+    "Preserve the main menu item, its toppings, and its serving vessel exactly as in the reference photo",
+    "Do not add or remove food items, and do not float or crop the vessel unnaturally",
 )
 
-_HF_EXCLUDE_TABLE_CLUTTER = (
-    "remove empty plates, water cups/glasses, napkins, call bell, menus, "
-    "unrelated drinks and table clutter"
+_HF_EXCLUDE_TABLE_CLUTTER = _sentence(
+    "Remove empty plates, water cups and glasses, napkins, call bells, menus, unrelated drinks, "
+    "and other table clutter from the scene",
 )
 
-_HF_SUBJECT_HERO_COMMON = (
-    f"{_HF_PRESERVE_FOOD_BASE}, hero focus on ordered menu item, {_HF_EXCLUDE_TABLE_CLUTTER}"
+_HF_SUBJECT_HERO_COMMON = _sentence(
+    _HF_PRESERVE_FOOD_BASE,
+    "Keep the ordered menu item as the clear hero subject",
+    _HF_EXCLUDE_TABLE_CLUTTER,
 )
 
-_HF_STUDIO_SCENE_BASE = (
-    "upgrade casual shot to clean studio food photo, tidy table, soft even professional light, "
-    "uncluttered background, medium wide framing, food 55-65% frame, no people"
+_HF_STUDIO_SCENE_BASE = _sentence(
+    "Replace the casual dining setup with a clean studio food-photo look",
+    "Use a tidy surface, soft even professional lighting, and an uncluttered background",
+    "Use medium-wide framing with the food occupying about 55-65% of the frame",
+    "Do not include people",
 )
 
-_HF_STUDIO_FOOD_BASE = (
-    f"{_HF_PRESERVE_FOOD_BASE}, hero focus on ordered menu item, "
-    f"keep food appearance faithful to attached photo, {_HF_EXCLUDE_TABLE_CLUTTER}"
+_HF_STUDIO_FOOD_BASE = _sentence(
+    _HF_PRESERVE_FOOD_BASE,
+    "Keep the ordered menu item as the hero subject and preserve its appearance faithfully",
+    _HF_EXCLUDE_TABLE_CLUTTER,
 )
 
-_HF_POSTER_FOOD_BASE = (
-    f"preserve original main dish, hero focus on ordered menu item, "
-    f"compose food in lower third of frame (not vertically centered), "
-    f"food mass center below 60% frame height, "
-    f"no added food, {_HF_EXCLUDE_TABLE_CLUTTER}"
+_HF_POSTER_FOOD_BASE = _sentence(
+    "Preserve the original main dish and keep the ordered menu item as the hero",
+    "Place the food in the lower third of the frame, not vertically centered",
+    "Keep the visual mass center of the food below 60% of the frame height",
+    "Do not add extra food",
+    _HF_EXCLUDE_TABLE_CLUTTER,
 )
 
-_HF_POSTER_BG_BASE = (
-    "flat solid-color commercial poster background, clean graphic design not a cafe photo, "
-    "simple top-to-bottom color flow, no interior scene"
+_HF_POSTER_BG_BASE = _sentence(
+    "Replace the background with a flat solid-color commercial poster backdrop",
+    "Use clean graphic design rather than a photographed cafe interior",
+    "Keep a simple top-to-bottom color flow with no interior scene",
 )
 
 
@@ -130,79 +148,91 @@ _HF_POSTER_BG_BASE = (
 # 1. Studio
 # =============================================================================
 
-_HF_STUDIO_PHOTO_TEMPLATE = """
-TASK: polish attached casual food photo into a clean studio commercial shot (HF img2img)
-TYPE: {food_type_label}
-{user_priority_block}SUBJECT: {food_subject_rules}
-SCENE: {studio_scene_rules}
-QUALITY: {realism_rules}
-MOOD: appetizing commercial atmosphere, TONE: {tone}
-CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no labels
-PRESERVE: keep food shape, portions, vessel, layering and color faithful to photo; improve only light/bg/composition
-NEG: {hf_negative_studio}
+_HF_STUDIO_INSTRUCTION_TEMPLATE = """
+Edit the reference photo of {food_type_label} into a polished studio commercial food image.
+
+{user_priority_block}Food preservation: {food_subject_rules}
+
+Scene changes: {studio_scene_rules}
+
+Quality: {realism_rules}
+
+Make the food slightly more appetizing through lighting, background, and composition only. Do not change the food shape, portions, vessel, layering, or color away from the reference.
+
+The image must contain no readable text, numbers, labels, logos, or watermarks.
+Tone: {tone}.
 """.strip()
 
-# --- studio subject tags per food type ---
-# ref openai: _STUDIO_*_SUBJECT
-
-_HF_STUDIO_SOUP_STEW_SUBJECT = (
-    f"{_HF_STUDIO_FOOD_BASE}, keep main pot + side dishes, natural broth color"
+_HF_STUDIO_SOUP_STEW_SUBJECT = _sentence(
+    _HF_STUDIO_FOOD_BASE,
+    "Keep the main pot and any side dishes that belong to the dish",
+    "Preserve natural broth color",
 )
 
-_HF_STUDIO_FRIED_SUBJECT = (
-    f"{_HF_STUDIO_FOOD_BASE}, natural golden crust, not greasy or over-fried"
+_HF_STUDIO_FRIED_SUBJECT = _sentence(
+    _HF_STUDIO_FOOD_BASE,
+    "Keep a natural golden crust without a greasy or over-fried look",
 )
 
-_HF_STUDIO_GRILLED_BBQ_SUBJECT = (
-    f"{_HF_STUDIO_FOOD_BASE}, natural grill marks and sear, no heavy smoke"
+_HF_STUDIO_GRILLED_BBQ_SUBJECT = _sentence(
+    _HF_STUDIO_FOOD_BASE,
+    "Preserve natural grill marks and sear without heavy smoke",
 )
 
-_HF_STUDIO_RICE_DISH_SUBJECT = (
-    f"{_HF_STUDIO_FOOD_BASE}, visible rice/noodle+topping layers, natural colors"
+_HF_STUDIO_RICE_DISH_SUBJECT = _sentence(
+    _HF_STUDIO_FOOD_BASE,
+    "Keep rice, noodle, and topping layers visible with natural colors",
 )
 
-_HF_STUDIO_BREAD_DESSERT_SUBJECT = (
-    f"{_HF_STUDIO_FOOD_BASE}, natural crumb/cream/layer texture"
+_HF_STUDIO_BREAD_DESSERT_SUBJECT = _sentence(
+    _HF_STUDIO_FOOD_BASE,
+    "Preserve natural crumb, cream, and layer texture",
 )
 
-_HF_STUDIO_BURGER_SANDWICH_SUBJECT = (
-    f"{_HF_STUDIO_FOOD_BASE}, natural bun/patty/veg/sauce layers, not collapsed"
+_HF_STUDIO_BURGER_SANDWICH_SUBJECT = _sentence(
+    _HF_STUDIO_FOOD_BASE,
+    "Keep bun, patty, vegetable, and sauce layers natural and not collapsed",
 )
 
-_HF_STUDIO_COFFEE_DRINK_SUBJECT = (
-    f"{_HF_STUDIO_FOOD_BASE}, preserve cup shape and drink layers as in photo, "
-    "no added foam/toppings not in original"
+_HF_STUDIO_COFFEE_DRINK_SUBJECT = _sentence(
+    _HF_STUDIO_FOOD_BASE,
+    "Preserve the cup shape and drink layers exactly as in the photo",
+    "Do not add foam or toppings that are not in the original",
 )
 
-# --- studio scene tags per food type ---
-# ref openai: _STUDIO_*_SCENE
-
-_HF_STUDIO_SOUP_STEW_SCENE = (
-    f"{_HF_STUDIO_SCENE_BASE}, warm wood-tone table, soft warm light"
+_HF_STUDIO_SOUP_STEW_SCENE = _sentence(
+    _HF_STUDIO_SCENE_BASE,
+    "Use a warm wood-tone table and soft warm light",
 )
 
-_HF_STUDIO_FRIED_SCENE = (
-    f"{_HF_STUDIO_SCENE_BASE}, warm neutral table, soft side light"
+_HF_STUDIO_FRIED_SCENE = _sentence(
+    _HF_STUDIO_SCENE_BASE,
+    "Use a warm neutral table and soft side light",
 )
 
-_HF_STUDIO_GRILLED_BBQ_SCENE = (
-    f"{_HF_STUDIO_SCENE_BASE}, dark warm table tone, soft side light, natural contrast"
+_HF_STUDIO_GRILLED_BBQ_SCENE = _sentence(
+    _HF_STUDIO_SCENE_BASE,
+    "Use a dark warm table tone, soft side light, and natural contrast",
 )
 
-_HF_STUDIO_RICE_DISH_SCENE = (
-    f"{_HF_STUDIO_SCENE_BASE}, bright clean table, soft even light, full bowl in frame"
+_HF_STUDIO_RICE_DISH_SCENE = _sentence(
+    _HF_STUDIO_SCENE_BASE,
+    "Use a bright clean table, soft even light, and keep the full bowl in frame",
 )
 
-_HF_STUDIO_BREAD_DESSERT_SCENE = (
-    f"{_HF_STUDIO_SCENE_BASE}, bright cafe table, soft diffused light, full dessert in frame"
+_HF_STUDIO_BREAD_DESSERT_SCENE = _sentence(
+    _HF_STUDIO_SCENE_BASE,
+    "Use a bright cafe-style table and soft diffused light with the full dessert in frame",
 )
 
-_HF_STUDIO_BURGER_SANDWICH_SCENE = (
-    f"{_HF_STUDIO_SCENE_BASE}, casual dining table, soft side light, full sandwich in frame"
+_HF_STUDIO_BURGER_SANDWICH_SCENE = _sentence(
+    _HF_STUDIO_SCENE_BASE,
+    "Use a casual dining table, soft side light, and keep the full sandwich in frame",
 )
 
-_HF_STUDIO_COFFEE_DRINK_SCENE = (
-    f"{_HF_STUDIO_SCENE_BASE}, clean cafe table, soft natural window light, full cup in frame"
+_HF_STUDIO_COFFEE_DRINK_SCENE = _sentence(
+    _HF_STUDIO_SCENE_BASE,
+    "Use a clean cafe table, soft natural window light, and keep the full cup in frame",
 )
 
 HF_FOOD_STUDIO_SUBJECT_RULES: dict[FoodType, str] = {
@@ -225,101 +255,115 @@ HF_FOOD_STUDIO_SCENE_RULES: dict[FoodType, str] = {
     "coffee_drink": _HF_STUDIO_COFFEE_DRINK_SCENE,
 }
 
-_HF_STUDIO_TEMPLATE = _HF_STUDIO_PHOTO_TEMPLATE
+_HF_STUDIO_TEMPLATE = _HF_STUDIO_INSTRUCTION_TEMPLATE
 
 
 # =============================================================================
 # 2. Poster
 # =============================================================================
 
-HF_POSTER_LAYOUT_RULES = (
-    "LAYOUT 2:3 portrait 1024x1536: upper 38-44% quiet designed background zone (headline/menu added later), "
-    "food hero anchored in LOWER half (vertical center of food below 62% height), "
-    "never center food in frame, food base near bottom 10-15% margin on simple surface, "
-    "keep both top-left and upper-center calm enough for adaptive editorial typography, "
-    "keep the bottom 8% calm for a full-width store footer but continue the same background naturally, "
-    "with no footer panel, color band, or hard horizontal split. "
-    "{store_footer_line}"
+HF_POSTER_LAYOUT_RULES = _sentence(
+    "Use a 2:3 portrait layout with a quiet designed background in the upper 38-44% for later headline overlay",
+    "Anchor the food hero in the lower half with the vertical center of the food below 62% of the frame height",
+    "Never center the food vertically",
+    "Place the food base near the bottom 10-15% margin on a simple surface",
+    "Keep the top-left and upper-center calm for later typography",
+    "Keep the bottom 8% calm for a later full-width store footer while continuing the same background naturally",
+    "Do not add a footer panel, color band, or hard horizontal split",
+    "{store_footer_line}",
 )
 
-_HF_POSTER_PHOTO_TEMPLATE = """
-TASK: menu promo poster from attached food photo — food hero + designed background only, zero typography (HF img2img)
-TYPE: {food_type_label}
-{user_priority_block}{poster_layout_rules}
-SUBJECT: {poster_food_rules}
-BG: {poster_background_rules}
-QUALITY: {realism_rules}
-MOOD: appetizing commercial promo atmosphere, TONE: {tone}
-CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no labels
-PRESERVE: preserve food shape/vessel, redesign bg/lighting only, typography is post-process overlay not in image
-NEG: {hf_negative_poster}, no cafe interior, no restaurant room, no wood wall, no photo backdrop, no brand copy, no footer strip, no lower color block, no hard horizontal band
+_HF_POSTER_INSTRUCTION_TEMPLATE = """
+Edit the reference photo of {food_type_label} into a menu promotion poster image with food and designed background only.
+
+{user_priority_block}Layout: {poster_layout_rules}
+
+Food: {poster_food_rules}
+
+Background: {poster_background_rules}
+
+Quality: {realism_rules}
+
+Preserve the food shape and vessel from the reference. Redesign only the background, lighting, and composition. Do not add any typography in the image pixels.
+
+The image must contain no readable text, numbers, labels, logos, or watermarks.
+Tone: {tone}.
 """.strip()
 
-# --- poster food tags ---
-# ref openai: _POSTER_*_FOOD
-
-_HF_POSTER_SOUP_STEW_FOOD = (
-    f"{_HF_POSTER_FOOD_BASE}, main pot only no side plates, glossy broth, "
-    "moderate hero scale not oversized closeup, "
-    "pot/bowl occupies 32-42% of frame height and max 50-58% of frame width, "
-    "visible empty background margin around vessel on all sides, "
-    "tall pot/bowl base near bottom edge, pot rim must stay below vertical midpoint"
+_HF_POSTER_SOUP_STEW_FOOD = _sentence(
+    _HF_POSTER_FOOD_BASE,
+    "Show the main pot only without side plates",
+    "Keep glossy broth and a moderate hero scale, not an oversized close-up",
+    "Let the pot or bowl occupy about 32-42% of frame height and at most 50-58% of frame width",
+    "Leave visible empty background margin around the vessel on all sides",
+    "Place the tall pot or bowl base near the bottom edge with the rim below the vertical midpoint",
 )
 
-_HF_POSTER_FRIED_FOOD = (
-    f"{_HF_POSTER_FOOD_BASE}, crispy golden fried chicken/crust, not soggy"
+_HF_POSTER_FRIED_FOOD = _sentence(
+    _HF_POSTER_FOOD_BASE,
+    "Keep crispy golden fried texture without a soggy look",
 )
 
-_HF_POSTER_GRILLED_BBQ_FOOD = (
-    f"{_HF_POSTER_FOOD_BASE}, grill marks, sear gloss, char texture"
+_HF_POSTER_GRILLED_BBQ_FOOD = _sentence(
+    _HF_POSTER_FOOD_BASE,
+    "Preserve grill marks, sear gloss, and char texture",
 )
 
-_HF_POSTER_RICE_DISH_FOOD = (
-    f"{_HF_POSTER_FOOD_BASE}, rice/noodle+topping layers visible"
+_HF_POSTER_RICE_DISH_FOOD = _sentence(
+    _HF_POSTER_FOOD_BASE,
+    "Keep rice, noodle, and topping layers clearly visible",
 )
 
-_HF_POSTER_BREAD_DESSERT_FOOD = (
-    f"{_HF_POSTER_FOOD_BASE}, crumb/cream/topping detail"
+_HF_POSTER_BREAD_DESSERT_FOOD = _sentence(
+    _HF_POSTER_FOOD_BASE,
+    "Preserve crumb, cream, and topping detail",
 )
 
-_HF_POSTER_BURGER_SANDWICH_FOOD = (
-    f"{_HF_POSTER_FOOD_BASE}, bun/patty/cheese/sauce layers appetizing"
+_HF_POSTER_BURGER_SANDWICH_FOOD = _sentence(
+    _HF_POSTER_FOOD_BASE,
+    "Keep bun, patty, cheese, and sauce layers appetizing and readable",
 )
 
-_HF_POSTER_COFFEE_DRINK_FOOD = (
-    f"{_HF_POSTER_FOOD_BASE}, cup shape, foam/ice/beverage layers clear, "
-    "no straw, no stirrer, no drinking accessories, open cup rim visible"
+_HF_POSTER_COFFEE_DRINK_FOOD = _sentence(
+    _HF_POSTER_FOOD_BASE,
+    "Preserve cup shape and foam, ice, or beverage layers clearly",
+    "Do not add a straw, stirrer, or drinking accessories",
+    "Keep the open cup rim visible",
 )
 
-# --- poster background tags ---
-# ref openai: _POSTER_*_BACKGROUND
-
-_HF_POSTER_SOUP_STEW_BACKGROUND = (
-    f"{_HF_POSTER_BG_BASE}, warm cream-to-terracotta solid gradient, appetizing hot-meal mood"
+_HF_POSTER_SOUP_STEW_BACKGROUND = _sentence(
+    _HF_POSTER_BG_BASE,
+    "Use a warm cream-to-terracotta solid gradient with an appetizing hot-meal mood",
 )
 
-_HF_POSTER_FRIED_BACKGROUND = (
-    f"{_HF_POSTER_BG_BASE}, warm orange-to-gold solid gradient, bright appetizing tone"
+_HF_POSTER_FRIED_BACKGROUND = _sentence(
+    _HF_POSTER_BG_BASE,
+    "Use a warm orange-to-gold solid gradient with a bright appetizing tone",
 )
 
-_HF_POSTER_GRILLED_BBQ_BACKGROUND = (
-    f"{_HF_POSTER_BG_BASE}, deep charcoal-to-brown solid gradient, premium contrast"
+_HF_POSTER_GRILLED_BBQ_BACKGROUND = _sentence(
+    _HF_POSTER_BG_BASE,
+    "Use a deep charcoal-to-brown solid gradient with premium contrast",
 )
 
-_HF_POSTER_RICE_DISH_BACKGROUND = (
-    f"{_HF_POSTER_BG_BASE}, light beige-to-warm ivory solid gradient, clean meal promo"
+_HF_POSTER_RICE_DISH_BACKGROUND = _sentence(
+    _HF_POSTER_BG_BASE,
+    "Use a light beige-to-warm ivory solid gradient for a clean meal promo",
 )
 
-_HF_POSTER_BREAD_DESSERT_BACKGROUND = (
-    f"{_HF_POSTER_BG_BASE}, pastel cream-to-latte solid gradient, soft dessert promo"
+_HF_POSTER_BREAD_DESSERT_BACKGROUND = _sentence(
+    _HF_POSTER_BG_BASE,
+    "Use a pastel cream-to-latte solid gradient for a soft dessert promo",
 )
 
-_HF_POSTER_BURGER_SANDWICH_BACKGROUND = (
-    f"{_HF_POSTER_BG_BASE}, warm red-to-mustard solid gradient, bold casual promo"
+_HF_POSTER_BURGER_SANDWICH_BACKGROUND = _sentence(
+    _HF_POSTER_BG_BASE,
+    "Use a warm red-to-mustard solid gradient for a bold casual promo",
 )
 
-_HF_POSTER_COFFEE_DRINK_BACKGROUND = (
-    f"{_HF_POSTER_BG_BASE}, soft white-to-matcha green solid gradient, minimal drink promo"
+_HF_POSTER_COFFEE_DRINK_BACKGROUND = _sentence(
+    _HF_POSTER_BG_BASE,
+    "Use a soft white-to-matcha green solid gradient for a minimal drink promo",
 )
 
 HF_FOOD_POSTER_FOOD_RULES: dict[FoodType, str] = {
@@ -342,48 +386,74 @@ HF_FOOD_POSTER_BACKGROUND_RULES: dict[FoodType, str] = {
     "coffee_drink": _HF_POSTER_COFFEE_DRINK_BACKGROUND,
 }
 
-_HF_POSTER_TEMPLATE = _HF_POSTER_PHOTO_TEMPLATE
+_HF_POSTER_TEMPLATE = _HF_POSTER_INSTRUCTION_TEMPLATE
 
 
 # =============================================================================
 # 3. Reels (instagram_feed)
 # =============================================================================
 
-HF_REELS_FOOD_RULES = (
-    f"{_HF_SUBJECT_HERO_COMMON}, extreme closeup 70-85%, main dominant, sides at edges only"
+HF_REELS_FOOD_RULES = _sentence(
+    _HF_SUBJECT_HERO_COMMON,
+    "Use an extreme close-up so the main dish fills about 70-85% of the frame",
+    "Keep side items only at the edges if needed",
 )
 
-HF_REELS_SCENE_RULES = (
-    "preserve original restaurant/store interior, table decor, lighting, signage, "
-    "shallow bokeh ok, no studio table/solid bg replacement, "
-    "smartphone restaurant reels thumbnail, bright sharp appetizing, "
-    "45deg or slight top-down, no people, bottom-left 20% empty for PIL"
+HF_REELS_SCENE_RULES = _sentence(
+    "Preserve the original restaurant or store interior, table decor, lighting, and signage from the reference",
+    "Shallow background blur is acceptable",
+    "Do not replace the scene with a studio table or solid-color backdrop",
+    "Make it look like a bright, sharp, appetizing smartphone restaurant reels thumbnail",
+    "Use a 45-degree or slight top-down angle",
+    "Do not include people",
+    "Leave the bottom-left 20% relatively empty for later text overlay",
 )
 
-HF_REELS_SCENE_RULES_FLEXIBLE = (
-    "preserve restaurant/store interior from photo, user may adjust lighting/mood/color/table "
-    "within same in-store location, no studio/solid bg replacement, extreme closeup 70-85%, "
-    "no people, bottom-left 20% empty for PIL"
+HF_REELS_SCENE_RULES_FLEXIBLE = _sentence(
+    "Preserve the restaurant or store interior from the reference photo",
+    "The user may adjust lighting, mood, color, or table styling only within the same in-store location",
+    "Do not replace the background with a studio or solid-color backdrop",
+    "Use an extreme close-up with the main dish filling about 70-85% of the frame",
+    "Do not include people",
+    "Leave the bottom-left 20% relatively empty for later text overlay",
 )
 
-HF_REELS_REALISM_EXTRA = (
-    "authentic in-store smartphone single shot, not studio reshoot/composite, "
-    "food+bg same location same shoot, no fake bokeh/over-sharpen/CG ad look"
+HF_REELS_REALISM_EXTRA = _sentence(
+    "Keep an authentic in-store smartphone single-shot look rather than a studio reshoot or composite",
+    "Food and background must remain from the same location and shoot",
+    "Do not add fake bokeh, over-sharpening, or a CGI advertisement look",
 )
 
-_HF_REELS_PHOTO_TEMPLATE = """
-TASK: reels food thumbnail from in-store photo — faithful food, zero typography (HF img2img)
-TYPE: {food_type_label}
-{user_priority_block}SUBJECT: {reels_food_rules}
-SCENE: {reels_scene_rules}
-QUALITY: {realism_rules}, {reels_realism_extra}
-MOOD: appetizing in-store atmosphere, TONE: {tone}
-CRITICAL: image pixels must have no readable text (Korean/English), no numbers, no caption/hook text
-PRESERVE: keep food appearance and store interior/bg faithful to photo; hook caption is PIL overlay only
-NEG: {hf_negative_reels}
+_HF_REELS_INSTRUCTION_TEMPLATE = """
+Edit the reference in-store photo of {food_type_label} into a social media reels food thumbnail.
+
+{user_priority_block}Food: {reels_food_rules}
+
+Scene: {reels_scene_rules}
+
+Quality: {realism_rules}. {reels_realism_extra}
+
+Keep the food appearance and store interior faithful to the reference. Make the food slightly more appetizing without changing what the dish is.
+
+Do not add hook text, captions, prices, store labels, or any readable text in the image pixels.
+Tone: {tone}.
 """.strip()
 
-_HF_REELS_TEMPLATE = _HF_REELS_PHOTO_TEMPLATE
+_HF_REELS_TEMPLATE = _HF_REELS_INSTRUCTION_TEMPLATE
+
+
+def _poster_food_rules_with_menu(
+    base_rules: str,
+    *,
+    menu_name: str,
+    variant: ImageVariantType,
+) -> str:
+    if variant != "poster":
+        return base_rules
+    menu = (menu_name or "").strip()
+    if not menu:
+        return base_rules
+    return _sentence(base_rules, f"The image must clearly depict the menu item: {menu}")
 
 
 def _build_hf_reels_scene_rules(extra_notes: str) -> str:
@@ -399,6 +469,13 @@ def _lookup_hf_food_rules(
     registry_name: str,
 ) -> str:
     return _require_hf(registry.get(food_type), f"{registry_name}[{food_type!r}]")
+
+
+def _format_user_priority_block(extra_notes: str) -> str:
+    block = openai_prompts._build_user_priority_block(extra_notes)  # noqa: SLF001
+    if not block.strip():
+        return ""
+    return f"User request: {block.strip()}\n\n"
 
 
 # =============================================================================
@@ -450,11 +527,7 @@ def build_hf_template_context(
     price_line, price_accuracy_line = openai_prompts._build_poster_price_lines(price_text)  # noqa: SLF001
     menu_name = payload.menu_name or "오늘의 메뉴"
 
-    user_priority_block = openai_prompts._build_user_priority_block(extra_notes)  # noqa: SLF001
-    if user_priority_block:
-        user_priority_block = user_priority_block + "\n"
-
-    poster_food = openai_prompts._poster_food_rules_with_menu(  # noqa: SLF001
+    poster_food = _poster_food_rules_with_menu(
         _lookup_hf_food_rules(
             HF_FOOD_POSTER_FOOD_RULES,
             food_type,
@@ -471,7 +544,7 @@ def build_hf_template_context(
         "tone": payload.tone or "",
         "promotion_goal": payload.promotion_goal or "",
         "extra_notes": extra_notes,
-        "user_priority_block": user_priority_block,
+        "user_priority_block": _format_user_priority_block(extra_notes),
         "food_type_label": FOOD_TYPE_LABELS[food_type],
         "variant_label": VARIANT_LABELS[variant],
         "scene_hint": FOOD_TYPE_SCENE_HINTS[food_type],
@@ -516,9 +589,6 @@ def build_hf_template_context(
             price_text=price_text,
         ),
         "realism_rules": _require_hf(HF_REALISM_RULES, "HF_REALISM_RULES"),
-        "hf_negative_studio": build_hf_variant_negative_prompt("studio"),
-        "hf_negative_poster": build_hf_variant_negative_prompt("poster"),
-        "hf_negative_reels": build_hf_variant_negative_prompt("instagram_feed"),
     }
 
 
@@ -533,7 +603,11 @@ def render_hf_food_variant_prompt_template(
         return None
 
     context = build_hf_template_context(payload, food_type=food_type, variant=variant)
-    return template.format(**context)
+    return "\n".join(
+        line.rstrip()
+        for line in template.format(**context).splitlines()
+        if line.strip()
+    )
 
 
 def build_hf_food_variant_prompt(
@@ -565,7 +639,7 @@ def build_hf_variant_negative_prompt(variant: ImageVariantType) -> str:
 
 
 def strip_prompt_neg_line(prompt: str) -> str:
-    """positive prompt에서 NEG: 줄을 제거한다 (HF negative 파라미터로 분리)."""
+    """Legacy SDXL helper — Boogu prompts no longer embed NEG lines."""
 
     lines = [line for line in prompt.splitlines() if not line.strip().startswith("NEG:")]
     return "\n".join(lines).strip()

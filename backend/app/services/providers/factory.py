@@ -125,17 +125,13 @@ def get_image_provider() -> ImageGenerationProvider:
             )
 
         if provider_type == "boogu_edit":
-            raise AppException(
-                errors.HF_PROVIDER_NOT_AVAILABLE,
-                detail={
-                    "role": "image_generation",
-                    "provider_type": provider_type,
-                    "model_name": resolved["model_name"],
-                    "message": (
-                        "Boogu Edit provider는 Phase 3에서 구현 예정입니다. "
-                        "hf_boogu_edit_provider.py 추가 전까지 이미지 생성 API는 사용할 수 없습니다."
-                    ),
-                },
+            from app.services.providers.hf_boogu_edit_provider import (
+                HFBooguEditImageProvider,
+            )
+
+            return HFBooguEditImageProvider(
+                model_name=resolved["model_name"],
+                model_settings=model_settings,
             )
 
         from app.services.providers.hf_image_provider import HFImageProvider

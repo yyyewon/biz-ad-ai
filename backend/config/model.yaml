@@ -400,7 +400,6 @@ hf:
       # ------------------------------------------------------------
       # Boogu-Image-0.1-Edit-fp8 (TI2I, L4 24GB + RAM 15GB)
       # instruction + reference image 1장 → 편집
-      # provider: hf_boogu_edit_provider (Phase 3)
       # ------------------------------------------------------------
       boogu_edit_fp8:
         provider_type: boogu_edit
