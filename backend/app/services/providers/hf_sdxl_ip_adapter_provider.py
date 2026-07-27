@@ -653,7 +653,9 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
         render_mode: ImageRenderMode = "photo_restyle",
         negative_prompt: str | None = None,
         img2img_strength: float | None = None,
+        request_id: str | None = None,
     ) -> list[bytes]:
+        _ = request_id
         return await run_in_threadpool(
             self._generate_sync,
             input_image_bytes=input_image_bytes,

@@ -32,12 +32,14 @@ class FakeImageProvider:
         render_mode: str | None = None,
         negative_prompt: str | None = None,
         img2img_strength: float | None = None,
+        request_id: str | None = None,
     ) -> list[bytes]:
         self.calls.append(
             {
                 "input_bytes_len": len(input_image_bytes),
                 "prompt": prompt,
                 "num_images": num_images,
+                "request_id": request_id,
                 "has_mask": bool(mask_image_bytes),
             }
         )
@@ -141,21 +143,21 @@ def test_generate_image_ads_cancels_remaining_variant_tasks_on_failure(monkeypat
     assert cancelled == 2
 
 
-def test_variant_overlay_starts_before_other_provider_calls_finish(monkeypatch):
+def test_variant_overlay_runs_after_all_provider_calls_finish(monkeypatch):
     overlay_started = threading.Event()
     overlay_thread_ids: list[int] = []
+    provider_calls_finished = 0
     main_thread_id = threading.get_ident()
     image_bytes = _sample_source_bytes()
 
     async def fake_generate_poster_with_retries(*, size, **kwargs):
-        if size == "poster":
-            return [image_bytes]
-
-        while not overlay_started.is_set():
-            await asyncio.sleep(0)
+        nonlocal provider_calls_finished
+        await asyncio.sleep(0)
+        provider_calls_finished += 1
         return [image_bytes]
 
     def fake_apply_variant_text_overlay(data, **kwargs):
+        assert provider_calls_finished == 3
         overlay_thread_ids.append(threading.get_ident())
         overlay_started.set()
         return data

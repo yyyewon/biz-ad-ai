@@ -124,6 +124,16 @@ def get_image_provider() -> ImageGenerationProvider:
                 model_settings=model_settings,
             )
 
+        if provider_type == "boogu_edit":
+            from app.services.providers.hf_boogu_edit_provider import (
+                HFBooguEditImageProvider,
+            )
+
+            return HFBooguEditImageProvider(
+                model_name=resolved["model_name"],
+                model_settings=model_settings,
+            )
+
         from app.services.providers.hf_image_provider import HFImageProvider
 
         return HFImageProvider(

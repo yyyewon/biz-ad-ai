@@ -54,7 +54,16 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
         "record_performance_metric",
         fake_record_performance_metric,
     )
-    monkeypatch.setattr(generate_pipeline, "schedule_clip_quality_eval", lambda **kwargs: None)
+    monkeypatch.setattr(
+        generate_pipeline,
+        "run_clip_quality_eval",
+        lambda **kwargs: asyncio.sleep(0),
+    )
+    monkeypatch.setattr(
+        generate_pipeline,
+        "release_all_generation_gpu_resources",
+        lambda **kwargs: None,
+    )
 
     async def fake_run_text_pipeline(**kwargs):
         return "생성된 광고 문구"
@@ -172,7 +181,16 @@ def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):
         "record_performance_metric",
         fake_record_performance_metric,
     )
-    monkeypatch.setattr(generate_pipeline, "schedule_clip_quality_eval", lambda **kwargs: None)
+    monkeypatch.setattr(
+        generate_pipeline,
+        "run_clip_quality_eval",
+        lambda **kwargs: asyncio.sleep(0),
+    )
+    monkeypatch.setattr(
+        generate_pipeline,
+        "release_all_generation_gpu_resources",
+        lambda **kwargs: None,
+    )
 
     async def fake_run_text_pipeline(**kwargs):
         return "생성된 광고 문구"

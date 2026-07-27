@@ -453,8 +453,10 @@ class HFImageProvider(ImageGenerationProvider):
         negative_prompt: str | None = None,
         render_mode: ImageRenderMode = "photo_restyle",
         img2img_strength: float | None = None,
+        request_id: str | None = None,
     ) -> list[bytes]:
         _ = size
+        _ = request_id
         return await run_in_threadpool(
             self._generate_sync,
             input_image_bytes=input_image_bytes,

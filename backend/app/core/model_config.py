@@ -518,6 +518,7 @@ def get_poster_design_model_settings() -> dict[str, Any] | None:
         "model_name": str(model_name),
         "settings": model_settings,
         "fallback_to_rules": bool(analysis_config.get("fallback_to_rules", True)),
+        "use_subprocess": analysis_config.get("use_subprocess", "auto"),
     }
 
 

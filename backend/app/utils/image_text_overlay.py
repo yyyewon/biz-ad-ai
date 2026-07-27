@@ -1066,6 +1066,7 @@ def composite_poster_text(
     design_style: str | None = None,
     layout: PosterLayoutSpec | None = None,
     metrics_request_id: str | None = None,
+    vlm_hints: object | None = None,
 ) -> bytes:
     """톤에 따라 editorial, centered, framed 구성을 적용하는 포스터 렌더러."""
 
@@ -1074,6 +1075,7 @@ def composite_poster_text(
         layout = analyze_poster_layout(
             image.convert("RGB"),
             metrics_request_id=metrics_request_id,
+            vlm_hints=vlm_hints,
         )
 
     image = _apply_poster_top_scrim(
@@ -1515,6 +1517,7 @@ def apply_variant_text_overlay(
     payload: ImageAdRequest,
     variant: ImageVariantType,
     metrics_request_id: str | None = None,
+    vlm_hints: object | None = None,
 ) -> bytes:
     food_type = payload.food_type
     try:
@@ -1532,6 +1535,7 @@ def apply_variant_text_overlay(
                 food_type=food_type,
                 design_style=payload.layout_type,
                 metrics_request_id=metrics_request_id,
+                vlm_hints=vlm_hints,
             )
         return image_bytes
     except Exception as exc:

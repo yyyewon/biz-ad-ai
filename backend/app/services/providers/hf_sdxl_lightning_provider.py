@@ -705,6 +705,7 @@ class HFSDXLLightningImageProvider(ImageGenerationProvider):
         negative_prompt: str | None = None,
         render_mode: ImageRenderMode = "photo_restyle",
         img2img_strength: float | None = None,
+        request_id: str | None = None,
     ) -> list[bytes]:
         """
         기존 ImageGenerationProvider 인터페이스 구현.
@@ -718,6 +719,7 @@ class HFSDXLLightningImageProvider(ImageGenerationProvider):
         _ = mask_image_bytes
         _ = render_mode
         _ = img2img_strength
+        _ = request_id
 
         return await run_in_threadpool(
             self._generate_sync,

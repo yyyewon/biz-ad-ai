@@ -96,6 +96,14 @@ async def run_clip_quality_eval(
             request_id,
             str(exc),
         )
+    finally:
+        await asyncio.to_thread(release_clip_quality_eval_gpu)
+        try:
+            from app.utils.poster_vlm import _finalize_cuda_release
+
+            await asyncio.to_thread(_finalize_cuda_release)
+        except Exception:
+            pass
 
 
 def _run_clip_quality_eval_sync(
@@ -185,6 +193,42 @@ def _get_clip_model_and_processor():
         _CLIP_PROCESSOR = processor
         logger.info("clip_quality_eval_loaded | model_id={}", CLIP_MODEL_ID)
         return _CLIP_MODEL, _CLIP_PROCESSOR
+
+
+def release_clip_quality_eval_gpu() -> None:
+    """Drop cached CLIP eval weights and clear any CUDA cache."""
+    global _CLIP_MODEL, _CLIP_PROCESSOR
+
+    with _CLIP_LOAD_LOCK:
+        if _CLIP_MODEL is None and _CLIP_PROCESSOR is None:
+            return
+        logger.info("clip_quality_eval_gpu_releasing | model_id={}", CLIP_MODEL_ID)
+        model = _CLIP_MODEL
+        processor = _CLIP_PROCESSOR
+        _CLIP_MODEL = None
+        _CLIP_PROCESSOR = None
+
+    try:
+        import torch
+
+        if model is not None:
+            model.to("cpu")
+    except Exception:
+        pass
+
+    del model, processor
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+    logger.info("clip_quality_eval_gpu_released | model_id={}", CLIP_MODEL_ID)
 
 
 def _embed_image(image: Image.Image) -> Any:

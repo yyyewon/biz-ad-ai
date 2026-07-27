@@ -45,7 +45,7 @@ def resolve_variant_render_mode(
     return "photo_restyle"
 
 
-# HF img2img — variant별 strength (높을수록 배경·장면 변경 ↑, 음식 보존 ↓)
+# HF Boogu Edit — variant별 img2img strength (legacy SDXL path only; boogu_edit ignores)
 _HF_VARIANT_IMG2IMG_STRENGTH: dict[ImageVariantType, float] = {
     "studio": 0.68,
     "poster": 0.65,
@@ -67,7 +67,7 @@ def build_hf_variant_prompts(
     *,
     food_type: FoodType,
 ) -> tuple[str, str]:
-    """HF용 (positive_prompt, negative_prompt) — hf_food_type_prompts.py 기준."""
+    """HF Boogu Edit용 (instruction, negative_instruction)."""
     full_prompt = build_hf_food_variant_prompt(
         payload,
         variant,

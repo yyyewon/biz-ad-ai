@@ -2,7 +2,7 @@
 컨테이너/VM 시작 시점에 모델 가중치를 미리 다운로드하는 스크립트.
 
 다운로드 대상:
-- HF 이미지 생성 프로필: SDXL Lightning(+base/IP-Adapter), SD1.5 ControlNet Tile 또는 SD3.5
+- HF 이미지 생성 프로필: Boogu Edit-fp8, SDXL Lightning(+base/IP-Adapter), SD1.5 ControlNet Tile 또는 SD3.5
 - 포스터 파이프라인: rembg u2net + (VLM 활성 시) Qwen2-VL GPTQ
 - 음식 자동분류: CLIP (openai/clip-vit-base-patch32)
 
@@ -335,6 +335,28 @@ def _prefetch_sd15_controlnet_tile_models(hf_token: str) -> bool:
     return ok
 
 
+def _prefetch_boogu_edit_models(hf_token: str) -> bool:
+    try:
+        from huggingface_hub import snapshot_download
+    except Exception as exc:
+        _log(f"huggingface_hub import failed, skipping Boogu Edit prefetch: {exc}")
+        return False
+
+    model_settings = _resolve_image_generation_settings()
+    model_id = str(
+        model_settings.get("model_id") or "Boogu/Boogu-Image-0.1-Edit-fp8"
+    ).strip()
+
+    _log(f"Boogu Edit pipeline download started | model_id={model_id}")
+    try:
+        snapshot_download(repo_id=model_id, token=hf_token or None)
+        _log(f"Boogu Edit pipeline cached | model_id={model_id}")
+        return True
+    except Exception as exc:
+        _log(f"Boogu Edit prefetch failed | model_id={model_id} | error={exc}")
+        return False
+
+
 def _prefetch_hf_image_models(hf_token: str) -> bool:
     model_settings = _resolve_image_generation_settings()
     provider_type = str(model_settings.get("provider_type") or "").strip()
@@ -347,6 +369,9 @@ def _prefetch_hf_image_models(hf_token: str) -> bool:
 
     if provider_type == "sd15_controlnet_tile":
         return _prefetch_sd15_controlnet_tile_models(hf_token)
+
+    if provider_type == "boogu_edit":
+        return _prefetch_boogu_edit_models(hf_token)
 
     model_id = _resolve_image_model_id()
     return _prefetch_diffusion_model(model_id, hf_token)

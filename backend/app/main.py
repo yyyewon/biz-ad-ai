@@ -81,6 +81,22 @@ async def _warm_up_hf_image_pipeline() -> bool:
                 "hf_image_pipeline_warmup_completed | vram_after_gb={:.3f} | vram_used_gb={:.3f}",
                 after, after - before
             )
+
+            release_gpu = getattr(provider, "release_gpu_resources", None)
+            if callable(release_gpu):
+                await run_in_threadpool(release_gpu)
+            else:
+                from app.services.providers.hf_boogu_edit_provider import (
+                    HFBooguEditImageProvider,
+                )
+
+                await run_in_threadpool(HFBooguEditImageProvider.release_resident_pipeline)
+
+            after_release = await run_in_threadpool(_cuda_memory_allocated_gb)
+            logger.info(
+                "hf_image_pipeline_warmup_released | vram_after_gb={:.3f}",
+                after_release,
+            )
             return True
 
         logger.warning(
@@ -101,6 +117,7 @@ async def _warm_up_food_classifier() -> bool:
         logger.info("food_classifier_warmup_started | vram_before_gb={:.3f}", before)
 
         await run_in_threadpool(food_classifier_provider._ensure_model_loaded)
+        await run_in_threadpool(food_classifier_provider.release_gpu)
 
         after = await run_in_threadpool(_cuda_memory_allocated_gb)
         logger.info(
@@ -124,6 +141,9 @@ async def _warm_up_poster_vlm() -> bool:
         logger.info("poster_vlm_warmup_started | vram_before_gb={:.3f}", before)
 
         await run_in_threadpool(warm_up_poster_vlm)
+        from app.utils.poster_vlm import release_poster_vlm_gpu
+
+        await run_in_threadpool(release_poster_vlm_gpu)
 
         after = await run_in_threadpool(_cuda_memory_allocated_gb)
         logger.info(

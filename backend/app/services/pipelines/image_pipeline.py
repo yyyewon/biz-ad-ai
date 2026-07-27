@@ -26,7 +26,11 @@ from app.services.pipelines.image_variant_prompts import (
 )
 from app.services.providers.base import ImageRenderMode
 from app.services.providers.factory import get_image_provider
-from app.utils.image_processor import shrink_and_pad_for_wider_framing, zoom_center_crop
+from app.utils.image_processor import (
+    pad_to_portrait_poster_framing,
+    shrink_and_pad_for_wider_framing,
+    zoom_center_crop,
+)
 from app.utils.image_bytes import (
     encode_image_bytes_to_base64,
     image_bytes_to_pil,
@@ -60,6 +64,7 @@ def _prepare_edit_source_bytes(
     provider 입력용 소스 이미지를 준비한다.
 
     - studio: 축소·패딩으로 미디엄 와이드 구도 유도
+    - poster: 위쪽 여백만 추가(2:3), hero 중심 ~58% — 바닥 밀착 없음
     - instagram_feed: 중앙 줌으로 릴스용 음식 클로즈업 유도
     """
 
@@ -67,9 +72,16 @@ def _prepare_edit_source_bytes(
 
     if food_type and uses_custom_template(food_type, variant):
         if variant == "studio":
-            image = shrink_and_pad_for_wider_framing(image)
+            subject_scale = _STUDIO_SUBJECT_SCALE_BY_FOOD.get(
+                food_type,
+                _DEFAULT_STUDIO_SUBJECT_SCALE,
+            )
+            image = shrink_and_pad_for_wider_framing(image, subject_scale=subject_scale)
+        elif variant == "poster":
+            image = pad_to_portrait_poster_framing(image)
         elif variant == "instagram_feed":
-            image = zoom_center_crop(image, zoom_factor=1.28)
+            zoom_factor = _REELS_ZOOM_BY_FOOD.get(food_type, _DEFAULT_REELS_ZOOM)
+            image = zoom_center_crop(image, zoom_factor=zoom_factor)
 
         logger.info(
             "image_edit_source_reframed | food_type={} | variant={} | size={}",
@@ -79,6 +91,18 @@ def _prepare_edit_source_bytes(
         )
 
     return pil_image_to_png_bytes(image)
+
+
+_STUDIO_SUBJECT_SCALE_BY_FOOD: dict[str, float] = {
+    "soup_stew": 0.85,
+    "bread_dessert": 0.82,
+}
+_REELS_ZOOM_BY_FOOD: dict[str, float] = {
+    "soup_stew": 1.18,
+    "bread_dessert": 1.14,
+}
+_DEFAULT_STUDIO_SUBJECT_SCALE = 0.78
+_DEFAULT_REELS_ZOOM = 1.12
 
 
 POSTER_EMPTY_RESULT_RETRY_SUFFIXES: list[str] = [
@@ -123,6 +147,7 @@ async def _generate_poster_with_retries(
             generate_kwargs["negative_prompt"] = negative_prompt
         if img2img_strength is not None:
             generate_kwargs["img2img_strength"] = img2img_strength
+        generate_kwargs["request_id"] = request_id
 
         image_bytes_list = await provider.generate(**generate_kwargs)
 
@@ -164,6 +189,13 @@ async def _generate_poster_with_retries(
             "reason": "empty_result",
         },
     )
+
+
+def _release_all_image_gpu_resources(provider: object, *, reason: str) -> None:
+    """파이프라인 종료 후 Boogu/VLM/CLIP GPU 캐시를 모두 비운다."""
+    from app.utils.gpu_resource_manager import release_all_generation_gpu_resources
+
+    release_all_generation_gpu_resources(reason=reason, provider=provider)
 
 
 async def generate_image_ads(
@@ -212,6 +244,9 @@ async def generate_image_ads(
         len(source_image_bytes),
     )
 
+    provider: object | None = None
+    image_provider_name: str | None = None
+
     try:
         source_rgb = image_bytes_to_pil(source_image_bytes).convert("RGB")
         prepared_source_bytes = pil_image_to_png_bytes(source_rgb)
@@ -220,6 +255,28 @@ async def generate_image_ads(
         image_provider_name = get_provider_name("image_generation")
         image_model_info = _safe_image_model_info(image_provider_name)
 
+        if image_provider_name == "hf":
+            try:
+                from app.utils.poster_vlm import release_poster_vlm_gpu
+
+                release_poster_vlm_gpu()
+            except Exception as exc:
+                logger.warning(
+                    "image_pipeline_pre_release_vlm_failed | error={}",
+                    str(exc),
+                )
+            try:
+                from app.services.providers.food_classifier_provider import (
+                    food_classifier_provider,
+                )
+
+                food_classifier_provider.release_gpu()
+            except Exception as exc:
+                logger.warning(
+                    "image_pipeline_pre_release_food_classifier_failed | error={}",
+                    str(exc),
+                )
+
         prompt_used = ""
         stage_latencies_ms: dict[str, int] = {}
 
@@ -227,7 +284,7 @@ async def generate_image_ads(
 
         async def _generate_variant_image(
             idx: int,
-        ) -> tuple[int, ImageVariantType, bytes, str, int, int | None]:
+        ) -> tuple[int, ImageVariantType, bytes, str, int]:
             variant = _resolve_image_variant(idx)
             variant_size = get_variant_image_size(variant)
             render_mode = resolve_variant_render_mode(
@@ -342,25 +399,6 @@ async def generate_image_ads(
                 )
 
             poster_bytes = variant_outputs[0]
-            overlay_latency_ms: int | None = None
-
-            if variant_uses_pil_text_overlay(payload.food_type, variant):
-                overlay_started = time.perf_counter()
-                poster_bytes = await asyncio.to_thread(
-                    apply_variant_text_overlay,
-                    poster_bytes,
-                    payload=payload,
-                    variant=variant,
-                )
-                overlay_latency_ms = int(
-                    (time.perf_counter() - overlay_started) * 1000
-                )
-                logger.info(
-                    "image_text_overlay_applied | variant={} | food_type={} | latency_ms={}",
-                    variant,
-                    payload.food_type,
-                    overlay_latency_ms,
-                )
 
             return (
                 idx,
@@ -368,22 +406,15 @@ async def generate_image_ads(
                 poster_bytes,
                 variant_prompt,
                 provider_latency_ms,
-                overlay_latency_ms,
             )
 
-        tasks = [
-            asyncio.create_task(_generate_variant_image(idx))
-            for idx in range(payload.num_images)
-        ]
-        variant_results: list[
-            tuple[int, ImageVariantType, bytes, str, int, int | None]
-        ] = []
+        variant_results: list[tuple[int, ImageVariantType, bytes, str, int]] = []
 
-        try:
-            for completed in asyncio.as_completed(tasks):
-                result = await completed
+        if image_provider_name == "hf":
+            # Boogu 등 HF diffusion: GPU 직렬 추론 — 병렬 task 는 lock 대기만 쌓임.
+            for idx in range(payload.num_images):
+                result = await _generate_variant_image(idx)
                 variant_results.append(result)
-
                 if on_variant_done is not None:
                     try:
                         await on_variant_done(len(variant_results), payload.num_images)
@@ -392,14 +423,126 @@ async def generate_image_ads(
                             "image_variant_progress_callback_failed | error={}",
                             str(exc),
                         )
-        finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
+        else:
+            tasks = [
+                asyncio.create_task(_generate_variant_image(idx))
+                for idx in range(payload.num_images)
+            ]
 
-            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                for completed in asyncio.as_completed(tasks):
+                    result = await completed
+                    variant_results.append(result)
+
+                    if on_variant_done is not None:
+                        try:
+                            await on_variant_done(len(variant_results), payload.num_images)
+                        except Exception as exc:
+                            logger.warning(
+                                "image_variant_progress_callback_failed | error={}",
+                                str(exc),
+                            )
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+
+                await asyncio.gather(*tasks, return_exceptions=True)
 
         variant_results.sort(key=lambda item: item[0])
+
+        overlay_latencies_by_idx: dict[int, int] = {}
+        overlay_targets = [
+            (idx, variant, poster_bytes)
+            for idx, variant, poster_bytes, _, _ in variant_results
+            if variant_uses_pil_text_overlay(payload.food_type, variant)
+        ]
+        if overlay_targets:
+            release_gpu = getattr(provider, "release_gpu_resources", None)
+            if callable(release_gpu):
+                logger.info(
+                    "image_text_overlay_deferred | reason=free_gpu_before_poster_vlm | "
+                    "overlay_count={}",
+                    len(overlay_targets),
+                )
+                release_gpu()
+
+            poster_vlm_hints_by_idx: dict[int, object] = {}
+            try:
+                from app.utils.poster_vlm import (
+                    analyze_poster_designs_batch,
+                    is_poster_vlm_enabled,
+                    poster_vlm_use_subprocess,
+                    VLM_HINTS_AUTO,
+                    VLM_HINTS_SKIP,
+                )
+
+                if is_poster_vlm_enabled() and poster_vlm_use_subprocess():
+                    poster_jobs = [
+                        (idx, poster_bytes)
+                        for idx, variant, poster_bytes in overlay_targets
+                        if variant == "poster"
+                    ]
+                    if poster_jobs:
+                        poster_images = [
+                            image_bytes_to_pil(poster_bytes).convert("RGB")
+                            for _, poster_bytes in poster_jobs
+                        ]
+                        batch_hints = analyze_poster_designs_batch(
+                            poster_images,
+                            metrics_request_id=request_id,
+                        )
+                        for (idx, _), hints in zip(poster_jobs, batch_hints, strict=False):
+                            poster_vlm_hints_by_idx[idx] = (
+                                hints if hints is not None else VLM_HINTS_SKIP
+                            )
+            except Exception as exc:
+                logger.warning(
+                    "image_pipeline_poster_vlm_batch_failed | error={} | fallback=per_overlay",
+                    str(exc),
+                )
+
+            for idx, variant, poster_bytes in overlay_targets:
+                overlay_started = time.perf_counter()
+                overlay_vlm_hints = poster_vlm_hints_by_idx.get(idx, VLM_HINTS_AUTO)
+                overlaid_bytes = await asyncio.to_thread(
+                    apply_variant_text_overlay,
+                    poster_bytes,
+                    payload=payload,
+                    variant=variant,
+                    metrics_request_id=request_id,
+                    vlm_hints=overlay_vlm_hints,
+                )
+                overlay_latency_ms = int(
+                    (time.perf_counter() - overlay_started) * 1000
+                )
+                overlay_latencies_by_idx[idx] = overlay_latency_ms
+                logger.info(
+                    "image_text_overlay_applied | variant={} | food_type={} | latency_ms={}",
+                    variant,
+                    payload.food_type,
+                    overlay_latency_ms,
+                )
+                for result_idx, item in enumerate(variant_results):
+                    if item[0] == idx:
+                        variant_results[result_idx] = (
+                            item[0],
+                            item[1],
+                            overlaid_bytes,
+                            item[3],
+                            item[4],
+                        )
+                        break
+
+            try:
+                from app.utils.poster_vlm import release_poster_vlm_gpu
+
+                release_poster_vlm_gpu()
+            except Exception as exc:
+                logger.warning(
+                    "image_pipeline_post_overlay_release_vlm_failed | error={}",
+                    str(exc),
+                )
 
         poster_image_bytes: list[bytes] = []
         applied_variants: list[ImageVariantType] = []
@@ -412,12 +555,12 @@ async def generate_image_ads(
             poster_bytes,
             variant_prompt,
             provider_latency_ms,
-            overlay_latency_ms,
         ) in variant_results:
             poster_image_bytes.append(poster_bytes)
             applied_variants.append(variant)
             variant_prompts[variant] = variant_prompt
             provider_latencies_ms.append(provider_latency_ms)
+            overlay_latency_ms = overlay_latencies_by_idx.get(idx)
             if overlay_latency_ms is not None:
                 overlay_latencies_ms.append(overlay_latency_ms)
 
@@ -486,3 +629,10 @@ async def generate_image_ads(
                 "error": str(exc),
             },
         ) from exc
+
+    finally:
+        if image_provider_name == "hf" and provider is not None:
+            _release_all_image_gpu_resources(
+                provider,
+                reason="image_pipeline_finished",
+            )

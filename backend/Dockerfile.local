@@ -9,6 +9,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    git \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
@@ -21,7 +22,9 @@ ARG BACKEND_REQUIREMENTS=requirements.local.txt
 
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements-torch.txt && \
-    pip install --no-cache-dir -r "$BACKEND_REQUIREMENTS" --no-build-isolation
+    pip install --no-cache-dir -r "$BACKEND_REQUIREMENTS" --no-build-isolation && \
+    pip install --no-cache-dir --no-deps \
+      "boogu-image @ git+https://github.com/boogu-project/Boogu-Image.git"
 
 COPY . .
 

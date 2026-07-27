@@ -4,8 +4,13 @@
 
 from __future__ import annotations
 
+import base64
+import gc
+import io
 import json
 import re
+import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -23,6 +28,14 @@ _MODEL = None
 _PROCESSOR = None
 _VLM_LOCK = threading.RLock()
 _INFERENCE_LOCK = threading.Lock()
+
+# overlay 호출 시 VLM 재추론 대신 image_pipeline 배치 결과 사용
+VLM_HINTS_AUTO = object()
+VLM_HINTS_SKIP = object()
+
+_SUBPROCESS_TIMEOUT_BASE_SECONDS = 120
+_SUBPROCESS_TIMEOUT_PER_IMAGE_SECONDS = 180
+_SUBPROCESS_TIMEOUT_MAX_SECONDS = 900
 
 _POSTER_VLM_PROMPT = """\
 This is a food promo poster image: designed background on top, food hero on bottom. \
@@ -90,6 +103,43 @@ def is_poster_vlm_enabled() -> bool:
     return get_poster_design_model_settings() is not None
 
 
+def poster_vlm_uses_gpu() -> bool:
+    """True when poster VLM is configured to use CUDA (requires evicting Boogu first)."""
+    model_config = get_poster_design_model_settings()
+    if model_config is None:
+        return False
+
+    device_setting = str(model_config["settings"].get("device", "auto")).lower()
+    if device_setting == "cpu":
+        return False
+    if device_setting in {"cuda", "gpu"}:
+        return True
+
+    try:
+        import torch
+
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
+
+
+def poster_vlm_use_subprocess() -> bool:
+    """
+    GPU VLM을 isolated subprocess에서 실행할지 여부.
+    model.yaml poster_design_analysis.use_subprocess: auto|true|false
+    """
+    model_config = get_poster_design_model_settings()
+    if model_config is None:
+        return False
+
+    mode = str(model_config.get("use_subprocess", "auto")).lower()
+    if mode in {"false", "0", "no", "off"}:
+        return False
+    if mode in {"true", "1", "yes", "on"}:
+        return True
+    return poster_vlm_uses_gpu()
+
+
 def warm_up_poster_vlm() -> None:
     """
     서버 시작 시 VLM 가중치를 GPU(또는 설정된 device)에 미리 로드
@@ -99,9 +149,77 @@ def warm_up_poster_vlm() -> None:
     if model_config is None:
         return
 
+    if poster_vlm_use_subprocess():
+        logger.info("poster_vlm_warmup_skipped | reason=subprocess_mode")
+        return
+
     settings = model_config["settings"]
     model_id = str(settings["model_id"])
     _get_vlm_model(model_id=model_id, settings=settings)
+
+
+def release_poster_vlm_gpu() -> None:
+    """Drop cached poster VLM weights so Boogu image generation can use the full GPU."""
+    global _MODEL, _PROCESSOR
+
+    with _VLM_LOCK:
+        if _MODEL is None and _PROCESSOR is None:
+            logger.debug("poster_vlm_gpu_release_skipped | reason=not_loaded")
+            return
+        logger.info("poster_vlm_gpu_releasing")
+        model = _MODEL
+        processor = _PROCESSOR
+        _MODEL = None
+        _PROCESSOR = None
+
+    _force_module_off_gpu(model)
+    del model, processor
+    gc.collect()
+    _finalize_cuda_release()
+
+
+def _force_module_off_gpu(module: object | None) -> None:
+    if module is None:
+        return
+    try:
+        from accelerate.hooks import remove_hook_from_submodules
+
+        remove_hook_from_submodules(module)
+    except Exception:
+        pass
+    try:
+        import torch
+
+        if hasattr(module, "hf_device_map"):
+            module.hf_device_map = {}
+        if hasattr(module, "to"):
+            module.to("cpu")
+        for param in getattr(module, "parameters", lambda: [])():
+            if param.is_cuda:
+                param.data = param.data.cpu()
+                if param.grad is not None and param.grad.is_cuda:
+                    param.grad = param.grad.cpu()
+    except Exception as exc:
+        logger.warning("poster_vlm_force_off_gpu_failed | error={}", str(exc))
+
+
+def _finalize_cuda_release() -> None:
+    gc.collect()
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        ipc_collect = getattr(torch.cuda, "ipc_collect", None)
+        if callable(ipc_collect):
+            ipc_collect()
+        gc.collect()
+        torch.cuda.empty_cache()
+    except ImportError:
+        pass
+    logger.info("poster_vlm_gpu_released")
 
 
 def analyze_poster_design_with_vlm(
@@ -110,86 +228,73 @@ def analyze_poster_design_with_vlm(
     metrics_request_id: str | None = None,
 ) -> PosterVlmDesignHints | None:
     """VLM으로 포스터 디자인 힌트를 분석한다. 실패 시 None."""
+    results = analyze_poster_designs_batch([image], metrics_request_id=metrics_request_id)
+    return results[0] if results else None
+
+
+def analyze_poster_designs_batch(
+    images: list[Image.Image],
+    *,
+    metrics_request_id: str | None = None,
+) -> list[PosterVlmDesignHints | None]:
+    """포스터 VLM 배치 분석. GPU 설정 시 subprocess에서 1회 load → N infer → exit."""
+
+    if not images:
+        return []
 
     model_config = get_poster_design_model_settings()
     if model_config is None:
-        return None
+        return [None] * len(images)
 
     request_id = metrics_request_id or "unknown"
     model_name = str(model_config.get("model_name", "unknown"))
     provider_name = str(model_config.get("provider", "hf"))
-    inference_started: float | None = None
+    inference_started = time.perf_counter()
 
     try:
-        inference_started = time.perf_counter()
-        raw_text = _run_vlm_inference(image, model_config)
-        inference_elapsed_ms = (time.perf_counter() - inference_started) * 1000
+        if poster_vlm_use_subprocess():
+            raw_texts = _run_vlm_subprocess_batch(images, model_config=model_config)
+        else:
+            raw_texts = [
+                _run_vlm_inference(image, model_config) for image in images
+            ]
 
+        elapsed_ms = (time.perf_counter() - inference_started) * 1000
         record_registry_metric(
             MetricId.VLM_INFERENCE_LATENCY,
             request_id=request_id,
-            elapsed_ms=inference_elapsed_ms,
+            elapsed_ms=elapsed_ms,
             success=True,
             provider=provider_name,
             model=model_name,
-            extra={"model": model_name},
+            extra={"model": model_name, "image_count": len(images), "subprocess": poster_vlm_use_subprocess()},
         )
 
-        logger.debug("poster_vlm_raw_response | chars={} | text={}", len(raw_text), raw_text[:500])
-        parsed = parse_poster_vlm_json(raw_text)
-        if parsed is None:
-            logger.warning(
-                "poster_vlm_parse_failed | raw_chars={} | preview={}",
-                len(raw_text),
-                raw_text[:300],
+        hints_list: list[PosterVlmDesignHints | None] = []
+        for image, raw_text in zip(images, raw_texts, strict=False):
+            hints_list.append(
+                _hints_from_raw_text(
+                    raw_text,
+                    image,
+                    request_id=request_id,
+                    model_name=model_name,
+                    provider_name=provider_name,
+                )
             )
-            record_registry_metric(
-                MetricId.VLM_JSON_PARSE_SUCCESS_RATE,
-                request_id=request_id,
-                success=False,
-                provider=provider_name,
-                model=model_name,
-                extra={"model": model_name, "raw_chars": len(raw_text)},
-            )
-            return None
-
-        record_registry_metric(
-            MetricId.VLM_JSON_PARSE_SUCCESS_RATE,
-            request_id=request_id,
-            success=True,
-            provider=provider_name,
-            model=model_name,
-            extra={"model": model_name, "raw_chars": len(raw_text)},
-        )
-
-        width, height = image.size
-        hints = _build_hints_from_parsed(parsed, width=width, height=height)
-        logger.info(
-            "poster_vlm_json | model={} | payload={}",
-            model_name,
-            json.dumps(parsed, ensure_ascii=False),
-        )
-        logger.info(
-            "poster_vlm_applied | model={} | primary_text={} | scrim_alpha={}",
-            model_name,
-            hints.palette.primary_text,
-            hints.scrim_max_alpha,
-        )
-        return hints
+        return hints_list
 
     except Exception as exc:
-        inference_kwargs: dict[str, object] = {
-            "request_id": request_id,
-            "success": False,
-            "provider": provider_name,
-            "model": model_name,
-            "error_type": exc.__class__.__name__,
-            "extra": {"model": model_name},
-        }
-        if inference_started is not None:
-            inference_kwargs["elapsed_ms"] = (time.perf_counter() - inference_started) * 1000
-
-        record_registry_metric(MetricId.VLM_INFERENCE_LATENCY, **inference_kwargs)
+        elapsed_ms = (time.perf_counter() - inference_started) * 1000
+        record_registry_metric(
+            MetricId.VLM_INFERENCE_LATENCY,
+            request_id=request_id,
+            elapsed_ms=elapsed_ms,
+            success=False,
+            provider=provider_name,
+            model=model_name,
+            error_type=exc.__class__.__name__,
+            extra={"model": model_name, "image_count": len(images), "subprocess": poster_vlm_use_subprocess()},
+        )
         record_registry_metric(
             MetricId.VLM_JSON_PARSE_SUCCESS_RATE,
             request_id=request_id,
@@ -199,8 +304,156 @@ def analyze_poster_design_with_vlm(
             error_type=exc.__class__.__name__,
             extra={"model": model_name},
         )
-        logger.warning("poster_vlm_failed | error={}", str(exc))
+        logger.warning("poster_vlm_batch_failed | error={}", str(exc))
+        return [None] * len(images)
+
+
+def _hints_from_raw_text(
+    raw_text: str | None,
+    image: Image.Image,
+    *,
+    request_id: str,
+    model_name: str,
+    provider_name: str,
+) -> PosterVlmDesignHints | None:
+    if not raw_text:
+        record_registry_metric(
+            MetricId.VLM_JSON_PARSE_SUCCESS_RATE,
+            request_id=request_id,
+            success=False,
+            provider=provider_name,
+            model=model_name,
+            extra={"model": model_name, "raw_chars": 0},
+        )
         return None
+
+    logger.debug("poster_vlm_raw_response | chars={} | text={}", len(raw_text), raw_text[:500])
+    parsed = parse_poster_vlm_json(raw_text)
+    if parsed is None:
+        logger.warning(
+            "poster_vlm_parse_failed | raw_chars={} | preview={}",
+            len(raw_text),
+            raw_text[:300],
+        )
+        record_registry_metric(
+            MetricId.VLM_JSON_PARSE_SUCCESS_RATE,
+            request_id=request_id,
+            success=False,
+            provider=provider_name,
+            model=model_name,
+            extra={"model": model_name, "raw_chars": len(raw_text)},
+        )
+        return None
+
+    record_registry_metric(
+        MetricId.VLM_JSON_PARSE_SUCCESS_RATE,
+        request_id=request_id,
+        success=True,
+        provider=provider_name,
+        model=model_name,
+        extra={"model": model_name, "raw_chars": len(raw_text)},
+    )
+
+    width, height = image.size
+    hints = _build_hints_from_parsed(parsed, width=width, height=height)
+    logger.info(
+        "poster_vlm_json | model={} | payload={}",
+        model_name,
+        json.dumps(parsed, ensure_ascii=False),
+    )
+    logger.info(
+        "poster_vlm_applied | model={} | primary_text={} | scrim_alpha={}",
+        model_name,
+        hints.palette.primary_text,
+        hints.scrim_max_alpha,
+    )
+    return hints
+
+
+def _run_vlm_subprocess_batch(
+    images: list[Image.Image],
+    *,
+    model_config: dict,
+) -> list[str | None]:
+    settings = dict(model_config["settings"])
+    encoded_images: list[dict] = []
+    for image in images:
+        rgb = image.convert("RGB")
+        buffer = io.BytesIO()
+        rgb.save(buffer, format="PNG")
+        encoded_images.append(
+            {
+                "width": rgb.size[0],
+                "height": rgb.size[1],
+                "png_b64": base64.b64encode(buffer.getvalue()).decode("ascii"),
+            }
+        )
+
+    timeout = min(
+        _SUBPROCESS_TIMEOUT_MAX_SECONDS,
+        max(
+            _SUBPROCESS_TIMEOUT_BASE_SECONDS,
+            _SUBPROCESS_TIMEOUT_PER_IMAGE_SECONDS * len(images),
+        ),
+    )
+
+    logger.info(
+        "poster_vlm_subprocess_started | image_count={} | timeout_seconds={}",
+        len(images),
+        timeout,
+    )
+
+    cmd = [sys.executable, "-m", "app.utils.poster_vlm_worker"]
+    request_payload = json.dumps(
+        {"settings": settings, "images": encoded_images},
+        ensure_ascii=False,
+    )
+
+    completed = subprocess.run(
+        cmd,
+        input=request_payload,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+    if completed.returncode != 0:
+        stderr = (completed.stderr or "").strip()
+        raise RuntimeError(
+            f"포스터 VLM subprocess 실패 (exit_code={completed.returncode}) | stderr={stderr[:500]}"
+        )
+
+    stdout = (completed.stdout or "").strip()
+    if not stdout:
+        raise RuntimeError("포스터 VLM subprocess가 stdout을 반환하지 않았습니다.")
+
+    response = json.loads(stdout)
+    if not response.get("ok"):
+        raise RuntimeError(response.get("error") or "포스터 VLM subprocess 처리 중 오류가 발생했습니다.")
+
+    results = response.get("results")
+    if not isinstance(results, list):
+        raise RuntimeError("포스터 VLM subprocess 결과 형식이 올바르지 않습니다.")
+
+    raw_texts: list[str | None] = []
+    for entry in results:
+        if isinstance(entry, dict) and entry.get("ok") and entry.get("raw_text"):
+            raw_texts.append(str(entry["raw_text"]))
+        else:
+            error = entry.get("error") if isinstance(entry, dict) else "알 수 없음"
+            logger.warning("poster_vlm_subprocess_image_failed | error={}", error)
+            raw_texts.append(None)
+
+    while len(raw_texts) < len(images):
+        raw_texts.append(None)
+
+    logger.info(
+        "poster_vlm_subprocess_completed | image_count={} | success_count={}",
+        len(images),
+        sum(1 for item in raw_texts if item),
+    )
+    return raw_texts[: len(images)]
 
 
 def parse_poster_vlm_json(raw_text: str) -> dict | None:
@@ -333,10 +586,26 @@ def _parse_int(
 def _run_vlm_inference(image: Image.Image, model_config: dict) -> str:
     settings = model_config["settings"]
     model_id = str(settings["model_id"])
+    model, processor = _get_vlm_model(model_id=model_id, settings=settings)
+    return run_vlm_inference_with_model(
+        image,
+        model=model,
+        processor=processor,
+        model_config=model_config,
+    )
+
+
+def run_vlm_inference_with_model(
+    image: Image.Image,
+    *,
+    model: object,
+    processor: object,
+    model_config: dict,
+) -> str:
+    settings = model_config["settings"]
     max_new_tokens = int(settings.get("max_new_tokens", 512))
     max_side = int(settings.get("analysis_max_side", 768))
 
-    model, processor = _get_vlm_model(model_id=model_id, settings=settings)
     resized = _resize_for_analysis(image.convert("RGB"), max_side=max_side)
 
     messages = [
@@ -413,6 +682,13 @@ def _ensure_gptq_runtime(model_id: str) -> None:
         logger.debug("gptqmodel patch_hf skipped (native HF integration)")
 
 
+def load_vlm_model_fresh(model_config: dict) -> tuple[object, object]:
+    """Subprocess 워커용: global cache 없이 VLM을 1회 로드한다."""
+    settings = model_config["settings"]
+    model_id = str(settings["model_id"])
+    return _load_vlm_model_impl(model_id=model_id, settings=settings)
+
+
 def _get_vlm_model(*, model_id: str, settings: dict):
     global _MODEL, _PROCESSOR
 
@@ -420,48 +696,65 @@ def _get_vlm_model(*, model_id: str, settings: dict):
         if _MODEL is not None and _PROCESSOR is not None:
             return _MODEL, _PROCESSOR
 
-        before_load = log_model_memory_snapshot(
-            "before_poster_vlm_load",
-            model_name=model_id,
-        )
-        ensure_model_load_memory(
-            model_name=model_id,
-            min_available_ram_gb=get_settings().model_load_min_available_ram_gb,
-            load_stage="before_poster_vlm_load",
-            snapshot=before_load,
-        )
-
-        import torch
-        from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
-
-        device_setting = str(settings.get("device", "auto")).lower()
-        if device_setting == "auto":
-            device_map = "auto"
-        elif device_setting == "cpu":
-            device_map = "cpu"
-        else:
-            device_map = "auto"
-
-        logger.info("poster_vlm_loading | model_id={} | device_map={}", model_id, device_map)
-
-        _ensure_gptq_runtime(model_id)
-        processor = AutoProcessor.from_pretrained(model_id)
-        model = Qwen2VLForConditionalGeneration.from_pretrained(
-            model_id,
-            torch_dtype="auto",
-            device_map=device_map,
-        )
-        model.eval()
-
+        model, processor = _load_vlm_model_impl(model_id=model_id, settings=settings)
         _MODEL = model
         _PROCESSOR = processor
-        log_model_memory_snapshot(
-            "after_poster_vlm_load",
-            model_name=model_id,
-            torch_module=torch,
-        )
-        logger.info("poster_vlm_loaded | model_id={}", model_id)
         return _MODEL, _PROCESSOR
+
+
+def _load_vlm_model_impl(*, model_id: str, settings: dict) -> tuple[object, object]:
+    before_load = log_model_memory_snapshot(
+        "before_poster_vlm_load",
+        model_name=model_id,
+    )
+    ensure_model_load_memory(
+        model_name=model_id,
+        min_available_ram_gb=get_settings().model_load_min_available_ram_gb,
+        load_stage="before_poster_vlm_load",
+        snapshot=before_load,
+    )
+
+    import torch
+    from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
+
+    device_setting = str(settings.get("device", "auto")).lower()
+    if device_setting == "auto":
+        device_map = "auto"
+    elif device_setting == "cpu":
+        device_map = "cpu"
+    else:
+        device_map = "auto"
+
+    logger.info("poster_vlm_loading | model_id={} | device_map={}", model_id, device_map)
+
+    _ensure_gptq_runtime(model_id)
+    processor = AutoProcessor.from_pretrained(model_id)
+    model = Qwen2VLForConditionalGeneration.from_pretrained(
+        model_id,
+        torch_dtype="auto",
+        device_map=device_map,
+    )
+    model.eval()
+
+    if device_setting == "cpu":
+        _force_module_off_gpu(model)
+
+    cuda_param_count = sum(
+        1 for param in model.parameters() if getattr(param, "is_cuda", False)
+    )
+    logger.info(
+        "poster_vlm_loaded | model_id={} | device_map={} | cuda_param_count={}",
+        model_id,
+        device_map,
+        cuda_param_count,
+    )
+
+    log_model_memory_snapshot(
+        "after_poster_vlm_load",
+        model_name=model_id,
+        torch_module=torch,
+    )
+    return model, processor
 
 
 def _resize_for_analysis(image: Image.Image, *, max_side: int) -> Image.Image:
