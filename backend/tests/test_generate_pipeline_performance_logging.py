@@ -84,8 +84,10 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
             latency_ms=130,
             generation_mode=payload.generation_mode,
             stage_latencies_ms={
-                "food_generation_ms": 0,
                 "poster_generation_ms": 120,
+                "provider_generation_max_ms": 100,
+                "provider_generation_sum_ms": 120,
+                "poster_vlm_overlay_ms": 10,
                 "total_ms": 130,
             },
             images=[poster_b64],
@@ -119,9 +121,9 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
     stages = [call["stage"] for call in metric_calls]
 
     assert "text_generation" in stages
-    assert "image_generation" in stages
-    assert "food_generation" in stages
     assert "poster_generation" in stages
+    assert "image_provider_generation_sum" in stages
+    assert "image_poster_vlm_overlay" in stages
     assert "image_pipeline_total" in stages
     assert "total_pipeline" in stages
 
@@ -141,6 +143,9 @@ def test_generate_pipeline_records_memory_based_stage_metrics(monkeypatch):
     assert extra["text_model_key"]
     assert extra["image_model_key"]
     assert extra["food_type"]
+    assert extra["image_provider_sum_ms"] == 120
+    assert extra["image_poster_vlm_overlay_ms"] == 10
+    assert extra["image_track_total_ms"] == 130
 
 
 def test_generate_pipeline_records_partial_success_total_metric(monkeypatch):

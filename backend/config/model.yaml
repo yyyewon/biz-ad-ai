@@ -416,6 +416,9 @@ hf:
         width: 1024
         height: 1024
 
+        # False: use width/height above (variant size). True: match reference image aspect.
+        align_res: false
+
         num_inference_steps: 30
         text_guidance_scale: 5.0
         image_guidance_scale: 1.5

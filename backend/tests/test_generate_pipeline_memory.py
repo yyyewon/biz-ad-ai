@@ -68,7 +68,6 @@ def test_run_generate_pipeline_with_image_uses_memory_bytes(monkeypatch):
             latency_ms=100,
             generation_mode=payload.generation_mode,
             stage_latencies_ms={
-                "food_generation_ms": 0,
                 "poster_generation_ms": 100,
                 "total_ms": 100,
             },

@@ -6,7 +6,7 @@ import gc
 import os
 import threading
 import time
-import uuid
+from app.utils.request_ids import resolve_run_request_id
 from typing import Any
 
 from loguru import logger
@@ -53,6 +53,8 @@ DEFAULT_NEGATIVE_INSTRUCTION = (
     "blurry, low quality, distorted, deformed, duplicate food, bad anatomy, "
     "text artifacts, watermark, logo, signature, unreadable text, "
     "oversaturated, plastic texture, fake 3d render, "
+    "uniform ham meat, waxy processed pork, neon sauce colors, fused tongs scissors chopsticks, "
+    "beauty-filter food blobs, "
     "steam, vapor, smoke on iced drinks, overhead top-down angle change, "
     "changed cup shape, wrong drink layers"
 )
@@ -141,6 +143,9 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
         self._max_input_image_side_length = int(
             self._settings.get("max_input_image_side_length", 2048)
         )
+        # Boogu default align_res=True overwrites width/height with reference aspect;
+        # keep variant size from model.yaml / output_image.variant_sizes.
+        self._align_res = bool(self._settings.get("align_res", False))
 
         self._cpu_offload_enabled = bool(
             self._settings.get("cpu_offload_enabled", False)
@@ -418,7 +423,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             if _PIPELINE_SLOT.get("cache_key") == cache_key:
                 return _PIPELINE_SLOT["pipeline"], _PIPELINE_SLOT["meta"]
 
-            metric_request_id = pipeline_request_id or f"hf-boogu-load-{uuid.uuid4().hex[:10]}"
+            metric_request_id = resolve_run_request_id(pipeline_request_id)
             started = time.perf_counter()
             load_stage = "before_boogu_edit_pipeline_load"
             before_load = log_model_memory_snapshot(
@@ -483,7 +488,6 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                         extra={
                             "provider_type": "boogu_edit",
                             "model_id": self._model_id,
-                            "pipeline_request_id": pipeline_request_id,
                             "use_fp8_weights": self._use_fp8_weights,
                             "load_attempt": attempt + 1,
                             **meta,
@@ -532,7 +536,6 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 extra={
                     "provider_type": "boogu_edit",
                     "model_id": self._model_id,
-                    "pipeline_request_id": pipeline_request_id,
                 },
             )
             raise AppException(
@@ -662,7 +665,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             else float(text_guidance_scale)
         )
         device = self._resolve_device()
-        metric_request_id = request_id or f"hf-boogu-gen-{uuid.uuid4().hex[:10]}"
+        metric_request_id = resolve_run_request_id(request_id)
         started = time.perf_counter()
 
         reference_image = ImageOps.exif_transpose(
@@ -671,10 +674,12 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
 
         logger.info(
             "hf_boogu_edit_generation_started | model_key={} | width={} | height={} | "
-            "num_images={} | instruction_chars={} | text_guidance_scale={} | image_guidance_scale={}",
+            "align_res={} | num_images={} | instruction_chars={} | "
+            "text_guidance_scale={} | image_guidance_scale={}",
             self._model_key,
             width,
             height,
+            self._align_res,
             effective_num_images,
             len(instruction),
             effective_text_guidance_scale,
@@ -709,6 +714,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                     input_images=[[reference_image]],
                     width=width,
                     height=height,
+                    align_res=self._align_res,
                     max_input_image_pixels=self._max_input_image_pixels,
                     max_input_image_side_length=self._max_input_image_side_length,
                     max_vlm_input_pil_pixels=self._max_vlm_input_pil_pixels,
@@ -740,10 +746,11 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                     },
                 )
 
+            output_images = images[:effective_num_images]
             output_bytes = [
-                pil_image_to_png_bytes(image.resize((width, height)))
-                for image in images[:effective_num_images]
+                pil_image_to_png_bytes(image.convert("RGB")) for image in output_images
             ]
+            out_w, out_h = output_images[0].size if output_images else (width, height)
 
             elapsed_ms = (time.perf_counter() - started) * 1000
             memory = self._memory_stats()
@@ -757,9 +764,11 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 extra={
                     "provider_type": "boogu_edit",
                     "model_id": self._model_id,
-                    "pipeline_request_id": request_id,
-                    "width": width,
-                    "height": height,
+                    "requested_width": width,
+                    "requested_height": height,
+                    "output_width": out_w,
+                    "output_height": out_h,
+                    "align_res": self._align_res,
                     "num_images": len(output_bytes),
                     "num_inference_steps": self._num_inference_steps,
                     "text_guidance_scale": effective_text_guidance_scale,
@@ -770,9 +779,14 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             )
             logger.info(
                 "hf_boogu_edit_generation_completed | model_key={} | generated_count={} | "
-                "elapsed_ms={:.2f}",
+                "requested_size={}x{} | output_size={}x{} | align_res={} | elapsed_ms={:.2f}",
                 self._model_key,
                 len(output_bytes),
+                width,
+                height,
+                out_w,
+                out_h,
+                self._align_res,
                 elapsed_ms,
             )
             return output_bytes
@@ -793,7 +807,6 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 extra={
                     "provider_type": "boogu_edit",
                     "model_id": self._model_id,
-                    "pipeline_request_id": request_id,
                     "width": width,
                     "height": height,
                 },

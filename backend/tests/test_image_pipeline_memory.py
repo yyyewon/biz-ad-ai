@@ -78,7 +78,7 @@ def test_generate_image_ads_returns_base64_without_file_path(monkeypatch):
         )
     )
 
-    assert result.request_id.startswith("img-")
+    assert result.request_id.startswith("gen-")
     assert result.generation_mode == "direct_poster"
     assert len(result.images) == 3
     assert len(result.poster_images) == 3
