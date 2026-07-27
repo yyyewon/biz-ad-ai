@@ -53,6 +53,8 @@ DEFAULT_NEGATIVE_INSTRUCTION = (
     "blurry, low quality, distorted, deformed, duplicate food, bad anatomy, "
     "text artifacts, watermark, logo, signature, unreadable text, "
     "oversaturated, plastic texture, fake 3d render, "
+    "uniform ham meat, waxy processed pork, neon sauce colors, fused tongs scissors chopsticks, "
+    "beauty-filter food blobs, "
     "steam, vapor, smoke on iced drinks, overhead top-down angle change, "
     "changed cup shape, wrong drink layers"
 )

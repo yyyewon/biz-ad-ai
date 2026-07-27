@@ -489,10 +489,19 @@ class PosterLayoutSpec:
         y: int,
         text_width: int,
         text_height: int,
+        pin_to_bottom: bool = False,
     ) -> tuple[int, int]:
-        """가게명이 음식과 겹치면 위로 밀어 낸다."""
+        """
+        가게명 위치를 이미지 안으로 보정한다.
 
-        if not self.food_bbox:
+        pin_to_bottom=True (포스터 footer): 하단 고정. 음식과 겹쳐도 Y를 올리지 않는다.
+        그 외: 음식 bbox와 겹치면 위로 밀어 낸다.
+        """
+
+        x = max(0, min(x, self.width - text_width))
+        y = max(0, min(y, self.height - text_height))
+
+        if pin_to_bottom or not self.food_bbox:
             return x, y
 
         text_box = (x, y, x + text_width, y + text_height)

@@ -72,6 +72,10 @@ _HF_NEGATIVE_FOOD_CORE = _sentence(
     "that is not in the original photo",
     "Do not oversaturate food colors",
     "Do not make chocolate, ganache, or cream look plastic, waxy, or CGI",
+    "Do not render meat as smooth uniform ham, plastic pork, or waxy processed slices",
+    "Do not use neon green, electric blue, or oversaturated sauce or garnish colors",
+    "Do not fuse, melt, or intersect metal tongs, scissors, or chopsticks",
+    "Do not smooth food into beauty-filter blobs; preserve individual ingredient edges",
 )
 
 _HF_NEGATIVE_TOP_DOWN = _sentence(
@@ -223,14 +227,40 @@ _HF_STUDIO_FRIED_SUBJECT = _sentence(
     "Keep a natural golden crust without a greasy or over-fried look",
 )
 
+_HF_GRILLED_BBQ_TEXTURE = _sentence(
+    "Preserve natural fat-and-meat layers, irregular slice thickness, and realistic char curl",
+    "Keep grilled protein looking like real food, not uniform processed ham or plastic texture",
+)
+
+_HF_GRILLED_BBQ_PROP_RULES = _sentence(
+    "If a built-in circular grill grate or metal grill plate is in the reference, keep it as part of the hero setup",
+    "Remove unrelated banchan, beer bottles, receipts, and excess side dishes; keep at most one or two relevant side items at the frame edges",
+    "If tongs or kitchen scissors remain, place them as one neat set with natural metal reflections, not fused or intersecting tools",
+    "Keep dipping sauces in natural brown, red, or sesame tones",
+)
+
 _HF_STUDIO_GRILLED_BBQ_SUBJECT = _sentence(
     _HF_STUDIO_FOOD_BASE,
+    _HF_GRILLED_BBQ_TEXTURE,
+    _HF_GRILLED_BBQ_PROP_RULES,
     "Preserve natural grill marks and sear without heavy smoke",
+)
+
+_HF_RICE_DISH_TEXTURE = _sentence(
+    "Keep rice, noodle, and topping layers separated with readable color contrast",
+    "Preserve sharp edges on vegetables, egg, and garnish rather than blurred blobs",
+)
+
+_HF_RICE_DISH_BOWL_RULES = _sentence(
+    "Preserve the original bowl or vessel shape, rim, and material from the reference",
+    "If toppings are arranged in separate piles, keep that radial or sectional layout instead of mixing everything together",
+    "If the reference is a top-down bowl view, keep the same top-down camera angle and do not tilt into a side view",
 )
 
 _HF_STUDIO_RICE_DISH_SUBJECT = _sentence(
     _HF_STUDIO_FOOD_BASE,
-    "Keep rice, noodle, and topping layers visible with natural colors",
+    _HF_RICE_DISH_TEXTURE,
+    _HF_RICE_DISH_BOWL_RULES,
 )
 
 _HF_DESSERT_TEXTURE_DETAIL = _sentence(
@@ -300,11 +330,13 @@ _HF_STUDIO_FRIED_SCENE = _sentence(
 _HF_STUDIO_GRILLED_BBQ_SCENE = _sentence(
     _HF_STUDIO_SCENE_BASE,
     "Use a dark warm table tone, soft side light, and natural contrast",
+    "Keep a subtle Korean BBQ table mood with the grill setup readable, not a sterile empty wall studio",
 )
 
 _HF_STUDIO_RICE_DISH_SCENE = _sentence(
     _HF_STUDIO_SCENE_BASE,
     "Use a bright clean table, soft even light, and keep the full bowl in frame",
+    "If the reference is top-down, preserve that bowl-forward top-down framing",
 )
 
 _HF_STUDIO_BREAD_DESSERT_SCENE = _sentence(
@@ -413,12 +445,17 @@ _HF_POSTER_FRIED_FOOD = _sentence(
 
 _HF_POSTER_GRILLED_BBQ_FOOD = _sentence(
     _HF_POSTER_FOOD_BASE,
+    _HF_GRILLED_BBQ_TEXTURE,
+    _HF_GRILLED_BBQ_PROP_RULES,
     "Preserve grill marks, sear gloss, and char texture",
+    "Let the grill setup and meat occupy about 42-52% of frame height",
 )
 
 _HF_POSTER_RICE_DISH_FOOD = _sentence(
     _HF_POSTER_FOOD_BASE,
-    "Keep rice, noodle, and topping layers clearly visible",
+    _HF_RICE_DISH_TEXTURE,
+    _HF_RICE_DISH_BOWL_RULES,
+    "Let the bowl occupy about 40-50% of frame height with visible margin around the vessel",
 )
 
 _HF_POSTER_BREAD_DESSERT_FOOD = _sentence(
@@ -523,6 +560,21 @@ _HF_REELS_BREAD_DESSERT_FOOD = _sentence(
     "Use a modest tighter crop if needed while keeping layers and toppings readable",
 )
 
+_HF_REELS_GRILLED_BBQ_FOOD = _sentence(
+    _HF_SUBJECT_HERO_REELS,
+    _HF_GRILLED_BBQ_TEXTURE,
+    _HF_GRILLED_BBQ_PROP_RULES,
+    "Let the grill and meat occupy about 65-78% of the frame",
+)
+
+_HF_REELS_RICE_DISH_FOOD = _sentence(
+    _HF_SUBJECT_HERO_REELS,
+    _HF_RICE_DISH_TEXTURE,
+    _HF_RICE_DISH_BOWL_RULES,
+    "Let the bowl occupy about 60-72% of the frame",
+    "Use a modest tighter crop if needed while keeping topping layers readable",
+)
+
 _HF_REELS_BREAD_DESSERT_SCENE = _sentence(
     "Transform the scene into a bright, cozy patisserie or dessert cafe in-store photo",
     "Use warm window light from one side so plate shadow and food lighting match the background",
@@ -543,6 +595,8 @@ _HF_REELS_BREAD_DESSERT_REALISM_EXTRA = _sentence(
 
 HF_FOOD_REELS_SUBJECT_RULES: dict[FoodType, str] = {
     "soup_stew": _HF_REELS_SOUP_STEW_FOOD,
+    "grilled_bbq": _HF_REELS_GRILLED_BBQ_FOOD,
+    "rice_dish": _HF_REELS_RICE_DISH_FOOD,
     "bread_dessert": _HF_REELS_BREAD_DESSERT_FOOD,
     "coffee_drink": _sentence(
         _HF_SUBJECT_HERO_REELS,
@@ -572,8 +626,31 @@ HF_REELS_SCENE_RULES = _sentence(
     "Leave the bottom-left 20% relatively empty for later text overlay",
 )
 
+_HF_REELS_GRILLED_BBQ_SCENE = _sentence(
+    "Transform the scene into a bright, appetizing in-store Korean BBQ restaurant photo",
+    "Keep the built-in grill or grill plate visible as part of the table setup",
+    "Use warm store lighting, a clean wood or metal table, and subtle interior blur",
+    "Keep one or two side dishes readable at the table edges with natural color",
+    "Do not replace the scene with a studio sweep or flat solid-color backdrop",
+    "Do not include people",
+    "Leave the bottom-left 20% relatively empty for later text overlay",
+)
+
+_HF_REELS_RICE_DISH_SCENE = _sentence(
+    "Transform the scene into a bright, appetizing in-store Korean restaurant photo",
+    "Use warm store lighting, a clean table, and subtle interior cues such as wood table or window light",
+    "Keep the full bowl readable with sharp topping detail",
+    "If the reference is top-down, keep a modest top-down or slight-angle view rather than forcing a side profile",
+    "Gentle background blur is acceptable but keep the bowl and toppings sharp",
+    "Do not replace the scene with a studio sweep or flat solid-color backdrop",
+    "Do not include people",
+    "Leave the bottom-left 20% relatively empty for later text overlay",
+)
+
 HF_FOOD_REELS_SCENE_RULES: dict[FoodType, str] = {
     "soup_stew": _HF_REELS_SOUP_STEW_SCENE,
+    "grilled_bbq": _HF_REELS_GRILLED_BBQ_SCENE,
+    "rice_dish": _HF_REELS_RICE_DISH_SCENE,
     "bread_dessert": _HF_REELS_BREAD_DESSERT_SCENE,
 }
 
@@ -599,8 +676,24 @@ _HF_REELS_SOUP_STEW_REALISM_EXTRA = _sentence(
     "Do not add fake bokeh, plastic sheen, beauty-filter smoothing, or a CGI advertisement look",
 )
 
+_HF_REELS_GRILLED_BBQ_REALISM_EXTRA = _sentence(
+    "Keep an authentic in-store smartphone single-shot look rather than a pasted composite",
+    "The grill setup and meat must look naturally placed on the restaurant table",
+    "Preserve natural meat texture, char, and grill detail",
+    "Do not add fake bokeh, plastic sheen, beauty-filter smoothing, or a CGI advertisement look",
+)
+
+_HF_REELS_RICE_DISH_REALISM_EXTRA = _sentence(
+    "Keep an authentic in-store smartphone single-shot look rather than a pasted composite",
+    "The bowl and toppings must look naturally placed on the restaurant table",
+    "Preserve sharp vegetable, egg, and garnish texture",
+    "Do not add fake bokeh, plastic sheen, beauty-filter smoothing, or a CGI advertisement look",
+)
+
 HF_FOOD_REELS_REALISM_EXTRA: dict[FoodType, str] = {
     "soup_stew": _HF_REELS_SOUP_STEW_REALISM_EXTRA,
+    "grilled_bbq": _HF_REELS_GRILLED_BBQ_REALISM_EXTRA,
+    "rice_dish": _HF_REELS_RICE_DISH_REALISM_EXTRA,
     "bread_dessert": _HF_REELS_BREAD_DESSERT_REALISM_EXTRA,
 }
 

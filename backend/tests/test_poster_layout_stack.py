@@ -329,3 +329,27 @@ def test_badge_overlaps_food_detects_pill_on_food():
         badge_width=120,
         badge_height=44,
     )
+
+
+def test_footer_store_stays_pinned_to_bottom_over_food():
+    layout = _layout_with_food(food_top=360)
+    footer_y = layout.height - layout.store_margin_bottom - 18
+
+    _, y = layout.clamp_store_position(
+        x=24,
+        y=footer_y,
+        text_width=80,
+        text_height=18,
+        pin_to_bottom=True,
+    )
+
+    assert y == footer_y
+
+    _, y_without_pin = layout.clamp_store_position(
+        x=24,
+        y=footer_y,
+        text_width=80,
+        text_height=18,
+    )
+
+    assert y_without_pin < footer_y

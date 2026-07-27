@@ -97,10 +97,12 @@ def _prepare_edit_source_bytes(
 _STUDIO_SUBJECT_SCALE_BY_FOOD: dict[str, float] = {
     "soup_stew": 0.85,
     "bread_dessert": 0.82,
+    "grilled_bbq": 0.85,
 }
 _REELS_ZOOM_BY_FOOD: dict[str, float] = {
     "soup_stew": 1.18,
     "bread_dessert": 1.14,
+    "rice_dish": 1.06,
 }
 _DEFAULT_STUDIO_SUBJECT_SCALE = 0.78
 _DEFAULT_REELS_ZOOM = 1.12
