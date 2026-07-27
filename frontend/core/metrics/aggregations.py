@@ -131,6 +131,21 @@ def format_ms(value: float | None) -> str:
     return f"{value:.0f}ms"
 
 
+def single_run_elapsed_ms(records: list[dict[str, Any]]) -> float | None:
+    """단일 request_id 필터 시 해당 stage의 실제 elapsed_ms (1건 또는 max)."""
+
+    values = [
+        float(record["elapsed_ms"])
+        for record in records
+        if record.get("elapsed_ms") is not None
+    ]
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    return max(values)
+
+
 def latency_metric_labels(
     base: str,
     *,
@@ -156,12 +171,22 @@ def render_latency_metric_pair(
     *,
     base_label: str,
     single_run: bool,
+    records: list[dict[str, Any]] | None = None,
     help_text: str | None = None,
 ) -> None:
     count = int(summary.get("count") or 0)
+    if single_run:
+        elapsed = single_run_elapsed_ms(records or [])
+        container_left.metric(
+            base_label,
+            format_ms(elapsed),
+            help=help_text,
+        )
+        return
+
     left_label, right_label = latency_metric_labels(
         base_label,
-        single_run=single_run,
+        single_run=False,
         count=count,
     )
     container_left.metric(
@@ -169,16 +194,11 @@ def render_latency_metric_pair(
         format_ms(summary.get("p50_ms")),
         help=help_text,
     )
-    if right_label:
-        container_right.metric(
-            right_label,
-            format_ms(summary.get("p95_ms")),
-            help=help_text,
-        )
-    elif single_run and count == 1:
-        container_right.metric("측정 건수", "1")
-    else:
-        container_right.metric("측정 건수", str(count))
+    container_right.metric(
+        right_label,
+        format_ms(summary.get("p95_ms")),
+        help=help_text,
+    )
 
 
 def ms_to_sec(value: float) -> float:

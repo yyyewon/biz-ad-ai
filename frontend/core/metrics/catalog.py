@@ -31,24 +31,24 @@ class DashboardSection:
 SECTIONS: tuple[DashboardSection, ...] = (
     DashboardSection(
         key="integrated_api",
-        title="통합 API · 서비스 운영",
-        subtitle="광고 생성 API 1회 호출 전체 (문구 + 이미지)",
-        purpose="사용자가 생성 버튼 눌렀을 때 서비스가 제대로 끝까지 도는지",
-        data_source="`performance.jsonl` (`stage=total_pipeline`)",
+        title="통합 파이프라인",
+        subtitle="광고 생성 API 1회 호출 전체 wall clock",
+        purpose="사용자가 생성 버튼 눌렀을 때 끝까지 걸린 전체 서비스 시간",
+        data_source="`performance.jsonl` · `stage=total_pipeline`",
     ),
     DashboardSection(
         key="image_generation",
         title="이미지 생성",
-        subtitle="OpenAI/HF edit · variant 3장 (studio / poster / feed) · PIL 합성",
-        purpose="이미지 생성·후처리 속도, 원본 유지·프롬프트 준수",
+        subtitle="provider · variant · overlay · image track",
+        purpose="이미지 트랙 breakdown, variant/품질 지표",
         data_source="속도: `performance.jsonl` · 품질: `quality.jsonl`",
     ),
     DashboardSection(
         key="poster_vlm",
         title="포스터 VLM",
-        subtitle="Qwen2-VL — palette · scrim · typography JSON (`poster_layout`)",
+        subtitle="Qwen2-VL — palette · scrim · typography JSON",
         purpose="VLM 출력 품질·latency",
-        data_source="`performance.jsonl` (VLM stages) · app log",
+        data_source="`performance.jsonl` (VLM stages)",
     ),
 )
 
@@ -58,7 +58,7 @@ METRIC_CATALOG: dict[MetricCategory, tuple[MetricCatalogItem, ...]] = {
             "Total Pipeline Latency",
             "total_pipeline",
             "API 1회 전체 (문구+이미지 **병렬**)",
-            "사용자 체감 대기. 이미지가 더 길면 Total ≈ Image Pipeline",
+            "사용자 체감 대기 시간",
             "✅",
         ),
         MetricCatalogItem(
@@ -78,10 +78,17 @@ METRIC_CATALOG: dict[MetricCategory, tuple[MetricCatalogItem, ...]] = {
     ),
     "image_generation": (
         MetricCatalogItem(
-            "Image Generation Latency (provider)",
+            "Image Generation (3 variants)",
+            "poster_generation",
+            "studio / poster / feed 3장 variant loop wall clock",
+            "요약 지표 — variant 루프 실제 소요",
+            "✅",
+        ),
+        MetricCatalogItem(
+            "Image Generation (provider sum)",
             "image_provider_generation_sum",
-            "OpenAI/HF 등 provider 추론 합산 (VLM·overlay 제외)",
-            "실제 이미지 생성 API·모델 시간",
+            "OpenAI/HF provider 추론 합산 (VLM·overlay 제외)",
+            "provider inference only",
             "✅",
         ),
         MetricCatalogItem(
@@ -89,6 +96,13 @@ METRIC_CATALOG: dict[MetricCategory, tuple[MetricCatalogItem, ...]] = {
             "image_pipeline_total",
             "provider + VLM + overlay wall clock",
             "이미지 트랙 전체",
+            "✅",
+        ),
+        MetricCatalogItem(
+            "Poster VLM + Overlay",
+            "image_poster_vlm_overlay",
+            "VLM batch + PIL 텍스트 합성",
+            "provider 이후 후처리",
             "✅",
         ),
         MetricCatalogItem(
@@ -117,12 +131,19 @@ METRIC_CATALOG: dict[MetricCategory, tuple[MetricCatalogItem, ...]] = {
             "CLIP-T (Image–Text Alignment)",
             "clip_t",
             "프롬프트 vs 생성 cosine",
-            "지시 준수 (no text 등)",
+            "지시 준수",
             "✅",
             log_target="quality.jsonl",
         ),
     ),
     "poster_vlm": (
+        MetricCatalogItem(
+            "VLM Inference Latency",
+            "vlm_inference",
+            "VLM batch 추론 ms",
+            "요약 지표 — layout JSON 생성",
+            "✅",
+        ),
         MetricCatalogItem(
             "VLM JSON Parse Success Rate",
             "vlm_json_parse",
@@ -135,13 +156,6 @@ METRIC_CATALOG: dict[MetricCategory, tuple[MetricCatalogItem, ...]] = {
             "vlm_palette_reconcile",
             "규칙 palette 보정 비율",
             "VLM 색 힌트 신뢰도",
-            "✅",
-        ),
-        MetricCatalogItem(
-            "VLM Inference Latency",
-            "vlm_inference",
-            "VLM 1회 추론",
-            "GPU 비용·hang",
             "✅",
         ),
     ),
@@ -167,11 +181,11 @@ def metric_help_by_name(display_name: str) -> str:
 
 
 GLOSSARY_MD = """
-**Latency:** `P50` / `P95` = `elapsed_ms` 백분위 (차트는 **초**).
+**요약 (상단):** 통합 파이프라인 · 이미지 3장 생성 · 포스터 VLM
 
-**Stage / metric:** 영문 이름 = JSONL `stage` 키.
+**상세 지표:** provider breakdown · variant · CLIP · VLM 품질 등
 
-**필터:** `source_user`, `deploy_env`, port = `extra.*`.
+**Latency:** 필터 전체 = P50/P95 · **요청 ID 1개** = 그 run의 실제 elapsed
 """
 
 VARIANT_CHART_HELP = (
@@ -183,14 +197,16 @@ CLIP_I_CHART_HELP = metric_help_by_name("CLIP-I (Image–Image Similarity)") + "
 CLIP_T_CHART_HELP = metric_help_by_name("CLIP-T (Image–Text Alignment)") + "\n\n점수 **0~1**."
 
 METRIC_HELP = {
+    "Total Pipeline Latency": metric_help_by_name("Total Pipeline Latency"),
     "Total Pipeline Latency (P50)": (
         metric_help_by_name("Total Pipeline Latency")
-        + "\n\n**참고:** 문구·이미지는 **동시에** 돌아갑니다. 이미지가 더 오래 걸리면 "
-        "Total Pipeline ≈ Image Track Total 이 됩니다 (순차 합이 아님)."
+        + "\n\n**참고:** 문구·이미지는 **동시에** 돌아갑니다."
     ),
+    "Image Generation (3 variants)": metric_help_by_name("Image Generation (3 variants)"),
+    "VLM Inference Latency": metric_help_by_name("VLM Inference Latency"),
+    "VLM Inference Latency (P50)": metric_help_by_name("VLM Inference Latency"),
     "Pipeline Success Rate": metric_help_by_name("Pipeline Success Rate"),
     "Partial Success Rate": metric_help_by_name("Partial Success Rate"),
-    "VLM Inference Latency (P50)": metric_help_by_name("VLM Inference Latency"),
     "VLM JSON Parse Success Rate": metric_help_by_name("VLM JSON Parse Success Rate"),
     "Rules Palette Fallback Rate": metric_help_by_name("Rules Palette Fallback Rate"),
 }
@@ -200,6 +216,9 @@ SECTION_HELP: dict[str, str] = {
     for s in SECTIONS
 }
 
+SECTION_HELP["성능 요약"] = (
+    "통합 파이프라인 · 이미지 3장 생성 · 포스터 VLM — 핵심 3지표."
+)
 SECTION_HELP["팀별 생성 수"] = (
     "필터 무관 · `total_pipeline` run을 `extra.source_user`별 집계."
 )

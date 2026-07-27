@@ -308,6 +308,18 @@ _POSTER_LAYOUT_RULES = (
     "{store_footer_line}"
 )
 
+_POSTER_LAYOUT_RULES_RICE_DISH = (
+    "LAYOUT 2:3 portrait: compact upper 28-34% headline zone, "
+    "large top-down bowl centered horizontally, bowl vertical center near 60-66% height, "
+    "minimize empty band between headline zone and bowl, no wide dead middle, "
+    "bottom 8% calm for store footer, no footer panel or hard horizontal split. "
+    "{store_footer_line}"
+)
+
+FOOD_POSTER_LAYOUT_RULES: dict[FoodType, str] = {
+    "rice_dish": _POSTER_LAYOUT_RULES_RICE_DISH,
+}
+
 _POSTER_PHOTO_TEMPLATE = """
 TASK: menu promo poster from attached food photo — food hero + designed background only, zero typography
 TYPE: {food_type_label}
@@ -342,9 +354,10 @@ _POSTER_GRILLED_BBQ_FOOD = (
 )
 
 _POSTER_RICE_DISH_FOOD = (
-    f"{_POSTER_FOOD_BASE}, separated topping layers with sharp edges, "
-    "preserve bowl/vessel and radial/sectional layout, keep top-down if reference is top-down, "
-    "bowl occupies 40-50% frame height with margin around vessel"
+    "preserve bowl/vessel and radial topping layout, keep top-down if reference is top-down, "
+    "scale bowl as dominant hero 62-72% frame width and 55-65% frame height, "
+    "bowl center near 60-66% height, no wide empty band between headline zone and bowl, "
+    "not pinned to bottom edge, sharp topping edges"
 )
 
 _POSTER_BREAD_DESSERT_FOOD = (
@@ -688,7 +701,9 @@ def build_template_context(
         "poster_background_rules": _lookup_food_rules(
             FOOD_POSTER_BACKGROUND_RULES, food_type
         ),
-        "poster_layout_rules": _POSTER_LAYOUT_RULES.format(
+        "poster_layout_rules": (
+            FOOD_POSTER_LAYOUT_RULES.get(food_type) or _POSTER_LAYOUT_RULES
+        ).format(
             store_footer_line=_build_poster_store_footer_line(
                 store_name,
                 store_location,

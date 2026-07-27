@@ -407,8 +407,19 @@ HF_POSTER_LAYOUT_RULES_DRINK = _sentence(
     "{store_footer_line}",
 )
 
+HF_POSTER_LAYOUT_RULES_RICE_DISH = _sentence(
+    "Use a 2:3 portrait layout with a compact upper 28-34% quiet zone for later headline overlay",
+    "Keep a top-down bowl large and centered horizontally",
+    "Place the bowl vertical center near 60-66% of the frame height",
+    "Minimize empty background between the headline zone and the bowl; do not leave a wide dead band in the middle",
+    "Keep the bottom 8% calm for a later full-width store footer while continuing the same background naturally",
+    "Do not add a footer panel, color band, or hard horizontal split",
+    "{store_footer_line}",
+)
+
 HF_FOOD_POSTER_LAYOUT_RULES: dict[FoodType, str] = {
     "coffee_drink": HF_POSTER_LAYOUT_RULES_DRINK,
+    "rice_dish": HF_POSTER_LAYOUT_RULES_RICE_DISH,
 }
 
 _HF_POSTER_INSTRUCTION_TEMPLATE = """
@@ -452,10 +463,14 @@ _HF_POSTER_GRILLED_BBQ_FOOD = _sentence(
 )
 
 _HF_POSTER_RICE_DISH_FOOD = _sentence(
-    _HF_POSTER_FOOD_BASE,
+    _HF_PRESERVE_FOOD_SHAPE,
+    _HF_EXCLUDE_TABLE_CLUTTER,
     _HF_RICE_DISH_TEXTURE,
     _HF_RICE_DISH_BOWL_RULES,
-    "Let the bowl occupy about 40-50% of frame height with visible margin around the vessel",
+    "Scale the bowl up as the dominant poster hero filling about 62-72% of frame width and 55-65% of frame height",
+    "Place the bowl center near 60-66% of frame height, below the headline zone but without a large empty gap",
+    "Do not leave a wide empty band of background between the upper text zone and the bowl",
+    "Do not pin the bowl to the very bottom edge",
 )
 
 _HF_POSTER_BREAD_DESSERT_FOOD = _sentence(

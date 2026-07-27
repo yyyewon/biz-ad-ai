@@ -79,7 +79,15 @@ def _prepare_edit_source_bytes(
             )
             image = shrink_and_pad_for_wider_framing(image, subject_scale=subject_scale)
         elif variant == "poster":
-            image = pad_to_portrait_poster_framing(image)
+            framing = _POSTER_FRAMING_BY_FOOD.get(food_type, {})
+            pre_zoom = framing.get("pre_zoom")
+            if pre_zoom:
+                image = zoom_center_crop(image, zoom_factor=float(pre_zoom))
+            image = pad_to_portrait_poster_framing(
+                image,
+                portrait_aspect=float(framing.get("portrait_aspect", 1.5)),
+                hero_center_y_ratio=float(framing.get("hero_center_y_ratio", 0.58)),
+            )
         elif variant == "instagram_feed":
             zoom_factor = _REELS_ZOOM_BY_FOOD.get(food_type, _DEFAULT_REELS_ZOOM)
             image = zoom_center_crop(image, zoom_factor=zoom_factor)
@@ -103,6 +111,13 @@ _REELS_ZOOM_BY_FOOD: dict[str, float] = {
     "soup_stew": 1.18,
     "bread_dessert": 1.14,
     "rice_dish": 1.06,
+}
+_POSTER_FRAMING_BY_FOOD: dict[str, dict[str, float]] = {
+    "rice_dish": {
+        "portrait_aspect": 1.38,
+        "hero_center_y_ratio": 0.54,
+        "pre_zoom": 1.12,
+    },
 }
 _DEFAULT_STUDIO_SUBJECT_SCALE = 0.78
 _DEFAULT_REELS_ZOOM = 1.12
