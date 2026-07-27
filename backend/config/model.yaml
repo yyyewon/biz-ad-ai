@@ -588,12 +588,14 @@ poster_design_analysis:
   fallback_to_rules: true
   provider: hf
   default_model: qwen2_vl_2b_gptq_int8
+  # auto: GPU VLM은 isolated subprocess (GPTQ VRAM 잔류 방지)
+  use_subprocess: auto
 
   models:
     qwen2_vl_2b_gptq_int8:
       model_id: Qwen/Qwen2-VL-2B-Instruct-GPTQ-Int8
-      # GPU(auto) 사용 시 GPTQ VLM이 해제 후에도 ~3.5GB VRAM 잔류 → CPU 권장
-      device: cpu
+      # Boogu release 후 subprocess에서 GPU 추론 (부모 프로세스 VRAM 오염 없음)
+      device: cuda
       max_new_tokens: 512
       analysis_max_side: 768
 

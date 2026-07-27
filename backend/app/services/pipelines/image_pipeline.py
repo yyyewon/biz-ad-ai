@@ -467,13 +467,51 @@ async def generate_image_ads(
                 )
                 release_gpu()
 
+            poster_vlm_hints_by_idx: dict[int, object] = {}
+            try:
+                from app.utils.poster_vlm import (
+                    analyze_poster_designs_batch,
+                    is_poster_vlm_enabled,
+                    poster_vlm_use_subprocess,
+                    VLM_HINTS_AUTO,
+                    VLM_HINTS_SKIP,
+                )
+
+                if is_poster_vlm_enabled() and poster_vlm_use_subprocess():
+                    poster_jobs = [
+                        (idx, poster_bytes)
+                        for idx, variant, poster_bytes in overlay_targets
+                        if variant == "poster"
+                    ]
+                    if poster_jobs:
+                        poster_images = [
+                            image_bytes_to_pil(poster_bytes).convert("RGB")
+                            for _, poster_bytes in poster_jobs
+                        ]
+                        batch_hints = analyze_poster_designs_batch(
+                            poster_images,
+                            metrics_request_id=request_id,
+                        )
+                        for (idx, _), hints in zip(poster_jobs, batch_hints, strict=False):
+                            poster_vlm_hints_by_idx[idx] = (
+                                hints if hints is not None else VLM_HINTS_SKIP
+                            )
+            except Exception as exc:
+                logger.warning(
+                    "image_pipeline_poster_vlm_batch_failed | error={} | fallback=per_overlay",
+                    str(exc),
+                )
+
             for idx, variant, poster_bytes in overlay_targets:
                 overlay_started = time.perf_counter()
+                overlay_vlm_hints = poster_vlm_hints_by_idx.get(idx, VLM_HINTS_AUTO)
                 overlaid_bytes = await asyncio.to_thread(
                     apply_variant_text_overlay,
                     poster_bytes,
                     payload=payload,
                     variant=variant,
+                    metrics_request_id=request_id,
+                    vlm_hints=overlay_vlm_hints,
                 )
                 overlay_latency_ms = int(
                     (time.perf_counter() - overlay_started) * 1000

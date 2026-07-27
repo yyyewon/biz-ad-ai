@@ -15,7 +15,7 @@ _PROVIDER_REQUEST_PREFIXES = (
     "img-",
 )
 _PIPELINE_REQUEST_PREFIX = "gen-"
-_REQUEST_CLUSTER_WINDOW_SEC = 120.0
+_REQUEST_CLUSTER_WINDOW_SEC = 3600.0
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -115,6 +115,14 @@ def _record_times(records: list[dict[str, Any]], request_id: str) -> list[float]
     ]
 
 
+def _linked_pipeline_request_id(record: dict[str, Any]) -> str | None:
+    linked = get_extra(record, "pipeline_request_id")
+    if linked is None:
+        return None
+    text = str(linked).strip()
+    return text or None
+
+
 def resolve_request_id_cluster(
     records: list[dict[str, Any]],
     request_id: str,
@@ -125,10 +133,19 @@ def resolve_request_id_cluster(
     Join pipeline request ids (`gen-*`) with provider-local ids (`hf-boogu-gen-*`).
 
     Older logs recorded Boogu inference under a separate request_id, so filtering
-    by either id should return the full run.
+    by either id should return the full run. Long runs (20min+) need a wide window
+    or `extra.pipeline_request_id` linkage.
     """
 
     cluster = {request_id}
+
+    for record in records:
+        linked = _linked_pipeline_request_id(record)
+        candidate = str(record.get("request_id") or "")
+        if linked == request_id and candidate:
+            cluster.add(candidate)
+        if candidate == request_id and linked:
+            cluster.add(linked)
 
     if request_id.startswith(_PIPELINE_REQUEST_PREFIX):
         run_times = _record_times(records, request_id)

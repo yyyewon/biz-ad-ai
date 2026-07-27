@@ -30,6 +30,7 @@ class PerformanceEvent(StrEnum):
 class PerformancePipeline(StrEnum):
     AD_GENERATE = "ad_generate"
     HF_SDXL_LIGHTNING = "hf_sdxl_lightning"
+    HF_BOOGU_EDIT = "hf_boogu_edit"
 
 
 class PerformanceStage(StrEnum):
@@ -77,6 +78,9 @@ class MetricId(StrEnum):
 
     HF_MODEL_LOAD_LATENCY = "hf_model_load_latency"
     HF_INFERENCE_LATENCY = "hf_inference_latency"
+
+    BOOGU_MODEL_LOAD_LATENCY = "boogu_model_load_latency"
+    BOOGU_INFERENCE_LATENCY = "boogu_inference_latency"
 
 
 LOG_TARGETS: dict[LogTarget, str] = {
@@ -305,6 +309,40 @@ METRIC_REGISTRY: dict[MetricId, MetricDefinition] = {
         log_target="performance",
         extra_fields=("render_mode", "num_images"),
         dashboard_query="pipeline=hf_sdxl_lightning, stage=inference",
+    ),
+    MetricId.BOOGU_MODEL_LOAD_LATENCY: MetricDefinition(
+        metric_id=MetricId.BOOGU_MODEL_LOAD_LATENCY,
+        display_name="Boogu Model Load Latency",
+        description="Boogu Edit FP8 pipeline 로드 ms",
+        rationale="콜드스타트·VRAM 확보",
+        category="provider",
+        status="implemented",
+        event=PerformanceEvent.PERF_METRIC,
+        stage=PerformanceStage.MODEL_LOAD,
+        pipeline=PerformancePipeline.HF_BOOGU_EDIT,
+        log_target="performance",
+        extra_fields=("provider_type", "model_id", "pipeline_request_id", "load_attempt"),
+        dashboard_query="pipeline=hf_boogu_edit, stage=model_load",
+    ),
+    MetricId.BOOGU_INFERENCE_LATENCY: MetricDefinition(
+        metric_id=MetricId.BOOGU_INFERENCE_LATENCY,
+        display_name="Boogu Inference Latency",
+        description="Boogu Edit 1회 inference ms",
+        rationale="이미지 생성 GPU 병목",
+        category="provider",
+        status="implemented",
+        event=PerformanceEvent.PERF_METRIC,
+        stage=PerformanceStage.INFERENCE,
+        pipeline=PerformancePipeline.HF_BOOGU_EDIT,
+        log_target="performance",
+        extra_fields=(
+            "provider_type",
+            "model_id",
+            "pipeline_request_id",
+            "num_images",
+            "num_inference_steps",
+        ),
+        dashboard_query="pipeline=hf_boogu_edit, stage=inference",
     ),
 }
 

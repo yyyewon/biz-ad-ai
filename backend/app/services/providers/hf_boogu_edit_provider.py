@@ -24,7 +24,8 @@ from app.utils.memory_monitor import (
     ensure_model_load_memory,
     log_model_memory_snapshot,
 )
-from app.utils.performance_logger import record_performance_metric
+from app.schemas.performance_metrics import MetricId
+from app.utils.performance_logger import record_registry_metric
 
 
 try:
@@ -395,7 +396,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             **load_kwargs,
         )
 
-    def _load_pipeline(self) -> tuple[Any, dict[str, Any]]:
+    def _load_pipeline(self, *, pipeline_request_id: str | None = None) -> tuple[Any, dict[str, Any]]:
         self._ensure_dependencies_available()
         assert BooguImagePipeline is not None
 
@@ -417,7 +418,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             if _PIPELINE_SLOT.get("cache_key") == cache_key:
                 return _PIPELINE_SLOT["pipeline"], _PIPELINE_SLOT["meta"]
 
-            request_id = f"hf-boogu-load-{uuid.uuid4().hex[:10]}"
+            metric_request_id = pipeline_request_id or f"hf-boogu-load-{uuid.uuid4().hex[:10]}"
             started = time.perf_counter()
             load_stage = "before_boogu_edit_pipeline_load"
             before_load = log_model_memory_snapshot(
@@ -472,10 +473,9 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                         }
                     )
 
-                    record_performance_metric(
-                        pipeline="hf_boogu_edit",
-                        stage="model_load",
-                        request_id=request_id,
+                    record_registry_metric(
+                        MetricId.BOOGU_MODEL_LOAD_LATENCY,
+                        request_id=metric_request_id,
                         provider="hf",
                         model=self._model_key,
                         elapsed_ms=elapsed_ms,
@@ -483,6 +483,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                         extra={
                             "provider_type": "boogu_edit",
                             "model_id": self._model_id,
+                            "pipeline_request_id": pipeline_request_id,
                             "use_fp8_weights": self._use_fp8_weights,
                             "load_attempt": attempt + 1,
                             **meta,
@@ -519,10 +520,9 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
 
             assert last_exc is not None
             elapsed_ms = (time.perf_counter() - started) * 1000
-            record_performance_metric(
-                pipeline="hf_boogu_edit",
-                stage="model_load",
-                request_id=request_id,
+            record_registry_metric(
+                MetricId.BOOGU_MODEL_LOAD_LATENCY,
+                request_id=metric_request_id,
                 provider="hf",
                 model=self._model_key,
                 elapsed_ms=elapsed_ms,
@@ -532,6 +532,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 extra={
                     "provider_type": "boogu_edit",
                     "model_id": self._model_id,
+                    "pipeline_request_id": pipeline_request_id,
                 },
             )
             raise AppException(
@@ -682,7 +683,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
 
         try:
             with _PIPELINE_INFERENCE_LOCK:
-                pipe, load_meta = self._load_pipeline()
+                pipe, load_meta = self._load_pipeline(pipeline_request_id=metric_request_id)
                 generator = None
                 if device.startswith("cuda") and torch is not None:
                     torch.cuda.synchronize()
@@ -746,9 +747,8 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
 
             elapsed_ms = (time.perf_counter() - started) * 1000
             memory = self._memory_stats()
-            record_performance_metric(
-                pipeline="hf_boogu_edit",
-                stage="inference",
+            record_registry_metric(
+                MetricId.BOOGU_INFERENCE_LATENCY,
                 request_id=metric_request_id,
                 provider="hf",
                 model=self._model_key,
@@ -757,6 +757,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 extra={
                     "provider_type": "boogu_edit",
                     "model_id": self._model_id,
+                    "pipeline_request_id": request_id,
                     "width": width,
                     "height": height,
                     "num_images": len(output_bytes),
@@ -780,9 +781,8 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             raise
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - started) * 1000
-            record_performance_metric(
-                pipeline="hf_boogu_edit",
-                stage="inference",
+            record_registry_metric(
+                MetricId.BOOGU_INFERENCE_LATENCY,
                 request_id=metric_request_id,
                 provider="hf",
                 model=self._model_key,
@@ -793,6 +793,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 extra={
                     "provider_type": "boogu_edit",
                     "model_id": self._model_id,
+                    "pipeline_request_id": request_id,
                     "width": width,
                     "height": height,
                 },

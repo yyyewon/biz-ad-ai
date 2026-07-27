@@ -519,6 +519,64 @@ def _render_image_generation_section(
                 st.caption("quality.jsonl 데이터 없음 (필터 범위 또는 파일 경로 확인)")
 
 
+def _render_boogu_provider_section(performance_records: list) -> None:
+    _section_header("Boogu Provider")
+    st.caption(
+        "JSONL: `pipeline=hf_boogu_edit`, `stage=model_load|inference`, "
+        "`metric_id=boogu_*` · API run `gen-*`와 `extra.pipeline_request_id`로 연결"
+    )
+
+    load_records = [
+        record
+        for record in filter_records(performance_records, stage="model_load")
+        if record.get("pipeline") == "hf_boogu_edit"
+        or record.get("metric_id") == "boogu_model_load_latency"
+    ]
+    inference_records = [
+        record
+        for record in filter_records(performance_records, stage="inference")
+        if record.get("pipeline") == "hf_boogu_edit"
+        or record.get("metric_id") == "boogu_inference_latency"
+    ]
+
+    load_summary = latency_summary(load_records)
+    inference_summary = latency_summary(inference_records)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Boogu Load (P50)", format_ms(load_summary["p50_ms"]))
+    c2.metric("Boogu Load (P95)", format_ms(load_summary["p95_ms"]))
+    c3.metric("Boogu Inference (P50)", format_ms(inference_summary["p50_ms"]))
+    c4.metric("Boogu Inference (P95)", format_ms(inference_summary["p95_ms"]))
+
+    st.caption(
+        f"Loads: **{load_summary['count']}** · Inferences: **{inference_summary['count']}**"
+    )
+
+    if inference_records:
+        _chart_header(
+            "Boogu Inference Latency (`hf_boogu_edit` / `inference`)",
+            "Boogu Edit FP8 1회 diffusion 추론 ms",
+            unit="초",
+        )
+        _vertical_bar_chart(
+            pd.Series(
+                {
+                    str(record.get("request_id", idx)): (record.get("elapsed_ms") or 0) / 1000
+                    for idx, record in enumerate(inference_records[-20:])
+                },
+                name="sec",
+            ),
+            category_col="request_id",
+            value_col="sec",
+            height=220,
+        )
+    else:
+        st.caption(
+            "Boogu inference 로그 없음. `backend/logs-dev/performance.jsonl`에 "
+            "`metric_id=boogu_inference_latency` 또는 `pipeline=hf_boogu_edit` 줄이 있는지 확인하세요."
+        )
+
+
 def _render_poster_vlm_section(performance_records: list) -> None:
     _section_header("포스터 VLM")
     _render_section_intro("poster_vlm")
@@ -611,6 +669,9 @@ def render_metrics_dashboard() -> None:
     st.divider()
 
     _render_image_generation_section(performance_records, quality_records)
+    st.divider()
+
+    _render_boogu_provider_section(performance_records)
     st.divider()
 
     _render_poster_vlm_section(performance_records)

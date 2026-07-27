@@ -509,12 +509,17 @@ def analyze_poster_layout(
     *,
     layout_mode: str = "single",
     metrics_request_id: str | None = None,
+    vlm_hints: object | None = None,
 ) -> PosterLayoutSpec:
     """
     포스터 이미지에서 음식 bbox·배경 색·scrim을 추정해 LayoutSpec을 반환한다.
 
     layout_mode는 현재 single만 지원한다. multi는 Phase 5에서 확장한다.
     """
+
+    from app.utils.poster_vlm import VLM_HINTS_AUTO
+
+    resolved_vlm_hints = VLM_HINTS_AUTO if vlm_hints is None else vlm_hints
 
     if layout_mode != "single":
         logger.warning(
@@ -531,8 +536,13 @@ def analyze_poster_layout(
             width,
             height,
         )
-        return _build_fallback_spec(rgb_image, food_bbox=None, alpha=None)
-
+        spec = _build_fallback_spec(rgb_image, food_bbox=None, alpha=None)
+        return _apply_vlm_overrides(
+            spec,
+            rgb_image,
+            metrics_request_id=metrics_request_id,
+            vlm_hints=resolved_vlm_hints,
+        )
     alpha: Image.Image | None = None
     food_bbox: tuple[int, int, int, int] | None = None
     food_visual_top: int | None = None
@@ -548,12 +558,22 @@ def analyze_poster_layout(
             str(exc),
         )
         spec = _build_fallback_spec(rgb_image, food_bbox=None, alpha=None)
-        return _apply_vlm_overrides(spec, rgb_image, metrics_request_id=metrics_request_id)
+        return _apply_vlm_overrides(
+            spec,
+            rgb_image,
+            metrics_request_id=metrics_request_id,
+            vlm_hints=resolved_vlm_hints,
+        )
 
     if food_bbox is None:
         logger.info("poster_layout_no_food_bbox | using_fallback=true")
         spec = _build_fallback_spec(rgb_image, food_bbox=None, alpha=alpha)
-        return _apply_vlm_overrides(spec, rgb_image, metrics_request_id=metrics_request_id)
+        return _apply_vlm_overrides(
+            spec,
+            rgb_image,
+            metrics_request_id=metrics_request_id,
+            vlm_hints=resolved_vlm_hints,
+        )
 
     if not _is_valid_food_bbox(food_bbox, width, height):
         logger.info(
@@ -561,7 +581,12 @@ def analyze_poster_layout(
             food_bbox,
         )
         spec = _build_fallback_spec(rgb_image, food_bbox=None, alpha=alpha)
-        return _apply_vlm_overrides(spec, rgb_image, metrics_request_id=metrics_request_id)
+        return _apply_vlm_overrides(
+            spec,
+            rgb_image,
+            metrics_request_id=metrics_request_id,
+            vlm_hints=resolved_vlm_hints,
+        )
 
     spec = _build_spec_from_food_bbox(
         rgb_image,
@@ -573,6 +598,7 @@ def analyze_poster_layout(
         spec,
         rgb_image,
         metrics_request_id=metrics_request_id,
+        vlm_hints=resolved_vlm_hints,
     )
     logger.info(
         "poster_layout_applied | used_fallback={} | food_bbox={} | scrim_alpha={} | vlm_enabled={}",
@@ -598,11 +624,17 @@ def _apply_vlm_overrides(
     image: Image.Image,
     *,
     metrics_request_id: str | None = None,
+    vlm_hints: object | None = None,
 ) -> PosterLayoutSpec:
     """VLM 디자인 힌트가 있으면 palette·배치·scrim만 덮어쓴다. food bbox는 유지."""
 
     try:
-        from app.utils.poster_vlm import analyze_poster_design_with_vlm, is_poster_vlm_enabled
+        from app.utils.poster_vlm import (
+            VLM_HINTS_AUTO,
+            VLM_HINTS_SKIP,
+            analyze_poster_design_with_vlm,
+            is_poster_vlm_enabled,
+        )
     except ImportError:
         return spec
 
@@ -610,7 +642,13 @@ def _apply_vlm_overrides(
         return spec
 
     request_id = metrics_request_id or "unknown"
-    hints = analyze_poster_design_with_vlm(image, metrics_request_id=request_id)
+    if vlm_hints is VLM_HINTS_AUTO:
+        hints = analyze_poster_design_with_vlm(image, metrics_request_id=request_id)
+    elif vlm_hints is VLM_HINTS_SKIP:
+        logger.info("poster_vlm_skipped | reason=batch_skip | using_rules_palette=true")
+        return spec
+    else:
+        hints = vlm_hints
     if hints is None:
         logger.info("poster_vlm_skipped | reason=disabled_or_failed | using_rules_palette=true")
         return spec
