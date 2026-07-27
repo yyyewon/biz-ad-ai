@@ -40,7 +40,6 @@ def test_image_ad_endpoint_returns_common_success_response(monkeypatch):
             latency_ms=100,
             generation_mode=payload.generation_mode,
             stage_latencies_ms={
-                "food_generation_ms": 0,
                 "poster_generation_ms": 100,
                 "total_ms": 100,
             },

@@ -127,7 +127,7 @@ def test_measure_stage_success_writes_success_metric(monkeypatch, tmp_path):
 
     with measure_stage(
         pipeline="ad_generate",
-        stage="image_generation",
+        stage="image_provider_generation_sum",
         request_id="request-success",
         provider="openai",
         model="gpt-image-1-mini",
@@ -139,7 +139,7 @@ def test_measure_stage_success_writes_success_metric(monkeypatch, tmp_path):
     assert len(lines) == 1
 
     saved = json.loads(lines[0])
-    assert saved["stage"] == "image_generation"
+    assert saved["stage"] == "image_provider_generation_sum"
     assert saved["success"] is True
     assert saved["elapsed_ms"] >= 0
 
@@ -191,7 +191,7 @@ def test_measure_stage_unhandled_exception_writes_failure_metric(monkeypatch, tm
     with pytest.raises(RuntimeError):
         with measure_stage(
             pipeline="ad_generate",
-            stage="image_generation",
+            stage="image_provider_generation_sum",
             request_id="request-runtime-error",
             provider="hf",
             model="sdxl_lightning",
@@ -202,7 +202,7 @@ def test_measure_stage_unhandled_exception_writes_failure_metric(monkeypatch, tm
     assert len(lines) == 1
 
     saved = json.loads(lines[0])
-    assert saved["stage"] == "image_generation"
+    assert saved["stage"] == "image_provider_generation_sum"
     assert saved["success"] is False
     assert saved["error_code"] == "UNHANDLED_EXCEPTION"
     assert saved["error_type"] == "RuntimeError"

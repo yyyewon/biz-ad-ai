@@ -131,6 +131,56 @@ def format_ms(value: float | None) -> str:
     return f"{value:.0f}ms"
 
 
+def latency_metric_labels(
+    base: str,
+    *,
+    single_run: bool,
+    count: int,
+) -> tuple[str, str | None]:
+    """
+    단일 request_id 필터: P50/P95 대신 이 run의 실제 elapsed_ms 라벨.
+    같은 run에 stage 로그가 여러 건이면 중간/최대.
+    """
+
+    if single_run and count == 1:
+        return f"{base} (이 run)", None
+    if single_run and count > 1:
+        return f"{base} (중간)", f"{base} (최대)"
+    return f"{base} (P50)", f"{base} (P95)"
+
+
+def render_latency_metric_pair(
+    container_left,
+    container_right,
+    summary: dict[str, float | int | None],
+    *,
+    base_label: str,
+    single_run: bool,
+    help_text: str | None = None,
+) -> None:
+    count = int(summary.get("count") or 0)
+    left_label, right_label = latency_metric_labels(
+        base_label,
+        single_run=single_run,
+        count=count,
+    )
+    container_left.metric(
+        left_label,
+        format_ms(summary.get("p50_ms")),
+        help=help_text,
+    )
+    if right_label:
+        container_right.metric(
+            right_label,
+            format_ms(summary.get("p95_ms")),
+            help=help_text,
+        )
+    elif single_run and count == 1:
+        container_right.metric("측정 건수", "1")
+    else:
+        container_right.metric("측정 건수", str(count))
+
+
 def ms_to_sec(value: float) -> float:
     """Chart axis용 — ms → sec (1 decimal)."""
     return round(value / 1000, 1)

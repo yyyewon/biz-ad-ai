@@ -78,10 +78,17 @@ METRIC_CATALOG: dict[MetricCategory, tuple[MetricCatalogItem, ...]] = {
     ),
     "image_generation": (
         MetricCatalogItem(
-            "Image Generation Latency",
+            "Image Generation Latency (provider)",
+            "image_provider_generation_sum",
+            "OpenAI/HF 등 provider 추론 합산 (VLM·overlay 제외)",
+            "실제 이미지 생성 API·모델 시간",
+            "✅",
+        ),
+        MetricCatalogItem(
+            "Image Track Total",
             "image_pipeline_total",
-            "이미지 3장+PIL까지",
-            "OpenAI/HF·VM 속도",
+            "provider + VLM + overlay wall clock",
+            "이미지 트랙 전체",
             "✅",
         ),
         MetricCatalogItem(
@@ -179,15 +186,10 @@ METRIC_HELP = {
     "Total Pipeline Latency (P50)": (
         metric_help_by_name("Total Pipeline Latency")
         + "\n\n**참고:** 문구·이미지는 **동시에** 돌아갑니다. 이미지가 더 오래 걸리면 "
-        "Total Pipeline ≈ Image Pipeline Total 이 됩니다 (순차 합이 아님)."
-    ),
-    "Total Pipeline Latency (P95)": (
-        metric_help_by_name("Total Pipeline Latency")
-        + "\n\n**참고:** 문구·이미지는 **동시에** 돌아갑니다."
+        "Total Pipeline ≈ Image Track Total 이 됩니다 (순차 합이 아님)."
     ),
     "Pipeline Success Rate": metric_help_by_name("Pipeline Success Rate"),
     "Partial Success Rate": metric_help_by_name("Partial Success Rate"),
-    "Image Generation Latency (P50)": metric_help_by_name("Image Generation Latency"),
     "VLM Inference Latency (P50)": metric_help_by_name("VLM Inference Latency"),
     "VLM JSON Parse Success Rate": metric_help_by_name("VLM JSON Parse Success Rate"),
     "Rules Palette Fallback Rate": metric_help_by_name("Rules Palette Fallback Rate"),
@@ -201,9 +203,3 @@ SECTION_HELP: dict[str, str] = {
 SECTION_HELP["팀별 생성 수"] = (
     "필터 무관 · `total_pipeline` run을 `extra.source_user`별 집계."
 )
-
-STAGE_HELP: dict[str, str] = {
-    item.stage: item.description
-    for items in METRIC_CATALOG.values()
-    for item in items
-}

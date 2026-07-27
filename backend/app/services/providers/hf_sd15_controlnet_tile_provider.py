@@ -7,7 +7,7 @@ import gc
 import os
 import threading
 import time
-import uuid
+from app.utils.request_ids import resolve_run_request_id
 from typing import Any
 
 from loguru import logger
@@ -269,7 +269,7 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
             if cached is not None:
                 return cached
 
-            request_id = f"hf-sd15-load-{uuid.uuid4().hex[:10]}"
+            request_id = resolve_run_request_id(None)
             started = time.perf_counter()
 
             logger.info(
@@ -637,7 +637,7 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
         num_images: int,
         size: str | None,
     ) -> list[bytes]:
-        request_id = f"hf-sd15-gen-{uuid.uuid4().hex[:10]}"
+        request_id = resolve_run_request_id(request_id)
 
         width, height = self._parse_size(size)
         effective_num_images = max(1, int(num_images or self._num_images_per_prompt))

@@ -29,19 +29,3 @@ QUALITY_LOG_PATH = Path(
         str(LOG_DIR / "quality.jsonl"),
     )
 )
-
-STAGE_LABELS: dict[str, str] = {
-    "total_pipeline": "Total Pipeline",
-    "text_generation": "Text Generation",
-    "image_pipeline_total": "Image Pipeline Total",
-    "poster_generation": "Poster Generation",
-    "variant_generation": "Variant Generation",
-    "empty_result_retry": "Empty Result Retry",
-    "vlm_inference": "VLM Inference",
-    "vlm_json_parse": "VLM JSON Parse",
-    "vlm_palette_reconcile": "VLM Palette Reconcile",
-    "clip_i": "CLIP-I Similarity",
-    "clip_t": "CLIP-T Alignment",
-    "model_load": "HF Model Load",
-    "inference": "HF Inference",
-}

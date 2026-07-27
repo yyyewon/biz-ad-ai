@@ -14,7 +14,9 @@ from core.metrics.aggregations import (
     group_mean_elapsed_ms,
     group_mean_score,
     latency_summary,
+    latency_metric_labels,
     partial_success_rate,
+    render_latency_metric_pair,
     success_rate,
 )
 from core.metrics.catalog import (
@@ -33,9 +35,10 @@ from core.metrics.config import PERFORMANCE_LOG_PATH, QUALITY_LOG_PATH
 from core.metrics.jsonl_loader import (
     apply_dashboard_filters,
     filter_records,
+    get_run_context_for_request,
     load_jsonl,
     unique_extra_values,
-    unique_request_ids,
+    unique_pipeline_request_ids,
 )
 
 _FILTER_ALL = "(전체)"
@@ -168,8 +171,8 @@ def _render_sidebar_filters(all_records: list) -> dict[str, str | None]:
     )
     selected_request = st.sidebar.selectbox(
         "요청 ID (request_id)",
-        options=[_FILTER_ALL] + unique_request_ids(all_records)[::-1],
-        help="API run은 `gen-*` 입니다. 예전 로그의 `hf-boogu-gen-*` 도 같은 run과 묶어 표시합니다.",
+        options=[_FILTER_ALL] + unique_pipeline_request_ids(all_records)[::-1],
+        help="API 1회 생성 = `gen-*` 하나입니다. (예전 로그의 img/hf-* ID는 자동 묶음)",
     )
 
     st.sidebar.divider()
@@ -268,6 +271,34 @@ def _filter_caption(filters: dict[str, str | None], keys: tuple[str, ...]) -> st
     return " · ".join(parts) if parts else "전체"
 
 
+def _generation_filter_caption(
+    filters: dict[str, str | None],
+    all_performance: list,
+) -> str:
+    """Sidebar 생성 조건 또는 선택한 request_id의 total_pipeline extra."""
+
+    explicit = _filter_caption(filters, _GENERATION_FILTER_KEYS)
+    if explicit != "전체":
+        return explicit
+
+    request_id = filters.get("request_id")
+    if not request_id:
+        return "전체"
+
+    context = get_run_context_for_request(all_performance, request_id)
+    if not context:
+        return f"요청 {request_id} (total_pipeline 조건 없음)"
+
+    labels = {
+        "image_model_key": "이미지모델",
+        "purpose": "목적",
+        "food_type": "음식형태",
+        "tone": "톤",
+    }
+    parts = [f"{labels[key]}={context[key]}" for key in _GENERATION_FILTER_KEYS if context.get(key)]
+    return " · ".join(parts) if parts else f"요청 {request_id} (total_pipeline 조건 없음)"
+
+
 def _render_team_overview(all_performance: list) -> None:
     pipeline_records = filter_records(all_performance, stage="total_pipeline")
     source_counts = count_by_extra(pipeline_records, "source_user")
@@ -288,6 +319,8 @@ def _render_team_overview(all_performance: list) -> None:
 def _render_integrated_api_section(
     performance_records: list,
     total_records: list,
+    *,
+    single_run: bool,
 ) -> None:
     _section_header("통합 API · 서비스 운영")
     _render_section_intro("integrated_api")
@@ -298,15 +331,13 @@ def _render_integrated_api_section(
     partial = partial_success_rate(total_records)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric(
-        "Total Pipeline Latency (P50)",
-        format_ms(summary["p50_ms"]),
-        help=METRIC_HELP["Total Pipeline Latency (P50)"],
-    )
-    c2.metric(
-        "Total Pipeline Latency (P95)",
-        format_ms(summary["p95_ms"]),
-        help=METRIC_HELP["Total Pipeline Latency (P95)"],
+    render_latency_metric_pair(
+        c1,
+        c2,
+        summary,
+        base_label="Total Pipeline Latency",
+        single_run=single_run,
+        help_text=METRIC_HELP["Total Pipeline Latency (P50)"],
     )
     c3.metric(
         "Pipeline Success Rate",
@@ -318,7 +349,10 @@ def _render_integrated_api_section(
         f"{partial}%" if partial is not None else "-",
         help=METRIC_HELP["Partial Success Rate"],
     )
-    st.caption(f"Runs (`total_pipeline`): **{summary['count']}** · 문구-only run 포함")
+    st.caption(
+        f"Runs (`total_pipeline`): **{summary['count']}** · "
+        "문구∥이미지 트랙(provider 생성+VLM+overlay) wall clock"
+    )
     _render_run_context_comparison(total_records)
 
 
@@ -392,13 +426,54 @@ def _render_run_context_comparison(total_records: list) -> None:
 def _render_image_generation_section(
     performance_records: list,
     quality_records: list,
+    *,
+    single_run: bool,
 ) -> None:
     _section_header("이미지 생성")
     _render_section_intro("image_generation")
     _render_metric_catalog_table(METRIC_CATALOG["image_generation"])
 
-    image_records = filter_records(performance_records, stage="image_pipeline_total")
-    image_summary = latency_summary(image_records)
+    provider_records = filter_records(
+        performance_records, stage="image_provider_generation_sum"
+    )
+    if not provider_records:
+        provider_records = filter_records(
+            performance_records, stage="image_provider_generation"
+        )
+    provider_summary = latency_summary(provider_records)
+    vlm_overlay_records = filter_records(
+        performance_records, stage="image_poster_vlm_overlay"
+    )
+    vlm_overlay_summary = latency_summary(vlm_overlay_records)
+    image_track_records = filter_records(
+        performance_records, stage="image_pipeline_total"
+    )
+    image_track_summary = latency_summary(image_track_records)
+
+    c1, c2, c3, c4 = st.columns(4)
+    render_latency_metric_pair(
+        c1,
+        c2,
+        provider_summary,
+        base_label="Image Generation (provider)",
+        single_run=single_run,
+        help_text=(
+            "stage=`image_provider_generation_sum` · OpenAI/HF 등 "
+            "이미지 provider API·추론만 (VLM·overlay 제외)"
+        ),
+    )
+    render_latency_metric_pair(
+        c3,
+        c4,
+        vlm_overlay_summary,
+        base_label="Poster VLM + Overlay",
+        single_run=single_run,
+        help_text="stage=`image_poster_vlm_overlay` · provider 생성 후 VLM·텍스트 합성",
+    )
+    st.caption(
+        f"이미지 트랙 전체 (`image_pipeline_total`): **{format_ms(image_track_summary['p50_ms'])}** · "
+        f"runs **{image_track_summary['count']}** · provider + VLM + overlay wall clock"
+    )
 
     aligned_text = latency_summary(
         _records_for_image_runs(performance_records, stage="text_generation")
@@ -407,44 +482,59 @@ def _render_image_generation_section(
         _records_for_image_runs(performance_records, stage="total_pipeline")
     )
 
-    c1, c2 = st.columns(2)
-    c1.metric(
-        "Image Pipeline Total (P50)",
-        format_ms(image_summary["p50_ms"]),
-        help=METRIC_HELP["Image Generation Latency (P50)"],
-    )
-    c2.metric(
-        "Image Pipeline Total (P95)",
-        format_ms(image_summary["p95_ms"]),
-        help=METRIC_HELP["Image Generation Latency (P50)"],
-    )
-    st.caption(
-        f"Runs (`image_pipeline_total`): **{image_summary['count']}** · "
-        "stage=`image_pipeline_total` (이미지 3장+PIL 내부)"
-    )
-
     if aligned_text["count"] or aligned_total["count"]:
         st.markdown("**같은 run 기준 병렬 비교** (이미지 포함 요청만)")
         st.caption(
-            "문구·이미지는 동시 실행 → Total Pipeline은 max(문구, 이미지)에 가깝습니다. "
+            "Total Pipeline = 문구·이미지 트랙 병렬 wall clock "
+            "(이미지 트랙 = provider 생성 + VLM + overlay). "
             "순차 합(문구+이미지)이 아닙니다."
         )
-        t1, t2, t3 = st.columns(3)
+        t1, t2, t3, t4 = st.columns(4)
+        text_label, _ = latency_metric_labels(
+            "Text Generation",
+            single_run=single_run,
+            count=int(aligned_text["count"] or 0),
+        )
+        provider_label, _ = latency_metric_labels(
+            "Image Generation (provider)",
+            single_run=single_run,
+            count=int(provider_summary["count"] or 0),
+        )
+        track_label, _ = latency_metric_labels(
+            "Image Track Total",
+            single_run=single_run,
+            count=int(image_track_summary["count"] or 0),
+        )
+        total_label, _ = latency_metric_labels(
+            "Total Pipeline",
+            single_run=single_run,
+            count=int(aligned_total["count"] or 0),
+        )
         t1.metric(
-            "Text Generation (P50)",
+            text_label,
             format_ms(aligned_text["p50_ms"]),
-            help="stage=`text_generation` · 이미지 run과 동일 request_id",
+            help="stage=`text_generation`",
         )
         t2.metric(
-            "Image Pipeline Total (P50)",
-            format_ms(image_summary["p50_ms"]),
-            help="stage=`image_pipeline_total`",
+            provider_label,
+            format_ms(provider_summary["p50_ms"]),
+            help="stage=`image_provider_generation_sum` · provider inference only",
         )
         t3.metric(
-            "Total Pipeline (P50)",
+            track_label,
+            format_ms(image_track_summary["p50_ms"]),
+            help="stage=`image_pipeline_total` · provider+VLM+overlay",
+        )
+        t4.metric(
+            total_label,
             format_ms(aligned_total["p50_ms"]),
             help="stage=`total_pipeline` · API 전체 wall clock",
         )
+        if vlm_overlay_summary["count"]:
+            st.caption(
+                f"Poster VLM+Overlay (`image_poster_vlm_overlay`): "
+                f"**{format_ms(vlm_overlay_summary['p50_ms'])}**"
+            )
 
     variant_records = filter_records(performance_records, stage="variant_generation")
     variant_means = group_mean_elapsed_ms(variant_records, "variant")
@@ -519,11 +609,15 @@ def _render_image_generation_section(
                 st.caption("quality.jsonl 데이터 없음 (필터 범위 또는 파일 경로 확인)")
 
 
-def _render_boogu_provider_section(performance_records: list) -> None:
+def _render_boogu_provider_section(
+    performance_records: list,
+    *,
+    single_run: bool,
+) -> None:
     _section_header("Boogu Provider")
     st.caption(
         "JSONL: `pipeline=hf_boogu_edit`, `stage=model_load|inference`, "
-        "`metric_id=boogu_*` · API run `gen-*`와 `extra.pipeline_request_id`로 연결"
+        "`metric_id=boogu_*` · API run `gen-*`와 동일 request_id"
     )
 
     load_records = [
@@ -543,10 +637,20 @@ def _render_boogu_provider_section(performance_records: list) -> None:
     inference_summary = latency_summary(inference_records)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Boogu Load (P50)", format_ms(load_summary["p50_ms"]))
-    c2.metric("Boogu Load (P95)", format_ms(load_summary["p95_ms"]))
-    c3.metric("Boogu Inference (P50)", format_ms(inference_summary["p50_ms"]))
-    c4.metric("Boogu Inference (P95)", format_ms(inference_summary["p95_ms"]))
+    render_latency_metric_pair(
+        c1,
+        c2,
+        load_summary,
+        base_label="Boogu Load",
+        single_run=single_run,
+    )
+    render_latency_metric_pair(
+        c3,
+        c4,
+        inference_summary,
+        base_label="Boogu Inference",
+        single_run=single_run,
+    )
 
     st.caption(
         f"Loads: **{load_summary['count']}** · Inferences: **{inference_summary['count']}**"
@@ -577,7 +681,11 @@ def _render_boogu_provider_section(performance_records: list) -> None:
         )
 
 
-def _render_poster_vlm_section(performance_records: list) -> None:
+def _render_poster_vlm_section(
+    performance_records: list,
+    *,
+    single_run: bool,
+) -> None:
     _section_header("포스터 VLM")
     _render_section_intro("poster_vlm")
     _render_metric_catalog_table(METRIC_CATALOG["poster_vlm"])
@@ -588,15 +696,13 @@ def _render_poster_vlm_section(performance_records: list) -> None:
     vlm_summary = latency_summary(vlm_inf)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric(
-        "VLM Inference Latency (P50)",
-        format_ms(vlm_summary["p50_ms"]),
-        help=METRIC_HELP["VLM Inference Latency (P50)"],
-    )
-    c2.metric(
-        "VLM Inference Latency (P95)",
-        format_ms(vlm_summary["p95_ms"]),
-        help=METRIC_HELP["VLM Inference Latency (P50)"],
+    render_latency_metric_pair(
+        c1,
+        c2,
+        vlm_summary,
+        base_label="VLM Inference Latency",
+        single_run=single_run,
+        help_text=METRIC_HELP["VLM Inference Latency (P50)"],
     )
     c3.metric(
         "VLM JSON Parse Success Rate",
@@ -655,26 +761,43 @@ def render_metrics_dashboard() -> None:
     )
 
     st.info(f"운영 · 로그: **{_filter_caption(filters, _OPERATIONS_FILTER_KEYS)}**")
-    st.info(f"생성 조건: **{_filter_caption(filters, _GENERATION_FILTER_KEYS)}**")
+    st.info(f"생성 조건: **{_generation_filter_caption(filters, all_performance)}**")
 
     if not performance_records and not quality_records:
         st.warning("로그가 없거나 필터 조건에 맞는 데이터가 없습니다.")
         return
 
     total_records = filter_records(performance_records, stage="total_pipeline")
+    single_run = bool(filters.get("request_id"))
+
+    if single_run and len(total_records) == 1:
+        run = total_records[0]
+        st.success(
+            f"**{filters['request_id']}** · API 전체 wall clock "
+            f"**{format_ms(run.get('elapsed_ms'))}** "
+            f"(`total_pipeline` · success={run.get('success')})"
+        )
 
     _render_team_overview(all_performance)
 
-    _render_integrated_api_section(performance_records, total_records)
+    _render_integrated_api_section(
+        performance_records,
+        total_records,
+        single_run=single_run,
+    )
     st.divider()
 
-    _render_image_generation_section(performance_records, quality_records)
+    _render_image_generation_section(
+        performance_records,
+        quality_records,
+        single_run=single_run,
+    )
     st.divider()
 
-    _render_boogu_provider_section(performance_records)
+    _render_boogu_provider_section(performance_records, single_run=single_run)
     st.divider()
 
-    _render_poster_vlm_section(performance_records)
+    _render_poster_vlm_section(performance_records, single_run=single_run)
     st.divider()
 
     _render_raw_expanders(performance_records, quality_records)

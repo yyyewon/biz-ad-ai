@@ -6,7 +6,7 @@ import gc
 import os
 import threading
 import time
-import uuid
+from app.utils.request_ids import resolve_run_request_id
 from typing import Any
 
 from loguru import logger
@@ -418,7 +418,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             if _PIPELINE_SLOT.get("cache_key") == cache_key:
                 return _PIPELINE_SLOT["pipeline"], _PIPELINE_SLOT["meta"]
 
-            metric_request_id = pipeline_request_id or f"hf-boogu-load-{uuid.uuid4().hex[:10]}"
+            metric_request_id = resolve_run_request_id(pipeline_request_id)
             started = time.perf_counter()
             load_stage = "before_boogu_edit_pipeline_load"
             before_load = log_model_memory_snapshot(
@@ -483,7 +483,6 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                         extra={
                             "provider_type": "boogu_edit",
                             "model_id": self._model_id,
-                            "pipeline_request_id": pipeline_request_id,
                             "use_fp8_weights": self._use_fp8_weights,
                             "load_attempt": attempt + 1,
                             **meta,
@@ -532,7 +531,6 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 extra={
                     "provider_type": "boogu_edit",
                     "model_id": self._model_id,
-                    "pipeline_request_id": pipeline_request_id,
                 },
             )
             raise AppException(
@@ -662,7 +660,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             else float(text_guidance_scale)
         )
         device = self._resolve_device()
-        metric_request_id = request_id or f"hf-boogu-gen-{uuid.uuid4().hex[:10]}"
+        metric_request_id = resolve_run_request_id(request_id)
         started = time.perf_counter()
 
         reference_image = ImageOps.exif_transpose(
@@ -757,7 +755,6 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 extra={
                     "provider_type": "boogu_edit",
                     "model_id": self._model_id,
-                    "pipeline_request_id": request_id,
                     "width": width,
                     "height": height,
                     "num_images": len(output_bytes),
@@ -793,7 +790,6 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 extra={
                     "provider_type": "boogu_edit",
                     "model_id": self._model_id,
-                    "pipeline_request_id": request_id,
                     "width": width,
                     "height": height,
                 },

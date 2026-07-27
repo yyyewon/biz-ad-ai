@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-import uuid
 from typing import Any, Awaitable, Callable
+
+from app.utils.request_ids import new_run_request_id
 
 from loguru import logger
 
@@ -129,16 +130,16 @@ def _record_image_pipeline_stage_metrics(
     profile_name: str,
     image_model_info: dict[str, str],
     stage_latencies_ms: dict[str, int],
-    image_request_id: str,
 ) -> None:
     """
     image_pipeline 내부에서 계산된 stage_latencies_ms를 performance.jsonl에 기록한다.
     """
 
     stage_key_map = {
-        "food_generation_ms": "food_generation",
         "poster_generation_ms": "poster_generation",
         "provider_generation_max_ms": "image_provider_generation",
+        "provider_generation_sum_ms": "image_provider_generation_sum",
+        "poster_vlm_overlay_ms": "image_poster_vlm_overlay",
         "text_overlay_max_ms": "image_text_overlay",
         "total_ms": "image_pipeline_total",
     }
@@ -158,10 +159,7 @@ def _record_image_pipeline_stage_metrics(
             model=image_model_info["model"],
             elapsed_ms=float(elapsed_ms),
             success=True,
-            extra={
-                "image_request_id": image_request_id,
-                "latency_key": latency_key,
-            },
+            extra={"latency_key": latency_key},
         )
 
 
@@ -206,6 +204,29 @@ def _build_run_context_extra(
         extra["image_model_key"] = _model_key(image_model_info)
 
     return extra
+
+
+def _merge_image_stage_breakdown(
+    run_context: dict[str, Any],
+    stage_latencies_ms: dict[str, int] | None,
+) -> dict[str, Any]:
+    """total_pipeline extra에 이미지 트랙 구간별 ms를 붙인다."""
+
+    if not stage_latencies_ms:
+        return run_context
+
+    merged = dict(run_context)
+    breakdown_keys = (
+        ("provider_generation_sum_ms", "image_provider_sum_ms"),
+        ("provider_generation_max_ms", "image_provider_max_ms"),
+        ("poster_vlm_overlay_ms", "image_poster_vlm_overlay_ms"),
+        ("total_ms", "image_track_total_ms"),
+    )
+    for source_key, extra_key in breakdown_keys:
+        value = stage_latencies_ms.get(source_key)
+        if value is not None:
+            merged[extra_key] = value
+    return merged
 
 
 def _record_total_pipeline_metric(
@@ -268,7 +289,7 @@ async def run_generate_pipeline(
     5. 생성 이미지 base64를 응답에 포함
     """
 
-    pipeline_request_id = f"gen-{uuid.uuid4().hex[:8]}"
+    pipeline_request_id = new_run_request_id()
     total_started = time.perf_counter()
     profile_name = _safe_active_profile_name()
 
@@ -306,6 +327,7 @@ async def run_generate_pipeline(
         image_generation_success: bool | None = None
         image_error_type: str | None = None
         clip_eval_context: dict[str, Any] | None = None
+        image_result = None
 
         if image_bytes:
             image_gpu_touched = True
@@ -408,31 +430,18 @@ async def run_generate_pipeline(
                         },
                     )
 
-                with measure_stage(
-                    pipeline="ad_generate",
-                    stage="image_generation",
-                    request_id=pipeline_request_id,
-                    profile=profile_name,
-                    provider=image_model_info["provider"],
-                    model=image_model_info["model"],
-                    extra={
-                        "num_images": image_payload.num_images,
-                        "generation_mode": image_payload.generation_mode,
-                    },
-                ):
-                    image_result = await generate_image_ads(
-                        payload=image_payload,
-                        source_image_bytes=image_bytes,
-                        on_variant_done=_on_variant_done,
-                        metrics_request_id=pipeline_request_id,
-                    )
+                image_result = await generate_image_ads(
+                    payload=image_payload,
+                    source_image_bytes=image_bytes,
+                    on_variant_done=_on_variant_done,
+                    metrics_request_id=pipeline_request_id,
+                )
 
                 _record_image_pipeline_stage_metrics(
                     pipeline_request_id=pipeline_request_id,
                     profile_name=profile_name,
                     image_model_info=image_model_info,
                     stage_latencies_ms=image_result.stage_latencies_ms or {},
-                    image_request_id=image_result.request_id,
                 )
 
                 images = list(image_result.images or [])
@@ -599,6 +608,12 @@ async def run_generate_pipeline(
         total_success = not partial_success
         total_error_code = warnings[0]["code"] if warnings else None
         total_error_type = image_error_type if warnings else None
+        total_run_context = run_context
+        if image_result is not None:
+            total_run_context = _merge_image_stage_breakdown(
+                run_context,
+                image_result.stage_latencies_ms,
+            )
 
         _record_total_pipeline_metric(
             pipeline_request_id=pipeline_request_id,
@@ -608,7 +623,7 @@ async def run_generate_pipeline(
             partial_success=partial_success,
             error_code=total_error_code,
             error_type=total_error_type,
-            run_context=run_context,
+            run_context=total_run_context,
         )
 
         if clip_eval_context is not None:
