@@ -143,6 +143,9 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
         self._max_input_image_side_length = int(
             self._settings.get("max_input_image_side_length", 2048)
         )
+        # Boogu default align_res=True overwrites width/height with reference aspect;
+        # keep variant size from model.yaml / output_image.variant_sizes.
+        self._align_res = bool(self._settings.get("align_res", False))
 
         self._cpu_offload_enabled = bool(
             self._settings.get("cpu_offload_enabled", False)
@@ -671,10 +674,12 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
 
         logger.info(
             "hf_boogu_edit_generation_started | model_key={} | width={} | height={} | "
-            "num_images={} | instruction_chars={} | text_guidance_scale={} | image_guidance_scale={}",
+            "align_res={} | num_images={} | instruction_chars={} | "
+            "text_guidance_scale={} | image_guidance_scale={}",
             self._model_key,
             width,
             height,
+            self._align_res,
             effective_num_images,
             len(instruction),
             effective_text_guidance_scale,
@@ -709,6 +714,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                     input_images=[[reference_image]],
                     width=width,
                     height=height,
+                    align_res=self._align_res,
                     max_input_image_pixels=self._max_input_image_pixels,
                     max_input_image_side_length=self._max_input_image_side_length,
                     max_vlm_input_pil_pixels=self._max_vlm_input_pil_pixels,
@@ -740,10 +746,11 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                     },
                 )
 
+            output_images = images[:effective_num_images]
             output_bytes = [
-                pil_image_to_png_bytes(image.resize((width, height)))
-                for image in images[:effective_num_images]
+                pil_image_to_png_bytes(image.convert("RGB")) for image in output_images
             ]
+            out_w, out_h = output_images[0].size if output_images else (width, height)
 
             elapsed_ms = (time.perf_counter() - started) * 1000
             memory = self._memory_stats()
@@ -757,8 +764,11 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                 extra={
                     "provider_type": "boogu_edit",
                     "model_id": self._model_id,
-                    "width": width,
-                    "height": height,
+                    "requested_width": width,
+                    "requested_height": height,
+                    "output_width": out_w,
+                    "output_height": out_h,
+                    "align_res": self._align_res,
                     "num_images": len(output_bytes),
                     "num_inference_steps": self._num_inference_steps,
                     "text_guidance_scale": effective_text_guidance_scale,
@@ -769,9 +779,14 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             )
             logger.info(
                 "hf_boogu_edit_generation_completed | model_key={} | generated_count={} | "
-                "elapsed_ms={:.2f}",
+                "requested_size={}x{} | output_size={}x{} | align_res={} | elapsed_ms={:.2f}",
                 self._model_key,
                 len(output_bytes),
+                width,
+                height,
+                out_w,
+                out_h,
+                self._align_res,
                 elapsed_ms,
             )
             return output_bytes

@@ -187,6 +187,11 @@ def _should_start_generation(generation: dict, current_signature: tuple) -> bool
     return generation.get("signature") != current_signature
 
 
+def _clear_generation_loading_ui(loading_container) -> None:
+    if loading_container is not None:
+        loading_container.empty()
+
+
 def _run_generation(loading_container=None, message_placeholder=None, progress_bar=None, start_time=None) -> None:
     b = st.session_state.business
     u = st.session_state.upload
@@ -252,18 +257,17 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
     generation_thread.join()
 
     if "error" in error_holder:
+        _clear_generation_loading_ui(loading_container)
         set_generation_error(
             "생성 요청을 처리하는 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.",
             "GENERATION_CLIENT_ERROR",
         )
         st.rerun()
-        return
 
     result = result_holder.get("result")
 
     progress_bar.progress(100)
-    if loading_container is not None:
-        loading_container.empty()
+    _clear_generation_loading_ui(loading_container)
 
     if not isinstance(result, dict):
         logger.error(
@@ -275,7 +279,6 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
             "INVALID_GENERATION_RESPONSE",
         )
         st.rerun()
-        return
 
     if not result.get("ok"):
         set_generation_error(
@@ -285,7 +288,6 @@ def _run_generation(loading_container=None, message_placeholder=None, progress_b
         if request_cookies and result.get("error_code") == "DAILY_LIMIT_EXCEEDED":
             refresh_me(request_cookies)
         st.rerun()
-        return
 
     data = result.get("data") or {}
     set_generation_result(
@@ -318,7 +320,7 @@ def render() -> None:
 
         loading_container, message_placeholder, progress_bar, start_time = _render_generation_loading_ui()
         _run_generation(loading_container, message_placeholder, progress_bar, start_time)
-        gen = st.session_state.generation
+        return
 
     if gen["status"] == "loading":
         return
@@ -341,7 +343,13 @@ def render() -> None:
                 st.rerun()
         else:
             if st.button("다시 시도하기", type="primary"):
-                st.session_state.generation["status"] = "idle"
+                st.session_state.generation.update(
+                    {
+                        "status": "idle",
+                        "error_message": "",
+                        "error_code": None,
+                    }
+                )
                 st.rerun()
             if st.button("← 이전 단계로 돌아가기", type="secondary"):
                 prev_step()
