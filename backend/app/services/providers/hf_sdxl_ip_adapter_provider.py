@@ -739,7 +739,7 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
         requested_size: tuple[int, int],
         strength: float,
     ) -> list[bytes]:
-        request_id = resolve_run_request_id(request_id)
+        request_id = resolve_run_request_id(None)
         native_size = self._resolve_native_size(requested_size)
         effective_num_images = max(1, int(num_images or 1))
         started = time.perf_counter()
