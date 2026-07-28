@@ -93,10 +93,6 @@ def _resolve_log_path(log_target: LogTarget = "performance") -> Path:
     return BACKEND_ROOT / path
 
 
-def _resolve_performance_log_path() -> Path:
-    return _resolve_log_path("performance")
-
-
 def is_performance_logging_enabled() -> bool:
     """
     성능 로그 활성화 여부를 반환한다.
@@ -305,75 +301,6 @@ def record_registry_metric(
 
     return metric
 
-
-@contextmanager
-def measure_registry_metric(
-    metric_id: MetricId | str,
-    *,
-    request_id: str,
-    provider: str = "mixed",
-    model: str = "mixed",
-    profile: str | None = None,
-    extra: dict[str, Any] | None = None,
-) -> Iterator[None]:
-    """
-    measure_stage와 동일하지만 metric_id로 pipeline/stage/event를 매핑표에서 resolve한다.
-    """
-
-    started = time.perf_counter()
-
-    try:
-        yield
-
-    except AppException as exc:
-        elapsed_ms = (time.perf_counter() - started) * 1000
-
-        record_registry_metric(
-            metric_id,
-            request_id=request_id,
-            profile=profile,
-            provider=provider,
-            model=model,
-            elapsed_ms=elapsed_ms,
-            success=False,
-            error_code=exc.code,
-            error_type=exc.__class__.__name__,
-            extra=extra,
-        )
-
-        raise
-
-    except Exception as exc:
-        elapsed_ms = (time.perf_counter() - started) * 1000
-
-        record_registry_metric(
-            metric_id,
-            request_id=request_id,
-            profile=profile,
-            provider=provider,
-            model=model,
-            elapsed_ms=elapsed_ms,
-            success=False,
-            error_code="UNHANDLED_EXCEPTION",
-            error_type=exc.__class__.__name__,
-            extra=extra,
-        )
-
-        raise
-
-    else:
-        elapsed_ms = (time.perf_counter() - started) * 1000
-
-        record_registry_metric(
-            metric_id,
-            request_id=request_id,
-            profile=profile,
-            provider=provider,
-            model=model,
-            elapsed_ms=elapsed_ms,
-            success=True,
-            extra=extra,
-        )
 
 
 @contextmanager

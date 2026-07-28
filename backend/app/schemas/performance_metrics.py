@@ -40,8 +40,11 @@ class PerformanceStage(StrEnum):
 
     # image pipeline (aggregate)
     IMAGE_PIPELINE_TOTAL = "image_pipeline_total"
+    IMAGE_PROVIDER_GENERATION = "image_provider_generation"
+    IMAGE_PROVIDER_GENERATION_SUM = "image_provider_generation_sum"
+    IMAGE_POSTER_VLM_OVERLAY = "image_poster_vlm_overlay"
+    IMAGE_TEXT_OVERLAY = "image_text_overlay"
     POSTER_GENERATION = "poster_generation"
-    FOOD_GENERATION = "food_generation"
 
     # image pipeline (per-variant / retry) — pending instrumentation
     VARIANT_GENERATION = "variant_generation"
@@ -134,6 +137,10 @@ METRIC_REGISTRY: dict[MetricId, MetricDefinition] = {
             "image_provider",
             "image_model",
             "image_model_key",
+            "image_provider_sum_ms",
+            "image_provider_max_ms",
+            "image_poster_vlm_overlay_ms",
+            "image_track_total_ms",
         ),
         dashboard_query="stage=total_pipeline → elapsed_ms P50/P95",
     ),
@@ -169,17 +176,17 @@ METRIC_REGISTRY: dict[MetricId, MetricDefinition] = {
     MetricId.IMAGE_GENERATION_LATENCY: MetricDefinition(
         metric_id=MetricId.IMAGE_GENERATION_LATENCY,
         display_name="Image Generation Latency",
-        description="이미지 3장+PIL까지 ms",
-        rationale="OpenAI/HF·VM 속도",
+        description="OpenAI/HF 등 image provider 추론 합산 ms (VLM·overlay 제외)",
+        rationale="모델/ provider 공통 실제 생성 시간",
         category="image_generation",
         status="implemented",
         event=PerformanceEvent.PERF_METRIC,
-        stage=PerformanceStage.IMAGE_PIPELINE_TOTAL,
+        stage=PerformanceStage.IMAGE_PROVIDER_GENERATION_SUM,
         pipeline=PerformancePipeline.AD_GENERATE,
         log_target="performance",
-        extra_fields=("image_request_id", "num_images", "applied_variants"),
-        dashboard_query="stage=image_pipeline_total → elapsed_ms",
-        notes="poster_generation은 variant 배치 합산. variant별은 variant_generation.",
+        extra_fields=("latency_key",),
+        dashboard_query="stage=image_provider_generation_sum → elapsed_ms",
+        notes="variant provider inference 합. max는 image_provider_generation.",
     ),
     MetricId.VARIANT_GENERATION_LATENCY: MetricDefinition(
         metric_id=MetricId.VARIANT_GENERATION_LATENCY,
@@ -321,7 +328,7 @@ METRIC_REGISTRY: dict[MetricId, MetricDefinition] = {
         stage=PerformanceStage.MODEL_LOAD,
         pipeline=PerformancePipeline.HF_BOOGU_EDIT,
         log_target="performance",
-        extra_fields=("provider_type", "model_id", "pipeline_request_id", "load_attempt"),
+        extra_fields=("provider_type", "model_id", "load_attempt"),
         dashboard_query="pipeline=hf_boogu_edit, stage=model_load",
     ),
     MetricId.BOOGU_INFERENCE_LATENCY: MetricDefinition(
@@ -338,7 +345,6 @@ METRIC_REGISTRY: dict[MetricId, MetricDefinition] = {
         extra_fields=(
             "provider_type",
             "model_id",
-            "pipeline_request_id",
             "num_images",
             "num_inference_steps",
         ),
@@ -360,22 +366,6 @@ def get_metric_definition(metric_id: MetricId | str) -> MetricDefinition:
         return METRIC_REGISTRY[key]
     except KeyError as exc:
         raise KeyError(f"unknown metric_id: {key}") from exc
-
-
-def list_metrics(
-    *,
-    category: MetricCategory | None = None,
-    status: MetricStatus | None = None,
-) -> list[MetricDefinition]:
-    items = list(METRIC_REGISTRY.values())
-
-    if category is not None:
-        items = [item for item in items if item.category == category]
-
-    if status is not None:
-        items = [item for item in items if item.status == status]
-
-    return items
 
 
 def resolve_log_relative_path(log_target: LogTarget) -> str:
@@ -429,29 +419,3 @@ def build_metric_record(
         record["extra"] = extra
 
     return record
-
-
-def metric_mapping_table_rows() -> list[dict[str, str]]:
-    """
-    Streamlit 대시보드·문서용 flat 행 목록.
-    """
-
-    rows: list[dict[str, str]] = []
-
-    for definition in METRIC_REGISTRY.values():
-        rows.append(
-            {
-                "metric_id": definition.metric_id.value,
-                "display_name": definition.display_name,
-                "category": definition.category,
-                "status": definition.status,
-                "event": definition.event.value,
-                "stage": definition.stage.value,
-                "pipeline": definition.pipeline.value,
-                "log_file": LOG_TARGETS[definition.log_target],
-                "extra_fields": ", ".join(definition.extra_fields),
-                "dashboard_query": definition.dashboard_query,
-            }
-        )
-
-    return rows

@@ -14,7 +14,7 @@ import os
 import subprocess
 import threading
 import time
-import uuid
+from app.utils.request_ids import resolve_run_request_id
 from pathlib import Path
 from typing import Any
 
@@ -413,7 +413,7 @@ class HFSDXLLightningImageProvider(ImageGenerationProvider):
             if cached is not None:
                 return cached
 
-            request_id = f"hf-sdxl-load-{uuid.uuid4().hex[:10]}"
+            request_id = resolve_run_request_id(None)
             started = time.perf_counter()
 
             logger.info(
@@ -793,7 +793,7 @@ class HFSDXLLightningImageProvider(ImageGenerationProvider):
         7. 성능 로그 기록
         """
 
-        request_id = f"hf-sdxl-gen-{uuid.uuid4().hex[:10]}"
+        request_id = resolve_run_request_id(request_id)
 
         # 생성 크기 결정
         width, height = self._parse_size(size)

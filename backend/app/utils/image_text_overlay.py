@@ -802,6 +802,7 @@ def _draw_poster_footer(
         y=text_y,
         text_width=store_w,
         text_height=text_h,
+        pin_to_bottom=True,
     )
     rule_y = text_y - max(8, int(image.height * 0.008))
     footer_color = _resolve_footer_color(image, palette.store_text, text_y)

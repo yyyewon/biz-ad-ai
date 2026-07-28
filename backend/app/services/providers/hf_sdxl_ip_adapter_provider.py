@@ -7,7 +7,7 @@ import math
 import os
 import threading
 import time
-import uuid
+from app.utils.request_ids import resolve_run_request_id
 from typing import Any, Literal
 
 from loguru import logger
@@ -432,7 +432,7 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
             if _PIPELINE_SLOT.get("cache_key") == cache_key:
                 return _PIPELINE_SLOT["pipeline"], _PIPELINE_SLOT["meta"]
 
-            request_id = f"hf-sdxl-load-{uuid.uuid4().hex[:10]}"
+            request_id = resolve_run_request_id(None)
             started = time.perf_counter()
             pipe: Any | None = None
             self._evict_resident_pipeline()
@@ -739,7 +739,7 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
         requested_size: tuple[int, int],
         strength: float,
     ) -> list[bytes]:
-        request_id = f"hf-sdxl-gen-{uuid.uuid4().hex[:10]}"
+        request_id = resolve_run_request_id(request_id)
         native_size = self._resolve_native_size(requested_size)
         effective_num_images = max(1, int(num_images or 1))
         started = time.perf_counter()

@@ -202,14 +202,11 @@ def filter_records_by_request_cluster(
     ]
 
 
-def unique_request_ids(records: list[dict[str, Any]]) -> list[str]:
-    """
-    Pipeline run ids (`gen-*`) first, then orphan provider ids for legacy logs.
-    """
+def unique_pipeline_request_ids(records: list[dict[str, Any]]) -> list[str]:
+    """API run ids (`gen-*`) from total_pipeline — sidebar picker용."""
 
     seen: set[str] = set()
     pipeline_ids: list[str] = []
-    other_ids: list[str] = []
 
     for record in filter_records(records, stage="total_pipeline"):
         request_id = record.get("request_id")
@@ -221,17 +218,7 @@ def unique_request_ids(records: list[dict[str, Any]]) -> list[str]:
         seen.add(text)
         pipeline_ids.append(text)
 
-    for record in records:
-        request_id = record.get("request_id")
-        if not request_id:
-            continue
-        text = str(request_id)
-        if text in seen:
-            continue
-        seen.add(text)
-        other_ids.append(text)
-
-    return pipeline_ids + other_ids
+    return pipeline_ids
 
 
 def unique_profile_values(
@@ -398,3 +385,45 @@ def get_extra(record: dict[str, Any], key: str, default: Any = None) -> Any:
     if not isinstance(extra, dict):
         return default
     return extra.get(key, default)
+
+
+_RUN_CONTEXT_KEYS = (
+    "image_model_key",
+    "purpose",
+    "food_type",
+    "tone",
+)
+
+
+def get_run_context_for_request(
+    records: list[dict[str, Any]],
+    request_id: str,
+) -> dict[str, str]:
+    """
+    Return generation context from total_pipeline for a request_id.
+
+    Resolves provider-local ids (`img-*`, `hf-boogu-gen-*`) to the pipeline run
+    via resolve_request_id_cluster.
+    """
+
+    cluster = resolve_request_id_cluster(records, request_id)
+    pipeline_records = [
+        record
+        for record in filter_records(records, stage="total_pipeline")
+        if str(record.get("request_id") or "") in cluster
+    ]
+    if not pipeline_records:
+        return {}
+
+    pipeline_records.sort(
+        key=lambda record: (
+            0 if str(record.get("request_id", "")).startswith(_PIPELINE_REQUEST_PREFIX) else 1
+        )
+    )
+    record = pipeline_records[0]
+    context: dict[str, str] = {}
+    for key in _RUN_CONTEXT_KEYS:
+        value = get_extra(record, key)
+        if value is not None and str(value).strip():
+            context[key] = str(value)
+    return context

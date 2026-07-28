@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-import uuid
 from typing import Awaitable, Callable, Optional
+
+from app.utils.request_ids import resolve_run_request_id
 
 from loguru import logger
 
@@ -28,7 +29,6 @@ from app.services.providers.base import ImageRenderMode
 from app.services.providers.factory import get_image_provider
 from app.utils.image_processor import (
     pad_to_portrait_poster_framing,
-    shrink_and_pad_for_wider_framing,
     zoom_center_crop,
 )
 from app.utils.image_bytes import (
@@ -63,7 +63,7 @@ def _prepare_edit_source_bytes(
     """
     provider 입력용 소스 이미지를 준비한다.
 
-    - studio: 축소·패딩으로 미디엄 와이드 구도 유도
+    - studio: 원본 구도 유지 (프롬프트로 스튜디오 연출)
     - poster: 위쪽 여백만 추가(2:3), hero 중심 ~58% — 바닥 밀착 없음
     - instagram_feed: 중앙 줌으로 릴스용 음식 클로즈업 유도
     """
@@ -71,14 +71,16 @@ def _prepare_edit_source_bytes(
     image = image_bytes_to_pil(source_bytes).convert("RGB")
 
     if food_type and uses_custom_template(food_type, variant):
-        if variant == "studio":
-            subject_scale = _STUDIO_SUBJECT_SCALE_BY_FOOD.get(
-                food_type,
-                _DEFAULT_STUDIO_SUBJECT_SCALE,
+        if variant == "poster":
+            framing = _POSTER_FRAMING_BY_FOOD.get(food_type, {})
+            pre_zoom = framing.get("pre_zoom")
+            if pre_zoom:
+                image = zoom_center_crop(image, zoom_factor=float(pre_zoom))
+            image = pad_to_portrait_poster_framing(
+                image,
+                portrait_aspect=float(framing.get("portrait_aspect", 1.5)),
+                hero_center_y_ratio=float(framing.get("hero_center_y_ratio", 0.58)),
             )
-            image = shrink_and_pad_for_wider_framing(image, subject_scale=subject_scale)
-        elif variant == "poster":
-            image = pad_to_portrait_poster_framing(image)
         elif variant == "instagram_feed":
             zoom_factor = _REELS_ZOOM_BY_FOOD.get(food_type, _DEFAULT_REELS_ZOOM)
             image = zoom_center_crop(image, zoom_factor=zoom_factor)
@@ -93,15 +95,18 @@ def _prepare_edit_source_bytes(
     return pil_image_to_png_bytes(image)
 
 
-_STUDIO_SUBJECT_SCALE_BY_FOOD: dict[str, float] = {
-    "soup_stew": 0.85,
-    "bread_dessert": 0.82,
-}
 _REELS_ZOOM_BY_FOOD: dict[str, float] = {
     "soup_stew": 1.18,
     "bread_dessert": 1.14,
+    "rice_dish": 1.06,
 }
-_DEFAULT_STUDIO_SUBJECT_SCALE = 0.78
+_POSTER_FRAMING_BY_FOOD: dict[str, dict[str, float]] = {
+    "rice_dish": {
+        "portrait_aspect": 1.38,
+        "hero_center_y_ratio": 0.54,
+        "pre_zoom": 1.12,
+    },
+}
 _DEFAULT_REELS_ZOOM = 1.12
 
 
@@ -221,8 +226,7 @@ async def generate_image_ads(
     """
 
     started = time.perf_counter()
-    request_id = f"img-{uuid.uuid4().hex[:10]}"
-    trace_request_id = metrics_request_id or request_id
+    request_id = resolve_run_request_id(metrics_request_id)
 
     if not source_image_bytes:
         raise AppException(
@@ -340,7 +344,7 @@ async def generate_image_ads(
                     provider=provider,
                     source_image_bytes=edit_source_bytes,
                     base_prompt=variant_prompt,
-                    request_id=trace_request_id,
+                    request_id=request_id,
                     variant=variant,
                     size=variant_size,
                     render_mode=render_mode,
@@ -352,7 +356,7 @@ async def generate_image_ads(
                 error_code = exc.code if isinstance(exc, AppException) else "UNHANDLED_EXCEPTION"
                 record_registry_metric(
                     MetricId.VARIANT_GENERATION_LATENCY,
-                    request_id=trace_request_id,
+                    request_id=request_id,
                     elapsed_ms=elapsed_ms,
                     success=False,
                     provider=image_model_info["provider"],
@@ -363,7 +367,6 @@ async def generate_image_ads(
                         "variant": variant,
                         "render_mode": render_mode,
                         "provider": image_provider_name,
-                        "image_request_id": request_id,
                     },
                 )
                 raise
@@ -371,7 +374,7 @@ async def generate_image_ads(
                 elapsed_ms = (time.perf_counter() - variant_started) * 1000
                 record_registry_metric(
                     MetricId.VARIANT_GENERATION_LATENCY,
-                    request_id=trace_request_id,
+                    request_id=request_id,
                     elapsed_ms=elapsed_ms,
                     success=True,
                     provider=image_model_info["provider"],
@@ -380,7 +383,6 @@ async def generate_image_ads(
                         "variant": variant,
                         "render_mode": render_mode,
                         "provider": image_provider_name,
-                        "image_request_id": request_id,
                     },
                 )
             provider_latency_ms = int(
@@ -451,6 +453,20 @@ async def generate_image_ads(
 
         variant_results.sort(key=lambda item: item[0])
 
+        stage_latencies_ms["poster_generation_ms"] = int(
+            (time.perf_counter() - poster_stage_started) * 1000
+        )
+        provider_latencies_ms: list[int] = []
+        for _, _, _, _, provider_latency_ms in variant_results:
+            provider_latencies_ms.append(provider_latency_ms)
+        if provider_latencies_ms:
+            stage_latencies_ms["provider_generation_max_ms"] = max(
+                provider_latencies_ms
+            )
+            stage_latencies_ms["provider_generation_sum_ms"] = sum(
+                provider_latencies_ms
+            )
+
         overlay_latencies_by_idx: dict[int, int] = {}
         overlay_targets = [
             (idx, variant, poster_bytes)
@@ -458,6 +474,7 @@ async def generate_image_ads(
             if variant_uses_pil_text_overlay(payload.food_type, variant)
         ]
         if overlay_targets:
+            poster_vlm_overlay_started = time.perf_counter()
             release_gpu = getattr(provider, "release_gpu_resources", None)
             if callable(release_gpu):
                 logger.info(
@@ -544,22 +561,24 @@ async def generate_image_ads(
                     str(exc),
                 )
 
+            stage_latencies_ms["poster_vlm_overlay_ms"] = int(
+                (time.perf_counter() - poster_vlm_overlay_started) * 1000
+            )
+
         poster_image_bytes: list[bytes] = []
         applied_variants: list[ImageVariantType] = []
         variant_prompts: dict[str, str] = {}
-        provider_latencies_ms: list[int] = []
         overlay_latencies_ms: list[int] = []
         for (
             idx,
             variant,
             poster_bytes,
             variant_prompt,
-            provider_latency_ms,
+            _provider_latency_ms,
         ) in variant_results:
             poster_image_bytes.append(poster_bytes)
             applied_variants.append(variant)
             variant_prompts[variant] = variant_prompt
-            provider_latencies_ms.append(provider_latency_ms)
             overlay_latency_ms = overlay_latencies_by_idx.get(idx)
             if overlay_latency_ms is not None:
                 overlay_latencies_ms.append(overlay_latency_ms)
@@ -567,13 +586,6 @@ async def generate_image_ads(
             if not prompt_used:
                 prompt_used = variant_prompt
 
-        stage_latencies_ms["poster_generation_ms"] = int(
-            (time.perf_counter() - poster_stage_started) * 1000
-        )
-        if provider_latencies_ms:
-            stage_latencies_ms["provider_generation_max_ms"] = max(
-                provider_latencies_ms
-            )
         if overlay_latencies_ms:
             stage_latencies_ms["text_overlay_max_ms"] = max(
                 overlay_latencies_ms

@@ -56,7 +56,8 @@ VARIANT_DIRECTION_HINTS: dict[ImageVariantType, str] = {
 # QUALITY line — photoreal look (all variants). Anti-fake rendering lives here only.
 _REALISM_RULES = (
     "real camera editorial food photo, natural texture/gloss/grain, steam if hot, "
-    "no CGI/plastic/HDR/neon/beauty filter"
+    "preserve individual ingredient edges, "
+    "no CGI/plastic/HDR/neon/beauty filter, no uniform processed meat, no fused utensils"
 )
 
 _NEGATIVE_CLUTTER = (
@@ -66,6 +67,8 @@ _NEGATIVE_CLUTTER = (
 
 _NEGATIVE_COMMON = (
     "no text, numbers, logo, watermark, UI, dish name, menu title, caption, subtitle in image, "
+    "no uniform ham meat, no plastic pork texture, no neon sauce colors, "
+    "no fused tongs/scissors/chopsticks, no beauty-filter food blobs, "
     f"{_NEGATIVE_CLUTTER}"
 )
 
@@ -207,11 +210,20 @@ _STUDIO_FRIED_SUBJECT = (
 )
 
 _STUDIO_GRILLED_BBQ_SUBJECT = (
-    f"{_STUDIO_FOOD_BASE}, natural grill marks and sear, no heavy smoke"
+    f"{_STUDIO_FOOD_BASE}, natural fat-meat layers and irregular slice thickness, "
+    "real grilled protein not uniform ham/plastic, "
+    "keep built-in grill grate or grill plate if present, "
+    "remove excess banchan keep max 1-2 side items at edges, "
+    "neat tongs/scissors set if kept not fused, natural sauce tones not neon, "
+    "natural grill marks and sear, no heavy smoke"
 )
 
 _STUDIO_RICE_DISH_SUBJECT = (
-    f"{_STUDIO_FOOD_BASE}, visible rice/noodle+topping layers, natural colors"
+    f"{_STUDIO_FOOD_BASE}, separated rice/noodle+topping layers with color contrast, "
+    "sharp vegetable/egg/garnish edges not blurred blobs, "
+    "preserve bowl/vessel shape and material, "
+    "keep radial/sectional topping layout not mixed mush, "
+    "if top-down reference keep top-down angle"
 )
 
 _STUDIO_BREAD_DESSERT_SUBJECT = (
@@ -238,11 +250,13 @@ _STUDIO_FRIED_SCENE = (
 )
 
 _STUDIO_GRILLED_BBQ_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, dark warm table tone, soft side light, natural contrast"
+    f"{_STUDIO_SCENE_BASE}, dark warm table tone, soft side light, natural contrast, "
+    "subtle BBQ table mood with readable grill setup not sterile empty wall studio"
 )
 
 _STUDIO_RICE_DISH_SCENE = (
-    f"{_STUDIO_SCENE_BASE}, bright clean table, soft even light, full bowl in frame"
+    f"{_STUDIO_SCENE_BASE}, bright clean table, soft even light, full bowl in frame, "
+    "preserve top-down bowl framing if reference is top-down"
 )
 
 _STUDIO_BREAD_DESSERT_SCENE = (
@@ -294,6 +308,18 @@ _POSTER_LAYOUT_RULES = (
     "{store_footer_line}"
 )
 
+_POSTER_LAYOUT_RULES_RICE_DISH = (
+    "LAYOUT 2:3 portrait: compact upper 28-34% headline zone, "
+    "large top-down bowl centered horizontally, bowl vertical center near 60-66% height, "
+    "minimize empty band between headline zone and bowl, no wide dead middle, "
+    "bottom 8% calm for store footer, no footer panel or hard horizontal split. "
+    "{store_footer_line}"
+)
+
+FOOD_POSTER_LAYOUT_RULES: dict[FoodType, str] = {
+    "rice_dish": _POSTER_LAYOUT_RULES_RICE_DISH,
+}
+
 _POSTER_PHOTO_TEMPLATE = """
 TASK: menu promo poster from attached food photo — food hero + designed background only, zero typography
 TYPE: {food_type_label}
@@ -322,11 +348,16 @@ _POSTER_FRIED_FOOD = (
 )
 
 _POSTER_GRILLED_BBQ_FOOD = (
-    f"{_POSTER_FOOD_BASE}, grill marks, sear gloss, char texture"
+    f"{_POSTER_FOOD_BASE}, natural fat-meat layers not uniform ham/plastic, "
+    "keep grill grate/plate if present, max 1-2 side items at edges, neat tongs/scissors not fused, "
+    "grill marks, sear gloss, char texture, grill+meat occupies 42-52% frame height"
 )
 
 _POSTER_RICE_DISH_FOOD = (
-    f"{_POSTER_FOOD_BASE}, rice/noodle+topping layers visible"
+    "preserve bowl/vessel and radial topping layout, keep top-down if reference is top-down, "
+    "scale bowl as dominant hero 62-72% frame width and 55-65% frame height, "
+    "bowl center near 60-66% height, no wide empty band between headline zone and bowl, "
+    "not pinned to bottom edge, sharp topping edges"
 )
 
 _POSTER_BREAD_DESSERT_FOOD = (
@@ -403,6 +434,23 @@ _REELS_FOOD_RULES = (
     f"{_SUBJECT_HERO_COMMON}, extreme closeup 70-85%, main dominant, sides at edges only"
 )
 
+_REELS_GRILLED_BBQ_FOOD = (
+    f"{_SUBJECT_HERO_COMMON}, natural fat-meat layers not uniform ham/plastic, "
+    "keep grill grate/plate if present, max 1-2 side items at edges, neat tongs/scissors not fused, "
+    "grill+meat occupies 65-78% frame"
+)
+
+_REELS_RICE_DISH_FOOD = (
+    f"{_SUBJECT_HERO_COMMON}, separated topping layers with sharp edges, "
+    "preserve bowl/vessel and radial/sectional layout, keep top-down if reference is top-down, "
+    "bowl occupies 60-72% frame"
+)
+
+FOOD_REELS_FOOD_RULES: dict[FoodType, str] = {
+    "grilled_bbq": _REELS_GRILLED_BBQ_FOOD,
+    "rice_dish": _REELS_RICE_DISH_FOOD,
+}
+
 _REELS_SCENE_RULES = (
     "preserve original restaurant/store interior, table decor, lighting, signage, "
     "shallow bokeh ok, no studio table/solid bg replacement, "
@@ -415,6 +463,25 @@ _REELS_SCENE_RULES_FLEXIBLE = (
     "within same in-store location, no studio/solid bg replacement, extreme closeup 70-85%, "
     "no people, bottom-left 20% empty for PIL"
 )
+
+_REELS_GRILLED_BBQ_SCENE = (
+    "bright in-store Korean BBQ restaurant photo, built-in grill or grill plate visible, "
+    "warm store lighting, clean wood/metal table, subtle interior blur, "
+    "1-2 side dishes readable at edges, no studio/solid bg replacement, "
+    "no people, bottom-left 20% empty for PIL"
+)
+
+_REELS_RICE_DISH_SCENE = (
+    "bright in-store Korean restaurant photo, warm store lighting, clean table, subtle interior blur, "
+    "full bowl readable with sharp topping detail, "
+    "if top-down reference keep modest top-down/slight-angle not forced side profile, "
+    "no studio/solid bg replacement, no people, bottom-left 20% empty for PIL"
+)
+
+FOOD_REELS_SCENE_RULES: dict[FoodType, str] = {
+    "grilled_bbq": _REELS_GRILLED_BBQ_SCENE,
+    "rice_dish": _REELS_RICE_DISH_SCENE,
+}
 
 _REELS_REALISM_EXTRA = (
     "authentic in-store smartphone single shot, not studio reshoot/composite, "
@@ -436,9 +503,13 @@ NEG: {_NEGATIVE_REELS}
 _REELS_TEMPLATE = _REELS_PHOTO_TEMPLATE.replace("{_NEGATIVE_REELS}", _NEGATIVE_REELS)
 
 
-def _build_reels_scene_rules(extra_notes: str) -> str:
+def _build_reels_scene_rules(extra_notes: str, *, food_type: FoodType | None = None) -> str:
     if _user_requests_visual_override(extra_notes):
         return _REELS_SCENE_RULES_FLEXIBLE
+    if food_type is not None:
+        custom = FOOD_REELS_SCENE_RULES.get(food_type)
+        if custom:
+            return custom
     return _REELS_SCENE_RULES
 
 
@@ -630,14 +701,16 @@ def build_template_context(
         "poster_background_rules": _lookup_food_rules(
             FOOD_POSTER_BACKGROUND_RULES, food_type
         ),
-        "poster_layout_rules": _POSTER_LAYOUT_RULES.format(
+        "poster_layout_rules": (
+            FOOD_POSTER_LAYOUT_RULES.get(food_type) or _POSTER_LAYOUT_RULES
+        ).format(
             store_footer_line=_build_poster_store_footer_line(
                 store_name,
                 store_location,
             ),
         ),
-        "reels_food_rules": _REELS_FOOD_RULES,
-        "reels_scene_rules": _build_reels_scene_rules(extra_notes),
+        "reels_food_rules": FOOD_REELS_FOOD_RULES.get(food_type, _REELS_FOOD_RULES),
+        "reels_scene_rules": _build_reels_scene_rules(extra_notes, food_type=food_type),
         "reels_realism_extra": _REELS_REALISM_EXTRA,
         "reels_hook_line": _build_reels_hook_line(
             store_name=store_name,
