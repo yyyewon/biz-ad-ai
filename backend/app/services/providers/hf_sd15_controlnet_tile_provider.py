@@ -637,7 +637,7 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
         num_images: int,
         size: str | None,
     ) -> list[bytes]:
-        request_id = resolve_run_request_id(request_id)
+        request_id = resolve_run_request_id(None)
 
         width, height = self._parse_size(size)
         effective_num_images = max(1, int(num_images or self._num_images_per_prompt))

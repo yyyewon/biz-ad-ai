@@ -793,7 +793,7 @@ class HFSDXLLightningImageProvider(ImageGenerationProvider):
         7. 성능 로그 기록
         """
 
-        request_id = resolve_run_request_id(request_id)
+        request_id = resolve_run_request_id(None)
 
         # 생성 크기 결정
         width, height = self._parse_size(size)
