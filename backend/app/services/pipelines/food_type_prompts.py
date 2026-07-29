@@ -550,43 +550,6 @@ def _build_reels_hook_line(
     return f"PIL caption hook (not in image): {hook}"
 
 
-def build_poster_exact_text_block(
-    *,
-    headline: str,
-    menu_name: str,
-    price_text: str = "",
-    store_name: str = "",
-) -> str:
-    """Legacy helper — poster text is applied via PIL, not in the image prompt."""
-
-    menu = (menu_name or "").strip() or "오늘의 메뉴"
-    items: list[str] = []
-    index = 1
-
-    head = (headline or "").strip()
-    if head:
-        items.append(f'{index}. "{head}" — headline (small)')
-        index += 1
-
-    items.append(f'{index}. "{menu}" — menu name (largest bold)')
-    index += 1
-
-    price = (price_text or "").strip()
-    if price:
-        items.append(f'{index}. "{price}" — price (badge)')
-        index += 1
-
-    store = (store_name or "").strip()
-    if store:
-        items.append(f'{index}. "{store}" — store name bottom-right (small)')
-
-    numbered = "\n".join(items)
-    return (
-        "EXACT TEXT (PIL only, not for image model):\n"
-        f"{numbered}"
-    )
-
-
 def _build_poster_headline_line(*, headline: str, store_name: str) -> str:
     _ = store_name
     if headline:
@@ -737,12 +700,6 @@ def render_food_variant_prompt_template(
     return template.format(**context)
 
 
-def build_food_context_line(food_type: FoodType) -> str:
-    label = FOOD_TYPE_LABELS[food_type]
-    scene_hint = get_food_type_scene_hint(food_type)
-    return f"food type: {label}, {scene_hint}"
-
-
 def build_food_variant_prompt(
     payload: ImageAdRequest,
     variant: ImageVariantType,
@@ -760,22 +717,3 @@ def build_food_variant_prompt(
         )
     return custom_prompt
 
-
-def build_variant_negative_prompt(variant: ImageVariantType) -> str:
-    if variant == "poster":
-        return _NEGATIVE_POSTER
-    if variant == "instagram_feed":
-        return _NEGATIVE_REELS
-    if variant == "studio":
-        return _NEGATIVE_STUDIO
-    return _NEGATIVE_COMMON
-
-
-def strip_prompt_neg_line(prompt: str) -> str:
-    """HF negative_prompt 파라미터로 분리할 때 positive prompt에서 NEG 줄을 제거한다."""
-    lines = [line for line in prompt.splitlines() if not line.strip().startswith("NEG:")]
-    return "\n".join(lines).strip()
-
-
-def build_inpaint_food_prompt(payload: ImageAdRequest, food_type: FoodType) -> str:
-    return build_food_context_line(food_type)

@@ -81,6 +81,7 @@ class MetricId(StrEnum):
 
     HF_MODEL_LOAD_LATENCY = "hf_model_load_latency"
     HF_INFERENCE_LATENCY = "hf_inference_latency"
+    IMAGE_INFERENCE_LATENCY = "image_inference_latency"
 
     BOOGU_MODEL_LOAD_LATENCY = "boogu_model_load_latency"
     BOOGU_INFERENCE_LATENCY = "boogu_inference_latency"
@@ -117,7 +118,7 @@ METRIC_REGISTRY: dict[MetricId, MetricDefinition] = {
     MetricId.TOTAL_PIPELINE_LATENCY: MetricDefinition(
         metric_id=MetricId.TOTAL_PIPELINE_LATENCY,
         display_name="Total Pipeline Latency",
-        description="API 1회(문구+이미지) 전체 ms",
+        description="API 1회(문구+이미지) 전체 wall clock ms (모델 로드·VLM·overlay 포함)",
         rationale="사용자 체감 대기 시간",
         category="integrated_api",
         status="implemented",
@@ -176,8 +177,8 @@ METRIC_REGISTRY: dict[MetricId, MetricDefinition] = {
     MetricId.IMAGE_GENERATION_LATENCY: MetricDefinition(
         metric_id=MetricId.IMAGE_GENERATION_LATENCY,
         display_name="Image Generation Latency",
-        description="OpenAI/HF 등 image provider 추론 합산 ms (VLM·overlay 제외)",
-        rationale="모델/ provider 공통 실제 생성 시간",
+        description="OpenAI/HF image provider inference-only 합산 ms (로드·VLM·overlay 제외)",
+        rationale="모델 간 공정 비교용 실제 생성 시간",
         category="image_generation",
         status="implemented",
         event=PerformanceEvent.PERF_METRIC,
@@ -186,13 +187,13 @@ METRIC_REGISTRY: dict[MetricId, MetricDefinition] = {
         log_target="performance",
         extra_fields=("latency_key",),
         dashboard_query="stage=image_provider_generation_sum → elapsed_ms",
-        notes="variant provider inference 합. max는 image_provider_generation.",
+        notes="variant inference-only 합. max는 image_provider_generation.",
     ),
     MetricId.VARIANT_GENERATION_LATENCY: MetricDefinition(
         metric_id=MetricId.VARIANT_GENERATION_LATENCY,
         display_name="Variant Generation Latency",
-        description="studio / poster / instagram_feed 각각 ms",
-        rationale="variant별 병목",
+        description="studio / poster / instagram_feed inference-only ms (로드 제외)",
+        rationale="variant별 생성(추론) 병목",
         category="image_generation",
         status="implemented",
         event=PerformanceEvent.PERF_METRIC,
@@ -200,7 +201,22 @@ METRIC_REGISTRY: dict[MetricId, MetricDefinition] = {
         pipeline=PerformancePipeline.AD_GENERATE,
         log_target="performance",
         extra_fields=("variant", "render_mode", "provider"),
-        dashboard_query="stage=variant_generation → GROUP BY extra.variant",
+        dashboard_query="stage=variant_generation → GROUP BY extra.variant (inference_only)",
+        notes="모델 로드·다운로드 제외. stage=inference와 동일 범위.",
+    ),
+    MetricId.IMAGE_INFERENCE_LATENCY: MetricDefinition(
+        metric_id=MetricId.IMAGE_INFERENCE_LATENCY,
+        display_name="Image Inference Latency",
+        description="OpenAI/HF 공통 inference-only ms (pipe/API, 로드 제외)",
+        rationale="모델 간 생성 시간 공정 비교",
+        category="image_generation",
+        status="implemented",
+        event=PerformanceEvent.PERF_METRIC,
+        stage=PerformanceStage.INFERENCE,
+        pipeline=PerformancePipeline.AD_GENERATE,
+        log_target="performance",
+        extra_fields=("provider_type", "variant", "measurement"),
+        dashboard_query="stage=inference, pipeline=ad_generate → elapsed_ms",
     ),
     MetricId.EMPTY_RESULT_RETRY_ATTEMPT: MetricDefinition(
         metric_id=MetricId.EMPTY_RESULT_RETRY_ATTEMPT,
@@ -306,7 +322,7 @@ METRIC_REGISTRY: dict[MetricId, MetricDefinition] = {
     MetricId.HF_INFERENCE_LATENCY: MetricDefinition(
         metric_id=MetricId.HF_INFERENCE_LATENCY,
         display_name="HF Inference Latency",
-        description="SDXL Lightning 1회 inference ms",
+        description="HF provider 1회 inference ms (legacy alias; prefer image_inference_latency)",
         rationale="이미지 생성 GPU 병목",
         category="provider",
         status="implemented",
@@ -334,7 +350,7 @@ METRIC_REGISTRY: dict[MetricId, MetricDefinition] = {
     MetricId.BOOGU_INFERENCE_LATENCY: MetricDefinition(
         metric_id=MetricId.BOOGU_INFERENCE_LATENCY,
         display_name="Boogu Inference Latency",
-        description="Boogu Edit 1회 inference ms",
+        description="Boogu Edit 1회 inference ms (legacy alias; prefer image_inference_latency)",
         rationale="이미지 생성 GPU 병목",
         category="provider",
         status="implemented",

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from typing import Any
 
 from loguru import logger
@@ -18,6 +19,8 @@ from app.core.exceptions import AppException
 from app.core.model_config import get_model_settings, get_provider_section
 from app.services.providers.base import ImageGenerationProvider, ImageRenderMode
 from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
+from app.utils.image_inference_metrics import record_image_inference_latency
+from app.utils.request_ids import resolve_run_request_id
 
 
 try:
@@ -456,7 +459,6 @@ class HFImageProvider(ImageGenerationProvider):
         request_id: str | None = None,
     ) -> list[bytes]:
         _ = size
-        _ = request_id
         return await run_in_threadpool(
             self._generate_sync,
             input_image_bytes=input_image_bytes,
@@ -466,6 +468,7 @@ class HFImageProvider(ImageGenerationProvider):
             negative_prompt=negative_prompt,
             render_mode=render_mode,
             img2img_strength=img2img_strength,
+            request_id=request_id,
         )
 
 
@@ -645,6 +648,7 @@ class HFImageProvider(ImageGenerationProvider):
         subject_alpha: Image.Image,
         prompt: str,
         negative_prompt: str | None,
+        request_id: str | None = None,
     ) -> Image.Image:
         seam_mask = self._build_seam_ring_mask(subject_alpha, self._seam_ring_px)
 
@@ -653,6 +657,7 @@ class HFImageProvider(ImageGenerationProvider):
 
         pipe = self._load_inpaint_pipeline()
 
+        inference_started = time.perf_counter()
         with _PIPELINE_INFERENCE_LOCK:
             result = pipe(
                 prompt=prompt,
@@ -665,6 +670,13 @@ class HFImageProvider(ImageGenerationProvider):
                 max_sequence_length=self._max_sequence_length,
                 num_images_per_prompt=1,
             )
+        elapsed_ms = (time.perf_counter() - inference_started) * 1000
+        self._record_pipe_inference(
+            request_id=request_id,
+            elapsed_ms=elapsed_ms,
+            success=True,
+            stage="seam_blend",
+        )
 
         images = list(getattr(result, "images", []) or [])
         if not images:
@@ -689,6 +701,7 @@ class HFImageProvider(ImageGenerationProvider):
         negative_prompt: str | None,
         canvas_size: tuple[int, int],
         num_images: int,
+        request_id: str | None = None,
     ) -> list[Image.Image]:
         pipe = self._load_text2img_pipeline()
 
@@ -696,6 +709,7 @@ class HFImageProvider(ImageGenerationProvider):
         backdrop_negative_prompt = self._build_backdrop_negative_prompt(negative_prompt)
 
         try:
+            inference_started = time.perf_counter()
             with _PIPELINE_INFERENCE_LOCK:
                 result = pipe(
                     prompt=backdrop_prompt,
@@ -707,6 +721,18 @@ class HFImageProvider(ImageGenerationProvider):
                     max_sequence_length=self._max_sequence_length,
                     num_images_per_prompt=num_images,
                 )
+            elapsed_ms = (time.perf_counter() - inference_started) * 1000
+            self._record_pipe_inference(
+                request_id=request_id,
+                elapsed_ms=elapsed_ms,
+                success=True,
+                stage="backdrop_generation",
+                extra={
+                    "width": canvas_size[0],
+                    "height": canvas_size[1],
+                    "num_images": num_images,
+                },
+            )
 
         except AppException:
             raise
@@ -753,6 +779,7 @@ class HFImageProvider(ImageGenerationProvider):
         canvas_size: tuple[int, int],
         num_images: int,
         img2img_strength: float | None = None,
+        request_id: str | None = None,
     ) -> list[bytes]:
         pipe = self._load_img2img_pipeline()
 
@@ -770,6 +797,7 @@ class HFImageProvider(ImageGenerationProvider):
         )
 
         try:
+            inference_started = time.perf_counter()
             with _PIPELINE_INFERENCE_LOCK:
                 result = pipe(
                     prompt=prompt,
@@ -780,6 +808,19 @@ class HFImageProvider(ImageGenerationProvider):
                     num_inference_steps=self._num_inference_steps,
                     num_images_per_prompt=num_images,
                 )
+            elapsed_ms = (time.perf_counter() - inference_started) * 1000
+            self._record_pipe_inference(
+                request_id=request_id,
+                elapsed_ms=elapsed_ms,
+                success=True,
+                stage="img2img_restyle",
+                extra={
+                    "width": canvas_size[0],
+                    "height": canvas_size[1],
+                    "num_images": num_images,
+                    "strength": effective_strength,
+                },
+            )
 
         except AppException:
             raise
@@ -820,6 +861,31 @@ class HFImageProvider(ImageGenerationProvider):
         ]
 
 
+    def _record_pipe_inference(
+        self,
+        *,
+        request_id: str | None,
+        elapsed_ms: float,
+        success: bool,
+        stage: str,
+        extra: dict[str, Any] | None = None,
+        error_code: str | None = None,
+        error_type: str | None = None,
+    ) -> None:
+        merged_extra = {"stage": stage, **(extra or {})}
+        record_image_inference_latency(
+            request_id=resolve_run_request_id(request_id),
+            provider="hf",
+            model=self._model_id,
+            elapsed_ms=elapsed_ms,
+            success=success,
+            provider_type="hf_image",
+            extra=merged_extra,
+            error_code=error_code,
+            error_type=error_type,
+        )
+
+
     def _generate_sync(
         self,
         *,
@@ -830,6 +896,7 @@ class HFImageProvider(ImageGenerationProvider):
         negative_prompt: str | None = None,
         render_mode: ImageRenderMode = "photo_restyle",
         img2img_strength: float | None = None,
+        request_id: str | None = None,
     ) -> list[bytes]:
         if not input_image_bytes:
             raise AppException(
@@ -852,6 +919,7 @@ class HFImageProvider(ImageGenerationProvider):
                 canvas_size=canvas_size,
                 num_images=num_images,
                 img2img_strength=img2img_strength,
+                request_id=request_id,
             )
 
         if render_mode != "background_swap":
@@ -890,6 +958,7 @@ class HFImageProvider(ImageGenerationProvider):
             negative_prompt=negative_prompt,
             canvas_size=canvas_size,
             num_images=num_images,
+            request_id=request_id,
         )
 
         output_images: list[bytes] = []
@@ -908,6 +977,7 @@ class HFImageProvider(ImageGenerationProvider):
                         subject_alpha=canvas_alpha,
                         prompt=prompt,
                         negative_prompt=negative_prompt,
+                        request_id=request_id,
                     )
                 except Exception as exc:
                     logger.warning(

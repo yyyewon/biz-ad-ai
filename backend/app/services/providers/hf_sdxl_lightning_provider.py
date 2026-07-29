@@ -28,6 +28,7 @@ from app.core.exceptions import AppException
 from app.core.model_config import get_provider_section
 from app.services.providers.base import ImageGenerationProvider, ImageRenderMode
 from app.utils.image_bytes import image_bytes_to_pil, pil_image_to_png_bytes
+from app.utils.image_inference_metrics import record_image_inference_latency
 from app.utils.performance_logger import record_performance_metric
 
 
@@ -877,6 +878,17 @@ class HFSDXLLightningImageProvider(ImageGenerationProvider):
             extra.update(self._nvidia_smi_memory())
 
             # inference 성능 로그 기록
+            record_image_inference_latency(
+                request_id=request_id,
+                provider="hf",
+                model=self._model_key,
+                elapsed_ms=elapsed_ms,
+                success=True,
+                provider_type="sdxl_lightning",
+                extra=extra,
+            )
+
+            # provider-local pipeline breakdown (legacy)
             record_performance_metric(
                 pipeline="hf_sdxl_lightning",
                 stage="inference",
@@ -911,6 +923,23 @@ class HFSDXLLightningImageProvider(ImageGenerationProvider):
                 "hf_sdxl_lightning_generation_failed | model_key={} | error={}",
                 self._model_key,
                 str(exc),
+            )
+
+            record_image_inference_latency(
+                request_id=request_id,
+                provider="hf",
+                model=self._model_key,
+                elapsed_ms=elapsed_ms,
+                success=False,
+                provider_type="sdxl_lightning",
+                error_code="HF_SDXL_LIGHTNING_GENERATION_FAILED",
+                error_type=exc.__class__.__name__,
+                extra={
+                    "width": width,
+                    "height": height,
+                    "ip_adapter_enabled": use_ip_adapter,
+                    "xformers_enabled": load_meta.get("xformers_enabled"),
+                },
             )
 
             record_performance_metric(

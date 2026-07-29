@@ -3,13 +3,7 @@
 > **사진 한 장으로, 인스타 광고 콘텐츠까지.**  
 > 생성형 AI를 활용해 요식업 소상공인이 별도의 디자인 도구 없이 광고 이미지와 문구를 제작할 수 있도록 돕는 서비스입니다.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/Streamlit-1.58-FF4B4B?logo=streamlit&logoColor=white" alt="Streamlit" />
-  <img src="https://img.shields.io/badge/FastAPI-0.139-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose" />
-  <img src="https://img.shields.io/badge/GPU-NVIDIA%20L4-76B900?logo=nvidia&logoColor=white" alt="NVIDIA L4" />
-</p>
+
 
 ## 프로젝트 소개
 
@@ -26,12 +20,16 @@
 
 ## 핵심 기능
 
+
+
 ### 1. 최소 입력으로 광고 콘텐츠 생성
 
 - 가게 이름, 메뉴 이름, 위치, 가격, 홍보 목적 입력
 - JPG, PNG, WEBP 음식 사진 업로드
 - 광고 말투와 이미지·문구 요청사항 선택 입력
 - 이전 단계로 돌아가도 입력 상태 유지
+
+
 
 ### 2. 음식 유형 자동 분석과 사용자 제어
 
@@ -47,13 +45,17 @@
 - 버거·샌드위치
 - 커피·음료
 
+
+
 ### 3. 한 번의 생성으로 세 가지 이미지 제공
 
-| 결과물 | 비율 | 기본 해상도 | 용도 |
-|---|---:|---:|---|
-| Studio | 1:1 | 1024 × 1024 | 음식이 중심인 제품·스튜디오 이미지 |
-| Poster | 2:3 | 1024 × 1536 | 메뉴명, 가격, 카피를 포함한 세로형 포스터 |
+
+| 결과물            | 비율  | 기본 해상도      | 용도                         |
+| -------------- | --- | ----------- | -------------------------- |
+| Studio         | 1:1 | 1024 × 1024 | 음식이 중심인 제품·스튜디오 이미지        |
+| Poster         | 2:3 | 1024 × 1536 | 메뉴명, 가격, 카피를 포함한 세로형 포스터   |
 | Instagram Feed | 2:3 | 1024 × 1536 | SNS 피드·릴스 커버에 적합한 클로즈업 이미지 |
+
 
 세 결과물은 같은 이미지를 단순 복제하지 않고, 각각의 사용 목적에 맞춰 프롬프트와 구도를 분리합니다.
 
@@ -66,6 +68,8 @@
 3. **PIL 규칙 기반 렌더러**가 메뉴명, 가격, 카피를 정확하게 합성합니다.
 4. VLM 분석이 실패하면 규칙 기반 레이아웃으로 자동 전환합니다.
 
+
+
 ### 5. 카카오 로그인과 사용량 관리
 
 - 카카오 소셜 로그인
@@ -73,6 +77,8 @@
 - 일일 생성 횟수 제한
 - 이미지 생성이 실제로 성공한 경우에만 사용량 차감
 - 개발 환경용 로그인 우회 및 목업 모드
+
+
 
 ### 6. 실패를 고려한 생성 흐름
 
@@ -82,6 +88,8 @@
 - 이미지 variant별 빈 결과 발생 시 재시도
 - 생성 완료 후 Boogu, VLM, CLIP 등 GPU 리소스 정리
 - 모델 로딩 전 RAM 확인 및 선택적 워밍업
+
+
 
 ## 사용자 흐름
 
@@ -94,6 +102,10 @@ flowchart LR
     E --> F[Studio · Poster · Feed 확인]
     F --> G[문구 수정·이미지 다운로드]
 ```
+
+
+
+
 
 ## 서비스 아키텍처
 
@@ -120,6 +132,10 @@ flowchart LR
     LOGS --> METRICS[Streamlit Metrics UI]
 ```
 
+
+
+
+
 ## AI 파이프라인
 
 현재 기본 프로필은 `hybrid_openai_text_hf_image`입니다.
@@ -139,16 +155,20 @@ flowchart LR
         └─ 성능·품질 JSONL 기록
 ```
 
+
+
 ### 모델 구성
 
-| 역할 | 기본 모델·기술 | 설명 |
-|---|---|---|
-| 광고 문구 | OpenAI `gpt-5.4-mini` | 가게 정보, 메뉴, 가격, 위치, 홍보 목적, 말투 반영 |
-| 이미지 편집 | `Boogu/Boogu-Image-0.1-Edit-fp8` | 레퍼런스 이미지와 instruction 기반 편집 |
-| 음식 분류 | `openai/clip-vit-base-patch32` | 업로드 이미지의 음식 유형 zero-shot 분류 |
-| 포스터 레이아웃 | `Qwen/Qwen2-VL-2B-Instruct-GPTQ-Int8` | 색상·템플릿·scrim 등 범주형 레이아웃 힌트 생성 |
-| 한글 합성 | Pillow | 메뉴명, 가격, 카피의 좌표·크기·스타일을 규칙 기반 렌더링 |
-| 품질 평가 | CLIP-I / CLIP-T | 원본 정체성 보존과 프롬프트 정렬도 기록 |
+
+| 역할       | 기본 모델·기술                              | 설명                                |
+| -------- | ------------------------------------- | --------------------------------- |
+| 광고 문구    | OpenAI `gpt-5.4-mini`                 | 가게 정보, 메뉴, 가격, 위치, 홍보 목적, 말투 반영   |
+| 이미지 편집   | `Boogu/Boogu-Image-0.1-Edit-fp8`      | 레퍼런스 이미지와 instruction 기반 편집       |
+| 음식 분류    | `openai/clip-vit-base-patch32`        | 업로드 이미지의 음식 유형 zero-shot 분류       |
+| 포스터 레이아웃 | `Qwen/Qwen2-VL-2B-Instruct-GPTQ-Int8` | 색상·템플릿·scrim 등 범주형 레이아웃 힌트 생성     |
+| 한글 합성    | Pillow                                | 메뉴명, 가격, 카피의 좌표·크기·스타일을 규칙 기반 렌더링 |
+| 품질 평가    | CLIP-I / CLIP-T                       | 원본 정체성 보존과 프롬프트 정렬도 기록            |
+
 
 `backend/config/model.yaml`에서 OpenAI/HuggingFace 조합과 이미지 모델을 교체할 수 있습니다. SD 3.5 Medium, SDXL Base, SDXL + IP-Adapter, SD 1.5 + ControlNet Tile 등의 실험 구성도 함께 유지합니다.
 
@@ -169,16 +189,20 @@ Metrics UI는 기본적으로 `8555` 포트에서 `performance.jsonl`과 `qualit
 
 ## 기술 스택
 
-| 구분 | 기술 |
-|---|---|
-| Frontend | Streamlit, Python, Pillow |
-| Backend | FastAPI, Pydantic, Uvicorn, Loguru |
-| Text AI | OpenAI Responses API |
-| Image AI | PyTorch, Diffusers, Transformers, Boogu Image |
-| Vision | CLIP, Qwen2-VL, ONNX Runtime GPU, rembg |
-| Auth & Data | Kakao OAuth, JWT, SQLite |
-| Infra | Docker, Docker Compose, GCP, NVIDIA L4 GPU |
-| Observability | JSONL Metrics, Streamlit Metrics UI |
+
+| 구분            | 기술                                            |
+| ------------- | --------------------------------------------- |
+| Frontend      | Streamlit, Python, Pillow                     |
+| Backend       | FastAPI, Pydantic, Uvicorn, Loguru            |
+| Text AI       | OpenAI Responses API                          |
+| Image AI      | PyTorch, Diffusers, Transformers, Boogu Image |
+| Vision        | CLIP, Qwen2-VL, ONNX Runtime GPU, rembg       |
+| Auth & Data   | Kakao OAuth, JWT, SQLite                      |
+| Infra         | Docker, Docker Compose, GCP, NVIDIA L4 GPU    |
+| Observability | JSONL Metrics, Streamlit Metrics UI           |
+
+
+
 
 ## 프로젝트 구조
 
@@ -208,7 +232,11 @@ Metrics UI는 기본적으로 `8555` 포트에서 `performance.jsonl`과 `qualit
 └── NOTICE
 ```
 
+
+
 ## 실행 방법
+
+
 
 ### 사전 요구사항
 
@@ -251,16 +279,22 @@ RG_MOCK_MODE=false
 RG_DEV_GUEST_MODE=false
 ```
 
+
+
 ### 2. 전체 서비스 실행
 
 ```bash
 docker compose up -d --build
 ```
 
-| 서비스 | 주소 |
-|---|---|
-| 사용자 UI | `http://localhost:8501` |
+
+| 서비스            | 주소                             |
+| -------------- | ------------------------------ |
+| 사용자 UI         | `http://localhost:8501`        |
 | Backend Health | `http://localhost:8010/health` |
+
+
+
 
 ### 3. Metrics UI 함께 실행
 
@@ -288,42 +322,51 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+
+
 ## 주요 설정
 
 `backend/config/model.yaml`에서 다음 항목을 조정할 수 있습니다.
 
-| 설정 | 기본값 | 설명 |
-|---|---|---|
-| `active_profile` | `hybrid_openai_text_hf_image` | 텍스트·이미지 provider 조합 |
-| `hf.image_generation.default_model` | `boogu_edit_fp8` | 기본 HuggingFace 이미지 모델 |
-| `output_image.variant_sizes` | Studio 1:1, Poster/Feed 2:3 | 결과물별 해상도 |
-| `poster_design_analysis.enabled` | `true` | Qwen2-VL 레이아웃 분석 사용 여부 |
-| `poster_design_analysis.fallback_to_rules` | `true` | VLM 실패 시 규칙 기반 fallback |
-| `logging.performance.enabled` | `true` | 성능 JSONL 기록 여부 |
+
+| 설정                                         | 기본값                           | 설명                      |
+| ------------------------------------------ | ----------------------------- | ----------------------- |
+| `active_profile`                           | `hybrid_openai_text_hf_image` | 텍스트·이미지 provider 조합     |
+| `hf.image_generation.default_model`        | `boogu_edit_fp8`              | 기본 HuggingFace 이미지 모델   |
+| `output_image.variant_sizes`               | Studio 1:1, Poster/Feed 2:3   | 결과물별 해상도                |
+| `poster_design_analysis.enabled`           | `true`                        | Qwen2-VL 레이아웃 분석 사용 여부  |
+| `poster_design_analysis.fallback_to_rules` | `true`                        | VLM 실패 시 규칙 기반 fallback |
+| `logging.performance.enabled`              | `true`                        | 성능 JSONL 기록 여부          |
+
 
 운영 안정성을 위한 주요 환경 변수:
 
-| 변수 | 기본값 | 설명 |
-|---|---:|---|
-| `MODEL_WARMUP_ENABLED` | `false` | 서버 시작 시 모델 자동 로딩 여부 |
-| `MODEL_LOAD_MIN_AVAILABLE_RAM_GB` | `6` | 모델 로딩 전 최소 가용 RAM |
-| `HF_IMAGE_CPU_OFFLOAD_ENABLED` | `false` | Diffusers CPU offload 사용 여부 |
-| `GENERATION_MAX_CONCURRENT` | `2` | 동시 생성 요청 수 |
-| `GENERATION_QUEUE_TIMEOUT_SECONDS` | `15` | 생성 슬롯 대기 제한 |
-| `DAILY_GENERATION_LIMIT` | `3` | 로그인 사용자 일일 생성 한도 |
-| `BACKEND_MEMORY_LIMIT` | `12g` | 백엔드 컨테이너 RAM 제한 |
-| `BACKEND_MEMORY_SWAP_LIMIT` | `16g` | 백엔드 컨테이너 RAM+swap 제한 |
+
+| 변수                                 | 기본값     | 설명                          |
+| ---------------------------------- | ------- | --------------------------- |
+| `MODEL_WARMUP_ENABLED`             | `false` | 서버 시작 시 모델 자동 로딩 여부         |
+| `MODEL_LOAD_MIN_AVAILABLE_RAM_GB`  | `6`     | 모델 로딩 전 최소 가용 RAM           |
+| `HF_IMAGE_CPU_OFFLOAD_ENABLED`     | `false` | Diffusers CPU offload 사용 여부 |
+| `GENERATION_MAX_CONCURRENT`        | `2`     | 동시 생성 요청 수                  |
+| `GENERATION_QUEUE_TIMEOUT_SECONDS` | `15`    | 생성 슬롯 대기 제한                 |
+| `DAILY_GENERATION_LIMIT`           | `3`     | 로그인 사용자 일일 생성 한도            |
+| `BACKEND_MEMORY_LIMIT`             | `12g`   | 백엔드 컨테이너 RAM 제한             |
+| `BACKEND_MEMORY_SWAP_LIMIT`        | `16g`   | 백엔드 컨테이너 RAM+swap 제한        |
+
+
 
 
 ## 모델 및 라이선스 안내
 
-이 저장소는 OpenAI API와 여러 HuggingFace 모델을 선택적으로 사용합니다. 각 모델을 배포하거나 상업적으로 활용할 때는 해당 모델의 라이선스와 서비스 약관을 별도로 확인해야 합니다. 저장소에 포함된 제3자 모델 고지는 [`NOTICE`](./NOTICE)를 참고해 주세요.
+이 저장소는 OpenAI API와 여러 HuggingFace 모델을 선택적으로 사용합니다. 각 모델을 배포하거나 상업적으로 활용할 때는 해당 모델의 라이선스와 서비스 약관을 별도로 확인해야 합니다. 저장소에 포함된 제3자 모델 고지는 `[NOTICE](./NOTICE)`를 참고해 주세요.
 
-##  산출물
-- **최종 보고서** : [다운로드]
+## 산출물
+
+- **최종 발표 자료 (보고서)** : [PDF 다운로드](./docs/소상공인 두레_최종 발표 자료.pdf)
 - **협업 일지**
-  - [황예원]
-  - [박도원]
-  - [손영욱]
-  - [채영환]
-  - [천지연]
+  - [황예원](https://app.notion.com/p/26-7-1-26-7-30-39016104cddd806bb7b8e2e2a15f58d4?source=copy_link)
+  - [박도원](https://app.notion.com/p/3-3acc44689b4380889bb8eb5a9ab17d25?source=copy_link)
+  - [손영욱](https://app.notion.com/p/3abdbfa9f10b80da8490f0f4ff285605)
+  - [채영환](https://docs.google.com/spreadsheets/d/1XGJzqzpp_N-MORNY8IbwMTJpMqjBjcvbPh0Yb37I_DI/edit?usp=sharing)
+  - [천지연](https://app.notion.com/p/AI-9-3923c6dfd7ee80309b4de04a9fcf3474?source=copy_link)
+

@@ -57,7 +57,7 @@ METRIC_CATALOG: dict[MetricCategory, tuple[MetricCatalogItem, ...]] = {
         MetricCatalogItem(
             "Total Pipeline Latency",
             "total_pipeline",
-            "API 1회 전체 (문구+이미지 **병렬**)",
+            "API 1회 전체 wall clock (문구+이미지 병렬, 모델 로드·VLM·overlay 포함)",
             "사용자 체감 대기 시간",
             "✅",
         ),
@@ -80,15 +80,15 @@ METRIC_CATALOG: dict[MetricCategory, tuple[MetricCatalogItem, ...]] = {
         MetricCatalogItem(
             "Image Generation (3 variants)",
             "poster_generation",
-            "studio / poster / feed 3장 variant loop wall clock",
-            "요약 지표 — variant 루프 실제 소요",
+            "studio / poster / feed 3장 variant loop wall clock (로드 포함)",
+            "variant 루프 실제 소요 — total과 비교용",
             "✅",
         ),
         MetricCatalogItem(
             "Image Generation (provider sum)",
             "image_provider_generation_sum",
-            "OpenAI/HF provider 추론 합산 (VLM·overlay 제외)",
-            "provider inference only",
+            "3 variant inference-only 합 (모델 로드·VLM·overlay 제외)",
+            "모델 간 공정 비교 · 성능 요약 이미지 생성",
             "✅",
         ),
         MetricCatalogItem(
@@ -108,7 +108,7 @@ METRIC_CATALOG: dict[MetricCategory, tuple[MetricCatalogItem, ...]] = {
         MetricCatalogItem(
             "Variant Generation Latency",
             "variant_generation",
-            "studio / poster / instagram_feed 각각",
+            "studio / poster / instagram_feed inference-only (로드 제외)",
             "variant별 병목",
             "✅",
         ),
@@ -190,7 +190,7 @@ GLOSSARY_MD = """
 
 VARIANT_CHART_HELP = (
     metric_help_by_name("Variant Generation Latency")
-    + "\n\n차트 Y값: **초** (`elapsed_ms` ÷ 1000)."
+    + "\n\n**inference-only** (모델 로드·다운로드 제외). 차트 Y값: **초** (`elapsed_ms` ÷ 1000)."
 )
 RETRY_CHART_HELP = metric_help_by_name("Empty-Result Retry Attempt")
 CLIP_I_CHART_HELP = metric_help_by_name("CLIP-I (Image–Image Similarity)") + "\n\n점수 **0~1**."
@@ -202,7 +202,12 @@ METRIC_HELP = {
         metric_help_by_name("Total Pipeline Latency")
         + "\n\n**참고:** 문구·이미지는 **동시에** 돌아갑니다."
     ),
-    "Image Generation (3 variants)": metric_help_by_name("Image Generation (3 variants)"),
+    "Image Generation (provider sum)": metric_help_by_name(
+        "Image Generation (provider sum)"
+    ),
+    "Image Generation (3 variants)": metric_help_by_name(
+        "Image Generation (3 variants)"
+    ),
     "VLM Inference Latency": metric_help_by_name("VLM Inference Latency"),
     "VLM Inference Latency (P50)": metric_help_by_name("VLM Inference Latency"),
     "Pipeline Success Rate": metric_help_by_name("Pipeline Success Rate"),
@@ -217,7 +222,7 @@ SECTION_HELP: dict[str, str] = {
 }
 
 SECTION_HELP["성능 요약"] = (
-    "통합 파이프라인 · 이미지 3장 생성 · 포스터 VLM — 핵심 3지표."
+    "통합 파이프라인(wall clock) · 이미지 3 variant inference 합 · 포스터 VLM."
 )
 SECTION_HELP["팀별 생성 수"] = (
     "필터 무관 · `total_pipeline` run을 `extra.source_user`별 집계."

@@ -82,19 +82,6 @@ class ImageAdRequest(BaseModel):
         return self
 
 
-class GeneratedImageItem(BaseModel):
-    """
-    이전 파일 경로 기반 응답 호환용 schema.
-
-    신규 메모리 기반 응답에서는 ImageAdResponse.images의 base64 문자열을 사용한다.
-    """
-
-    index: int
-    image_base64: str = ""
-    image_path: Optional[str] = None
-    download_url: Optional[str] = None
-
-
 class ImageAdResponse(BaseModel):
     """
     이미지 광고 생성 응답 schema.
