@@ -25,6 +25,7 @@ from app.utils.memory_monitor import (
     ensure_model_load_memory,
     log_model_memory_snapshot,
 )
+from app.utils.image_inference_metrics import record_image_inference_latency
 from app.utils.performance_logger import record_performance_metric
 
 
@@ -712,6 +713,16 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
             }
             extra.update(self._memory_stats())
 
+            record_image_inference_latency(
+                request_id=request_id,
+                provider="hf",
+                model=self._model_key,
+                elapsed_ms=elapsed_ms,
+                success=True,
+                provider_type="sd15_controlnet_tile",
+                extra=extra,
+            )
+
             record_performance_metric(
                 pipeline="hf_sd15_controlnet_tile",
                 stage="inference",
@@ -745,6 +756,22 @@ class HFSD15ControlNetTileImageProvider(ImageGenerationProvider):
                 "hf_sd15_controlnet_generation_failed | model_key={} | error={}",
                 self._model_key,
                 str(exc),
+            )
+
+            record_image_inference_latency(
+                request_id=request_id,
+                provider="hf",
+                model=self._model_key,
+                elapsed_ms=elapsed_ms,
+                success=False,
+                provider_type="sd15_controlnet_tile",
+                error_code="HF_SD15_CONTROLNET_GENERATION_FAILED",
+                error_type=exc.__class__.__name__,
+                extra={
+                    "width": width,
+                    "height": height,
+                    "xformers_enabled": load_meta.get("xformers_enabled"),
+                },
             )
 
             record_performance_metric(

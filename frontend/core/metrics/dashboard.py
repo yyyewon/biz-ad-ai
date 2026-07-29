@@ -47,9 +47,9 @@ _CORE_METRICS: tuple[tuple[str, str, str], ...] = (
         METRIC_HELP["Total Pipeline Latency"],
     ),
     (
-        "이미지 생성",
-        "poster_generation",
-        METRIC_HELP["Image Generation (3 variants)"],
+        "이미지 생성 (inference)",
+        "image_provider_generation_sum",
+        METRIC_HELP["Image Generation (provider sum)"],
     ),
     (
         "포스터 VLM",
@@ -307,7 +307,8 @@ def _render_core_metrics(
                     help=help_text,
                 )
         st.caption(
-            "요청 ID 1개 선택 · `total_pipeline` / `poster_generation` / `vlm_inference` 실제 elapsed"
+            "요청 ID 1개 선택 · `total_pipeline`=전체 wall clock · "
+            "`image_provider_generation_sum`=생성(inference)만 · VLM=추론"
         )
         return
 
@@ -322,7 +323,8 @@ def _render_core_metrics(
             st.caption(f"runs: **{summary['count']}**")
 
     st.caption(
-        "필터 범위 백분위 · 이미지 생성 = variant 3장 wall clock · VLM = 추론만 (overlay 제외)"
+        "필터 범위 백분위 · 통합=로드·후처리 포함 · "
+        "이미지 생성=3 variant inference 합 · VLM=추론만"
     )
 
 

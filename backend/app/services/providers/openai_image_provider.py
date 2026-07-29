@@ -14,6 +14,7 @@ OpenAI 이미지 생성 provider.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import os
@@ -28,6 +29,8 @@ from app.core.model_config import get_model_settings, get_provider_section
 from app.services.providers.base import ImageGenerationProvider, ImageRenderMode
 from app.services.providers.openai_utils import validate_openai_api_key
 from app.utils.image_bytes import bytes_to_named_file, decode_base64_to_image_bytes
+from app.utils.image_inference_metrics import record_image_inference_latency
+from app.utils.request_ids import resolve_run_request_id
 
 
 class OpenAIImageProvider(ImageGenerationProvider):
@@ -117,7 +120,8 @@ class OpenAIImageProvider(ImageGenerationProvider):
         img2img_strength: float | None = None,
         request_id: str | None = None,
     ) -> list[bytes]:
-        _ = (negative_prompt, img2img_strength, request_id)
+        _ = (negative_prompt, img2img_strength)
+        metric_request_id = resolve_run_request_id(request_id)
         """
         입력 이미지를 기반으로 광고 이미지를 생성한다.
 
@@ -155,6 +159,7 @@ class OpenAIImageProvider(ImageGenerationProvider):
                     filename=f"source_{idx + 1}.png",
                 )
 
+                inference_started = time.perf_counter()
                 if mask_image_bytes:
                     mask_file = bytes_to_named_file(
                         mask_image_bytes,
@@ -177,6 +182,21 @@ class OpenAIImageProvider(ImageGenerationProvider):
                             size=effective_size,
                         )
                     )
+
+                elapsed_ms = (time.perf_counter() - inference_started) * 1000
+                record_image_inference_latency(
+                    request_id=metric_request_id,
+                    provider="openai",
+                    model=self._model,
+                    elapsed_ms=elapsed_ms,
+                    success=True,
+                    provider_type="openai",
+                    extra={
+                        "size": effective_size,
+                        "has_mask": bool(mask_image_bytes),
+                        "image_index": idx + 1,
+                    },
+                )
 
                 output_images.append(self._extract_first_image_bytes(result=result))
 

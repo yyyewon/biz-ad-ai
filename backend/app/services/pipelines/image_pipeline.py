@@ -40,6 +40,10 @@ from app.utils.image_text_overlay import (
     apply_variant_text_overlay,
     variant_uses_pil_text_overlay,
 )
+from app.utils.image_inference_metrics import (
+    consume_image_inference_accumulator_ms,
+    reset_image_inference_accumulator,
+)
 from app.utils.performance_logger import record_registry_metric
 
 
@@ -135,6 +139,7 @@ async def _generate_poster_with_retries(
     img2img_strength: float | None = None,
 ) -> list[bytes]:
     attempt_max = len(POSTER_EMPTY_RESULT_RETRY_SUFFIXES)
+    reset_image_inference_accumulator()
 
     for attempt_idx, suffix in enumerate(POSTER_EMPTY_RESULT_RETRY_SUFFIXES):
         attempt = attempt_idx + 1
@@ -352,7 +357,9 @@ async def generate_image_ads(
                     img2img_strength=img2img_strength,
                 )
             except Exception as exc:
-                elapsed_ms = (time.perf_counter() - variant_started) * 1000
+                elapsed_ms = consume_image_inference_accumulator_ms()
+                if elapsed_ms <= 0:
+                    elapsed_ms = int((time.perf_counter() - variant_started) * 1000)
                 error_code = exc.code if isinstance(exc, AppException) else "UNHANDLED_EXCEPTION"
                 record_registry_metric(
                     MetricId.VARIANT_GENERATION_LATENCY,
@@ -367,11 +374,18 @@ async def generate_image_ads(
                         "variant": variant,
                         "render_mode": render_mode,
                         "provider": image_provider_name,
+                        "measurement": "inference_only",
                     },
                 )
                 raise
             else:
-                elapsed_ms = (time.perf_counter() - variant_started) * 1000
+                elapsed_ms = consume_image_inference_accumulator_ms()
+                if elapsed_ms <= 0:
+                    elapsed_ms = int((time.perf_counter() - variant_started) * 1000)
+                    logger.warning(
+                        "image_variant_inference_ms_missing | variant={} | fallback=wall_clock",
+                        variant,
+                    )
                 record_registry_metric(
                     MetricId.VARIANT_GENERATION_LATENCY,
                     request_id=request_id,
@@ -383,11 +397,10 @@ async def generate_image_ads(
                         "variant": variant,
                         "render_mode": render_mode,
                         "provider": image_provider_name,
+                        "measurement": "inference_only",
                     },
                 )
-            provider_latency_ms = int(
-                (time.perf_counter() - variant_started) * 1000
-            )
+            provider_latency_ms = elapsed_ms
 
             if not variant_outputs:
                 raise AppException(

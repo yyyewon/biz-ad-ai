@@ -25,6 +25,7 @@ from app.utils.memory_monitor import (
     ensure_model_load_memory,
     log_model_memory_snapshot,
 )
+from app.utils.image_inference_metrics import record_image_inference_latency
 from app.utils.performance_logger import record_performance_metric
 
 
@@ -871,6 +872,15 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
                 "ip_adapter_scale": self._ip_adapter_scale,
                 "oom_fallback_used": fallback_used,
             }
+            record_image_inference_latency(
+                request_id=request_id,
+                provider="hf",
+                model=self._model_key,
+                elapsed_ms=elapsed_ms,
+                success=True,
+                provider_type="sdxl_ip_adapter",
+                extra=extra,
+            )
             record_performance_metric(
                 pipeline="hf_sdxl_ip_adapter",
                 stage=f"{pipeline_kind}_inference",
@@ -898,6 +908,24 @@ class HFSDXLIPAdapterImageProvider(ImageGenerationProvider):
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - started) * 1000
             memory = self._memory_stats()
+            record_image_inference_latency(
+                request_id=request_id,
+                provider="hf",
+                model=self._model_key,
+                elapsed_ms=elapsed_ms,
+                success=False,
+                provider_type="sdxl_ip_adapter",
+                error_code="HF_SDXL_IP_ADAPTER_GENERATION_FAILED",
+                error_type=exc.__class__.__name__,
+                extra={
+                    "pipeline_kind": pipeline_kind,
+                    "requested_size": requested_size,
+                    "native_size": used_native_size,
+                    "strength": strength,
+                    "oom_fallback_used": fallback_used,
+                    **memory,
+                },
+            )
             record_performance_metric(
                 pipeline="hf_sdxl_ip_adapter",
                 stage=f"{pipeline_kind}_inference",

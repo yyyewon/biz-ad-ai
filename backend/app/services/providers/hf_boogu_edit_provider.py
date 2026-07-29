@@ -25,6 +25,7 @@ from app.utils.memory_monitor import (
     log_model_memory_snapshot,
 )
 from app.schemas.performance_metrics import MetricId
+from app.utils.image_inference_metrics import record_image_inference_latency
 from app.utils.performance_logger import record_registry_metric
 
 
@@ -666,7 +667,6 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
         )
         device = self._resolve_device()
         metric_request_id = resolve_run_request_id(request_id)
-        started = time.perf_counter()
 
         reference_image = ImageOps.exif_transpose(
             image_bytes_to_pil(input_image_bytes).convert("RGB")
@@ -685,6 +685,9 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             effective_text_guidance_scale,
             effective_image_guidance_scale,
         )
+
+        inference_started: float | None = None
+        load_meta: dict[str, Any] = {}
 
         try:
             with _PIPELINE_INFERENCE_LOCK:
@@ -708,6 +711,7 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
                     self._num_inference_steps,
                 )
 
+                inference_started = time.perf_counter()
                 result = pipe(
                     instruction=instruction,
                     negative_instruction=negative_prompt or DEFAULT_NEGATIVE_INSTRUCTION,
@@ -752,17 +756,16 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
             ]
             out_w, out_h = output_images[0].size if output_images else (width, height)
 
-            elapsed_ms = (time.perf_counter() - started) * 1000
+            elapsed_ms = (time.perf_counter() - inference_started) * 1000
             memory = self._memory_stats()
-            record_registry_metric(
-                MetricId.BOOGU_INFERENCE_LATENCY,
+            record_image_inference_latency(
                 request_id=metric_request_id,
                 provider="hf",
                 model=self._model_key,
                 elapsed_ms=elapsed_ms,
                 success=True,
+                provider_type="boogu_edit",
                 extra={
-                    "provider_type": "boogu_edit",
                     "model_id": self._model_id,
                     "requested_width": width,
                     "requested_height": height,
@@ -794,23 +797,23 @@ class HFBooguEditImageProvider(ImageGenerationProvider):
         except AppException:
             raise
         except Exception as exc:
-            elapsed_ms = (time.perf_counter() - started) * 1000
-            record_registry_metric(
-                MetricId.BOOGU_INFERENCE_LATENCY,
-                request_id=metric_request_id,
-                provider="hf",
-                model=self._model_key,
-                elapsed_ms=elapsed_ms,
-                success=False,
-                error_code="HF_BOOGU_EDIT_GENERATION_FAILED",
-                error_type=exc.__class__.__name__,
-                extra={
-                    "provider_type": "boogu_edit",
-                    "model_id": self._model_id,
-                    "width": width,
-                    "height": height,
-                },
-            )
+            if inference_started is not None:
+                elapsed_ms = (time.perf_counter() - inference_started) * 1000
+                record_image_inference_latency(
+                    request_id=metric_request_id,
+                    provider="hf",
+                    model=self._model_key,
+                    elapsed_ms=elapsed_ms,
+                    success=False,
+                    provider_type="boogu_edit",
+                    error_code="HF_BOOGU_EDIT_GENERATION_FAILED",
+                    error_type=exc.__class__.__name__,
+                    extra={
+                        "model_id": self._model_id,
+                        "width": width,
+                        "height": height,
+                    },
+                )
             logger.exception(
                 "hf_boogu_edit_generation_failed | model_key={} | error={}",
                 self._model_key,
