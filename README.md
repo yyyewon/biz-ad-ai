@@ -362,7 +362,7 @@ streamlit run app.py
 
 ## 산출물
 
-- **최종 발표 자료 (보고서)** : [PDF 다운로드](./docs/소상공인 두레_최종 발표 자료.pdf)
+- **최종 발표 자료 (보고서)** : [PDF](<./docs/소상공인 두레_최종 발표 자료.pdf>)
 - **협업 일지**
   - [황예원](https://app.notion.com/p/26-7-1-26-7-30-39016104cddd806bb7b8e2e2a15f58d4?source=copy_link)
   - [박도원](https://app.notion.com/p/3-3acc44689b4380889bb8eb5a9ab17d25?source=copy_link)
